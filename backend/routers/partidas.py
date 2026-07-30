@@ -11,8 +11,37 @@ TABLE = "partidas"
 
 
 @router.get("/", response_model=list[Partida])
-def listar_partidas():
-    resposta = supabase.table(TABLE).select("*").order("data", desc=True).execute()
+def listar_partidas(status: str | None = None):
+    query = supabase.table(TABLE).select("*")
+    if status:
+        query = query.eq("status", status)
+    resposta = query.order("data", desc=True).execute()
+    return resposta.data
+
+
+@router.get("/proximas", response_model=list[Partida])
+def proximas_partidas(limite: int = 5):
+    resposta = (
+        supabase.table(TABLE)
+        .select("*")
+        .eq("status", "agendada")
+        .order("data")
+        .limit(limite)
+        .execute()
+    )
+    return resposta.data
+
+
+@router.get("/resultados", response_model=list[Partida])
+def ultimos_resultados(limite: int = 5):
+    resposta = (
+        supabase.table(TABLE)
+        .select("*")
+        .eq("status", "realizada")
+        .order("data", desc=True)
+        .limit(limite)
+        .execute()
+    )
     return resposta.data
 
 

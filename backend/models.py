@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 Posicao = Literal["goleiro", "zagueiro", "lateral", "meio", "atacante"]
 Local = Literal["casa", "fora"]
+StatusPartida = Literal["agendada", "realizada", "cancelada"]
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +45,7 @@ class PartidaBase(BaseModel):
     data: date
     adversario: str
     local: Local
+    status: StatusPartida = "agendada"
     placar_suprema: int = 0
     placar_adversario: int = 0
     campeonato_ou_amistoso: Optional[str] = None
@@ -58,6 +60,7 @@ class PartidaUpdate(BaseModel):
     data: Optional[date] = None
     adversario: Optional[str] = None
     local: Optional[Local] = None
+    status: Optional[StatusPartida] = None
     placar_suprema: Optional[int] = None
     placar_adversario: Optional[int] = None
     campeonato_ou_amistoso: Optional[str] = None

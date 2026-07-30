@@ -28,6 +28,7 @@ create table if not exists partidas (
     data                    date not null,
     adversario              text not null,
     local                   text not null check (local in ('casa', 'fora')),
+    status                  text not null default 'agendada' check (status in ('agendada', 'realizada', 'cancelada')),
     placar_suprema          integer not null default 0,
     placar_adversario       integer not null default 0,
     campeonato_ou_amistoso  text,
@@ -104,4 +105,5 @@ select
     count(*) filter (where placar_suprema < placar_adversario) as derrotas,
     coalesce(sum(placar_suprema), 0) as gols_marcados,
     coalesce(sum(placar_adversario), 0) as gols_sofridos
-from partidas;
+from partidas
+where status = 'realizada';

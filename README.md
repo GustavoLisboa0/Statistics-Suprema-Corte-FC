@@ -1,5 +1,6 @@
 # Statistics Suprema Corte FC
-Estatísticas do Clube de Futebol Suprema Corte
+
+Micro-sistema para registro de estatísticas de partidas do Suprema Corte FC (futebol amador).
 
 ## Estrutura do projeto
 
@@ -16,8 +17,19 @@ Statistics-Suprema-Corte-FC/
 │   ├── requirements.txt
 │   └── .env.example
 ├── database/
-│   └── schema.sql            # Script de criação das tabelas no Supabase
-├── frontend/                 # (a definir)
+│   ├── schema.sql
+│   └── migration_001_status_partidas.sql
+├── frontend/
+│   ├── index.html
+│   ├── css/
+│   │   └── styles.css
+│   └── js/
+│       ├── api.js          # comunicação com o backend
+│       ├── ui.js            # utilitários (modal, toast, formatação)
+│       ├── jogadores.js
+│       ├── partidas.js      # inclui lançamento de estatísticas
+│       ├── dashboard.js
+│       └── app.js           # navegação e inicialização
 └── README.md
 ```
 
@@ -63,10 +75,25 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa automática em
 
 ### 4. Frontend
 
-Ainda a definir — pasta `frontend/` fica como esqueleto por enquanto.
+SPA em HTML/CSS/JS puro (sem build step). Como ele faz `fetch` para a API,
+precisa ser servido por um servidor local (abrir o `index.html` direto com
+`file://` bloqueia as requisições por CORS).
+
+```bash
+cd frontend
+python -m http.server 5500
+```
+
+Depois acesse `http://127.0.0.1:5500`. Com o backend rodando em paralelo
+(`http://127.0.0.1:8000`), o app já deve carregar jogadores, partidas e o
+dashboard.
+
+Se o backend estiver em outro endereço, ajuste `API_BASE` em `frontend/js/api.js`.
 
 ## Roadmap
 
-- [ ] Frontend (HTML/CSS/JS)
+- [x] Backend (FastAPI + Supabase)
+- [x] Frontend (jogadores, partidas + estatísticas, dashboard)
 - [ ] Upload de fotos de jogadores (Supabase Storage) — v2
 - [ ] Autenticação/login para edição
+- [ ] Filtro por campeonato no dashboard
