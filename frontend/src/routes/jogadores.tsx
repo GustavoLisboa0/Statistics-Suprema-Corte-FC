@@ -6,12 +6,15 @@ import { toast } from "sonner";
 
 import {
   POSITIONS,
+  POSITION_LABELS,
+  POSITION_ABBR,
   fetchPlayers,
   createPlayer,
   updatePlayer,
   deletePlayer,
   type Player,
   type PlayerInput,
+  type Position,
 } from "@/lib/football";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
   SelectContent,
@@ -48,12 +52,12 @@ import {
 export const Route = createFileRoute("/jogadores")({
   head: () => ({
     meta: [
-      { title: "Jogadores — Suprema Corte FC" },
+      { title: "Jogadores â€” Suprema Corte FC" },
       {
         name: "description",
-        content: "Elenco do Suprema Corte FC: cadastro, posições e situação de cada jogador.",
+        content: "Elenco do Suprema Corte FC: cadastro, posiÃ§Ãµes e situaÃ§Ã£o de cada jogador.",
       },
-      { property: "og:title", content: "Jogadores — Suprema Corte FC" },
+      { property: "og:title", content: "Jogadores â€” Suprema Corte FC" },
       { property: "og:description", content: "Elenco completo do Suprema Corte FC." },
     ],
   }),
@@ -63,7 +67,7 @@ export const Route = createFileRoute("/jogadores")({
 type FormState = {
   name: string;
   nickname: string;
-  position: string;
+  positions: Position[];
   shirt_number: string;
   birth_date: string;
   active: boolean;
@@ -72,18 +76,65 @@ type FormState = {
 const emptyForm: FormState = {
   name: "",
   nickname: "",
-  position: "",
+  positions: [],
   shirt_number: "",
   birth_date: "",
   active: true,
 };
+
+function PlayerCard({
+  player,
+  onEdit,
+  onDelete,
+}: {
+  player: Player;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Card className="w-64 shrink-0">
+      <CardContent className="flex items-center gap-3 p-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary font-display text-lg text-primary-foreground">
+          {player.shirt_number ?? "–"}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-semibold">{player.name}</span>
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${player.active ? "bg-accent" : "bg-muted-foreground"}`}
+              aria-label={player.active ? "Ativo" : "Inativo"}
+            />
+          </div>
+          {player.nickname ? (
+            <div className="truncate text-xs text-muted-foreground">"{player.nickname}"</div>
+          ) : null}
+          <div className="mt-1 flex flex-wrap gap-1">
+            {player.positions.map((position) => (
+              <Badge key={position} variant="secondary" className="px-1.5 text-[10px]">
+                {POSITION_ABBR[position]}
+              </Badge>
+            ))}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col gap-1">
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function PlayersPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
 
   const [search, setSearch] = useState("");
-  const [position, setPosition] = useState("todas");
+  const [positionFilter, setPositionFilter] = useState("todas");
   const [showInactive, setShowInactive] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Player | null>(null);
@@ -95,7 +146,7 @@ function PlayersPage() {
       const payload: PlayerInput = {
         name: form.name.trim(),
         nickname: form.nickname.trim() || null,
-        position: form.position as Player["position"],
+        positions: form.positions,
         shirt_number: form.shirt_number ? Number(form.shirt_number) : null,
         birth_date: form.birth_date || null,
         active: form.active,
@@ -111,7 +162,7 @@ function PlayersPage() {
       qc.invalidateQueries({ queryKey: ["players"] });
       setOpen(false);
     },
-    onError: (e: Error) => toast.error("Erro ao salvar: " + e.message),
+    onError: (error: Error) => toast.error("Erro ao salvar: " + error.message),
   });
 
   const remove = useMutation({
@@ -124,7 +175,7 @@ function PlayersPage() {
       qc.invalidateQueries({ queryKey: ["stats"] });
       setToDelete(null);
     },
-    onError: (e: Error) => toast.error("Erro ao excluir: " + e.message),
+    onError: (error: Error) => toast.error("Erro ao excluir: " + error.message),
   });
 
   const openNew = () => {
@@ -133,30 +184,38 @@ function PlayersPage() {
     setOpen(true);
   };
 
-  const openEdit = (p: Player) => {
-    setEditing(p);
+  const openEdit = (player: Player) => {
+    setEditing(player);
     setForm({
-      name: p.name,
-      nickname: p.nickname ?? "",
-      position: p.position,
-      shirt_number: p.shirt_number?.toString() ?? "",
-      birth_date: p.birth_date ?? "",
-      active: p.active,
+      name: player.name,
+      nickname: player.nickname ?? "",
+      positions: player.positions,
+      shirt_number: player.shirt_number?.toString() ?? "",
+      birth_date: player.birth_date ?? "",
+      active: player.active,
     });
     setOpen(true);
   };
 
-  const players = (data ?? []).filter((p) => {
-    if (!showInactive && !p.active) return false;
-    if (position !== "todas" && p.position !== position) return false;
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return p.name.toLowerCase().includes(q) || (p.nickname ?? "").toLowerCase().includes(q);
+  const players = (data ?? []).filter((player) => {
+    if (!showInactive && !player.active) return false;
+    const query = search.trim().toLowerCase();
+    if (query && !player.name.toLowerCase().includes(query) && !(player.nickname ?? "").toLowerCase().includes(query)) {
+      return false;
+    }
+    return true;
   });
+
+  const groups = POSITIONS.map((position) => ({
+    position,
+    players: players.filter((player) => player.positions.includes(position)),
+  }))
+    .filter((group) => positionFilter === "todas" || group.position === positionFilter)
+    .filter((group) => group.players.length > 0);
 
   const submit = () => {
     if (!form.name.trim()) return toast.error("Informe o nome do jogador");
-    if (!form.position) return toast.error("Informe a posição do jogador");
+    if (form.positions.length === 0) return toast.error("Selecione ao menos uma posição");
     save.mutate();
   };
 
@@ -176,18 +235,18 @@ function PlayersPage() {
         <Input
           placeholder="Buscar por nome..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(event) => setSearch(event.target.value)}
           className="md:max-w-xs"
         />
-        <Select value={position} onValueChange={setPosition}>
-          <SelectTrigger className="md:w-48">
+        <Select value={positionFilter} onValueChange={setPositionFilter}>
+          <SelectTrigger className="md:w-56">
             <SelectValue placeholder="Posição" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todas">Todas as posições</SelectItem>
-            {POSITIONS.map((p) => (
-              <SelectItem key={p} value={p} className="capitalize">
-                {p}
+            {POSITIONS.map((position) => (
+              <SelectItem key={position} value={position}>
+                {POSITION_LABELS[position]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -200,11 +259,11 @@ function PlayersPage() {
 
       {isLoading ? (
         <div className="space-y-2">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-20 w-full" />
+          {[0, 1, 2].map((index) => (
+            <Skeleton key={index} className="h-20 w-full" />
           ))}
         </div>
-      ) : players.length === 0 ? (
+      ) : groups.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
             {(data ?? []).length === 0
@@ -213,39 +272,26 @@ function PlayersPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {players.map((p) => (
-            <Card key={p.id}>
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary font-display text-xl text-primary-foreground">
-                  {p.shirt_number ?? "–"}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-semibold">{p.name}</span>
-                    <span
-                      className={`h-2 w-2 shrink-0 rounded-full ${p.active ? "bg-accent" : "bg-muted-foreground"}`}
-                      aria-label={p.active ? "Ativo" : "Inativo"}
-                    />
-                  </div>
-                  <div className="truncate text-sm text-muted-foreground">
-                    {p.nickname ? `"${p.nickname}" · ` : ""}
-                    <span className="capitalize">{p.position}</span>
-                  </div>
-                  <Badge variant={p.active ? "secondary" : "outline"} className="mt-1">
-                    {p.active ? "Ativo" : "Inativo"}
-                  </Badge>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => openEdit(p)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" onClick={() => setToDelete(p)}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+        <div className="space-y-6">
+          {groups.map((group) => (
+            <div key={group.position}>
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                {POSITION_LABELS[group.position]}
+                <Badge variant="outline" className="font-normal">
+                  {group.players.length}
+                </Badge>
+              </h2>
+              <div className="flex flex-wrap gap-3">
+                {group.players.map((player) => (
+                  <PlayerCard
+                    key={player.id}
+                    player={player}
+                    onEdit={() => openEdit(player)}
+                    onDelete={() => setToDelete(player)}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -262,7 +308,7 @@ function PlayersPage() {
                 id="name"
                 maxLength={100}
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
               />
             </div>
             <div>
@@ -271,26 +317,8 @@ function PlayersPage() {
                 id="nickname"
                 maxLength={50}
                 value={form.nickname}
-                onChange={(e) => setForm({ ...form, nickname: e.target.value })}
+                onChange={(event) => setForm({ ...form, nickname: event.target.value })}
               />
-            </div>
-            <div>
-              <Label>Posição *</Label>
-              <Select
-                value={form.position}
-                onValueChange={(v) => setForm({ ...form, position: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {POSITIONS.map((p) => (
-                    <SelectItem key={p} value={p} className="capitalize">
-                      {p}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <div>
               <Label htmlFor="shirt">Número da camisa</Label>
@@ -300,8 +328,30 @@ function PlayersPage() {
                 min={0}
                 max={99}
                 value={form.shirt_number}
-                onChange={(e) => setForm({ ...form, shirt_number: e.target.value })}
+                onChange={(event) => setForm({ ...form, shirt_number: event.target.value })}
               />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>Posições * (selecione uma ou mais)</Label>
+              <ToggleGroup
+                type="multiple"
+                value={form.positions}
+                onValueChange={(value) => setForm({ ...form, positions: value as Position[] })}
+                className="flex flex-wrap justify-start gap-1.5"
+              >
+                {POSITIONS.map((position) => (
+                  <ToggleGroupItem
+                    key={position}
+                    value={position}
+                    variant="outline"
+                    className="h-8 px-2.5 text-xs"
+                    aria-label={POSITION_LABELS[position]}
+                    title={POSITION_LABELS[position]}
+                  >
+                    {POSITION_ABBR[position]}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
             </div>
             <div>
               <Label htmlFor="birth">Data de nascimento</Label>
@@ -309,14 +359,14 @@ function PlayersPage() {
                 id="birth"
                 type="date"
                 value={form.birth_date}
-                onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
+                onChange={(event) => setForm({ ...form, birth_date: event.target.value })}
               />
             </div>
-            <div className="flex items-center gap-2 sm:col-span-2">
+            <div className="flex items-center gap-2">
               <Switch
                 id="active"
                 checked={form.active}
-                onCheckedChange={(v) => setForm({ ...form, active: v })}
+                onCheckedChange={(value) => setForm({ ...form, active: value })}
               />
               <Label htmlFor="active">Jogador ativo</Label>
             </div>
@@ -332,7 +382,7 @@ function PlayersPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
+      <AlertDialog open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir {toDelete?.name}?</AlertDialogTitle>

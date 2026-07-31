@@ -2,10 +2,24 @@ from datetime import date
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-Posicao = Literal["goleiro", "zagueiro", "lateral", "meio", "atacante"]
-Local = Literal["casa", "fora"]
+Posicao = Literal[
+    "goleiro",
+    "lateral_direito",
+    "lateral_esquerdo",
+    "volante",
+    "meia",
+    "meia_esquerda",
+    "meia_direita",
+    "meia_atacante",
+    "atacante",
+    "ponta_esquerda",
+    "ponta_direita",
+    "centro_avante",
+]
+Local = Literal["trieste", "iguacu", "outro"]
+Mando = Literal["mandante", "visitante"]
 StatusPartida = Literal["agendada", "realizada", "cancelada"]
 
 
@@ -15,7 +29,7 @@ StatusPartida = Literal["agendada", "realizada", "cancelada"]
 class JogadorBase(BaseModel):
     nome: str
     apelido: Optional[str] = None
-    posicao: Posicao
+    posicoes: list[Posicao] = Field(min_length=1)
     numero_camisa: Optional[int] = None
     data_nascimento: Optional[date] = None
     ativo: bool = True
@@ -28,7 +42,7 @@ class JogadorCreate(JogadorBase):
 class JogadorUpdate(BaseModel):
     nome: Optional[str] = None
     apelido: Optional[str] = None
-    posicao: Optional[Posicao] = None
+    posicoes: Optional[list[Posicao]] = None
     numero_camisa: Optional[int] = None
     data_nascimento: Optional[date] = None
     ativo: Optional[bool] = None
@@ -45,6 +59,8 @@ class PartidaBase(BaseModel):
     data: date
     adversario: str
     local: Local
+    local_detalhe: Optional[str] = None
+    mando: Mando = "mandante"
     status: StatusPartida = "agendada"
     placar_suprema: int = 0
     placar_adversario: int = 0
@@ -60,6 +76,8 @@ class PartidaUpdate(BaseModel):
     data: Optional[date] = None
     adversario: Optional[str] = None
     local: Optional[Local] = None
+    local_detalhe: Optional[str] = None
+    mando: Optional[Mando] = None
     status: Optional[StatusPartida] = None
     placar_suprema: Optional[int] = None
     placar_adversario: Optional[int] = None

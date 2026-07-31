@@ -6,6 +6,12 @@ import { toast } from "sonner";
 
 import {
   STATUSES,
+  STATUS_LABELS,
+  VENUES,
+  VENUE_LABELS,
+  MANDOS,
+  MANDO_LABELS,
+  matchTitle,
   fetchMatchStats,
   fetchMatches,
   fetchPlayers,
@@ -54,13 +60,13 @@ import {
 export const Route = createFileRoute("/partidas")({
   head: () => ({
     meta: [
-      { title: "Partidas — Suprema Corte FC" },
+      { title: "Partidas â€” Suprema Corte FC" },
       {
         name: "description",
-        content: "Calendário, resultados e estatísticas por partida do Suprema Corte FC.",
+        content: "CalendÃ¡rio, resultados e estatÃ­sticas por partida do Suprema Corte FC.",
       },
-      { property: "og:title", content: "Partidas — Suprema Corte FC" },
-      { property: "og:description", content: "Calendário e resultados do Suprema Corte FC." },
+      { property: "og:title", content: "Partidas â€” Suprema Corte FC" },
+      { property: "og:description", content: "CalendÃ¡rio e resultados do Suprema Corte FC." },
     ],
   }),
   component: MatchesPage,
@@ -70,6 +76,8 @@ type MatchForm = {
   match_date: string;
   opponent: string;
   venue: string;
+  venue_detail: string;
+  mando: string;
   status: string;
   kind: string;
   notes: string;
@@ -80,7 +88,9 @@ type MatchForm = {
 const emptyMatch: MatchForm = {
   match_date: new Date().toISOString().slice(0, 10),
   opponent: "",
-  venue: "casa",
+  venue: "trieste",
+  venue_detail: "",
+  mando: "mandante",
   status: "agendada",
   kind: "campeonato",
   notes: "",
@@ -110,8 +120,8 @@ const emptyStat: StatRow = {
   goals_conceded: 0,
 };
 
-const statusVariant = (s: string) =>
-  s === "realizada" ? "default" : s === "cancelada" ? "destructive" : "secondary";
+const statusVariant = (value: string) =>
+  value === "realizada" ? "default" : value === "cancelada" ? "destructive" : "secondary";
 
 function MatchesPage() {
   const qc = useQueryClient();
@@ -131,14 +141,15 @@ function MatchesPage() {
     enabled: !!editing && open,
   });
 
-  const activePlayers = (players ?? []).filter((p) => p.active);
+  const activePlayers = (players ?? []).filter((player) => player.active);
 
   useEffect(() => {
     if (!editing) return;
     const next: Record<string, StatRow> = {};
-    for (const p of activePlayers) {
-      const found = existingStats?.find((s) => s.player_id === p.id);
-      next[p.id] = found
+
+    for (const player of activePlayers) {
+      const found = existingStats?.find((stat) => stat.player_id === player.id);
+      next[player.id] = found
         ? {
             starter: found.starter,
             minutes: found.minutes,
@@ -151,9 +162,9 @@ function MatchesPage() {
           }
         : { ...emptyStat };
     }
+
     setRows(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [existingStats, editing, players]);
+  }, [existingStats, editing, activePlayers]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -161,16 +172,20 @@ function MatchesPage() {
         match_date: form.match_date,
         opponent: form.opponent.trim(),
         venue: form.venue as Match["venue"],
+        venue_detail: form.venue === "outro" ? form.venue_detail.trim() || null : null,
+        mando: form.mando as Match["mando"],
         status: form.status as Match["status"],
         kind: form.kind as Match["kind"],
         notes: form.notes.trim() || null,
         goals_for: form.goals_for === "" ? null : Number(form.goals_for),
         goals_against: form.goals_against === "" ? null : Number(form.goals_against),
       };
+
       if (!editing) {
         await createMatch(payload);
         return;
       }
+
       await updateMatch(editing.id, payload);
       if (Object.keys(rows).length) {
         await upsertMatchStats(editing.id, rows, existingStats ?? []);
@@ -183,7 +198,7 @@ function MatchesPage() {
       qc.invalidateQueries({ queryKey: ["match-stats"] });
       setOpen(false);
     },
-    onError: (e: Error) => toast.error("Erro ao salvar: " + e.message),
+    onError: (error: Error) => toast.error("Erro ao salvar: " + error.message),
   });
 
   const remove = useMutation({
@@ -196,7 +211,7 @@ function MatchesPage() {
       qc.invalidateQueries({ queryKey: ["stats"] });
       setToDelete(null);
     },
-    onError: (e: Error) => toast.error("Erro ao excluir: " + e.message),
+    onError: (error: Error) => toast.error("Erro ao excluir: " + error.message),
   });
 
   const openNew = () => {
@@ -206,17 +221,19 @@ function MatchesPage() {
     setOpen(true);
   };
 
-  const openEdit = (m: Match) => {
-    setEditing(m);
+  const openEdit = (match: Match) => {
+    setEditing(match);
     setForm({
-      match_date: m.match_date,
-      opponent: m.opponent,
-      venue: m.venue,
-      status: m.status,
-      kind: m.kind,
-      notes: m.notes ?? "",
-      goals_for: m.goals_for?.toString() ?? "",
-      goals_against: m.goals_against?.toString() ?? "",
+      match_date: match.match_date,
+      opponent: match.opponent,
+      venue: match.venue,
+      venue_detail: match.venue_detail ?? "",
+      mando: match.mando,
+      status: match.status,
+      kind: match.kind,
+      notes: match.notes ?? "",
+      goals_for: match.goals_for?.toString() ?? "",
+      goals_against: match.goals_against?.toString() ?? "",
     });
     setOpen(true);
   };
@@ -228,9 +245,12 @@ function MatchesPage() {
   };
 
   const setCell = (playerId: string, key: keyof StatRow, value: number | boolean) =>
-    setRows((prev) => ({ ...prev, [playerId]: { ...prev[playerId], [key]: value } }));
+    setRows((previous) => ({
+      ...previous,
+      [playerId]: { ...previous[playerId], [key]: value },
+    }));
 
-  const matches = (data ?? []).filter((m) => status === "todos" || m.status === status);
+  const matches = (data ?? []).filter((match) => status === "todos" || match.status === status);
 
   return (
     <div className="space-y-6">
@@ -250,9 +270,9 @@ function MatchesPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="todos">Todos os status</SelectItem>
-          {STATUSES.map((s) => (
-            <SelectItem key={s} value={s} className="capitalize">
-              {s}
+          {STATUSES.map((item) => (
+            <SelectItem key={item} value={item}>
+              {STATUS_LABELS[item]}
             </SelectItem>
           ))}
         </SelectContent>
@@ -260,8 +280,8 @@ function MatchesPage() {
 
       {isLoading ? (
         <div className="space-y-2">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-20 w-full" />
+          {[0, 1, 2].map((index) => (
+            <Skeleton key={index} className="h-20 w-full" />
           ))}
         </div>
       ) : matches.length === 0 ? (
@@ -274,32 +294,34 @@ function MatchesPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {matches.map((m) => (
-            <Card key={m.id}>
+          {matches.map((match) => (
+            <Card key={match.id}>
               <CardContent className="flex flex-wrap items-center gap-4 p-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">{m.opponent}</span>
-                    <Badge variant={statusVariant(m.status)} className="capitalize">
-                      {m.status}
+                    <span className="font-semibold">{matchTitle(match)}</span>
+                    <Badge variant={statusVariant(match.status)}>{STATUS_LABELS[match.status]}</Badge>
+                    <Badge variant="outline">
+                      {VENUE_LABELS[match.venue]}
+                      {match.venue === "outro" && match.venue_detail ? ` (${match.venue_detail})` : ""}
                     </Badge>
-                    <Badge variant="outline">{m.venue === "casa" ? "Casa" : "Fora"}</Badge>
-                    <Badge variant="outline" className="capitalize">
-                      {m.kind}
+                    <Badge variant="outline">{MANDO_LABELS[match.mando]}</Badge>
+                    <Badge variant="outline">
+                      {match.kind === "amistoso" ? "Amistoso" : "Campeonato"}
                     </Badge>
                   </div>
-                  <div className="text-sm text-muted-foreground">{formatDate(m.match_date)}</div>
+                  <div className="text-sm text-muted-foreground">{formatDate(match.match_date)}</div>
                 </div>
-                {m.status === "realizada" && (
+                {match.status === "realizada" && (
                   <span className="font-display text-3xl">
-                    {m.goals_for ?? 0} × {m.goals_against ?? 0}
+                    {match.goals_for ?? 0} × {match.goals_against ?? 0}
                   </span>
                 )}
                 <div className="flex gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
+                  <Button size="icon" variant="ghost" onClick={() => openEdit(match)}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => setToDelete(m)}>
+                  <Button size="icon" variant="ghost" onClick={() => setToDelete(match)}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </div>
@@ -322,7 +344,7 @@ function MatchesPage() {
                 id="date"
                 type="date"
                 value={form.match_date}
-                onChange={(e) => setForm({ ...form, match_date: e.target.value })}
+                onChange={(event) => setForm({ ...form, match_date: event.target.value })}
               />
             </div>
             <div>
@@ -331,31 +353,61 @@ function MatchesPage() {
                 id="opponent"
                 maxLength={100}
                 value={form.opponent}
-                onChange={(e) => setForm({ ...form, opponent: e.target.value })}
+                onChange={(event) => setForm({ ...form, opponent: event.target.value })}
               />
             </div>
             <div>
               <Label>Local</Label>
-              <Select value={form.venue} onValueChange={(v) => setForm({ ...form, venue: v })}>
+              <Select value={form.venue} onValueChange={(value) => setForm({ ...form, venue: value })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="casa">Casa</SelectItem>
-                  <SelectItem value="fora">Fora</SelectItem>
+                  {VENUES.map((venue) => (
+                    <SelectItem key={venue} value={venue}>
+                      {VENUE_LABELS[venue]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+              <Label>Mando</Label>
+              <Select value={form.mando} onValueChange={(value) => setForm({ ...form, mando: value })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STATUSES.map((s) => (
-                    <SelectItem key={s} value={s} className="capitalize">
-                      {s}
+                  {MANDOS.map((mando) => (
+                    <SelectItem key={mando} value={mando}>
+                      {MANDO_LABELS[mando]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {form.venue === "outro" && (
+              <div>
+                <Label htmlFor="venue_detail">Nome do campo</Label>
+                <Input
+                  id="venue_detail"
+                  maxLength={100}
+                  placeholder="Ex: Campo do Bairro Tal"
+                  value={form.venue_detail}
+                  onChange={(event) => setForm({ ...form, venue_detail: event.target.value })}
+                />
+              </div>
+            )}
+            <div>
+              <Label>Status</Label>
+              <Select value={form.status} onValueChange={(value) => setForm({ ...form, status: value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((item) => (
+                    <SelectItem key={item} value={item}>
+                      {STATUS_LABELS[item]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -363,7 +415,7 @@ function MatchesPage() {
             </div>
             <div>
               <Label>Tipo</Label>
-              <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v })}>
+              <Select value={form.kind} onValueChange={(value) => setForm({ ...form, kind: value })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -381,7 +433,7 @@ function MatchesPage() {
                   type="number"
                   min={0}
                   value={form.goals_for}
-                  onChange={(e) => setForm({ ...form, goals_for: e.target.value })}
+                  onChange={(event) => setForm({ ...form, goals_for: event.target.value })}
                 />
               </div>
               <div>
@@ -391,7 +443,7 @@ function MatchesPage() {
                   type="number"
                   min={0}
                   value={form.goals_against}
-                  onChange={(e) => setForm({ ...form, goals_against: e.target.value })}
+                  onChange={(event) => setForm({ ...form, goals_against: event.target.value })}
                 />
               </div>
             </div>
@@ -401,7 +453,7 @@ function MatchesPage() {
                 id="notes"
                 maxLength={1000}
                 value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                onChange={(event) => setForm({ ...form, notes: event.target.value })}
               />
             </div>
           </div>
@@ -431,27 +483,28 @@ function MatchesPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {activePlayers.map((p) => {
-                        const r = rows[p.id] ?? emptyStat;
-                        const gk = p.position === "goleiro";
+                      {activePlayers.map((player) => {
+                        const row = rows[player.id] ?? emptyStat;
+                        const gk = player.positions.includes("goleiro");
                         const num = (key: keyof StatRow) => (
                           <Input
                             type="number"
                             min={0}
                             className="h-8 w-16"
-                            value={r[key] as number}
-                            onChange={(e) => setCell(p.id, key, Number(e.target.value) || 0)}
+                            value={row[key] as number}
+                            onChange={(event) => setCell(player.id, key, Number(event.target.value) || 0)}
                           />
                         );
+
                         return (
-                          <tr key={p.id} className="border-b last:border-0">
+                          <tr key={player.id} className="border-b last:border-0">
                             <td className="whitespace-nowrap p-2 font-medium">
-                              {p.nickname || p.name}
+                              {player.nickname || player.name}
                             </td>
                             <td className="p-2">
                               <Checkbox
-                                checked={r.starter}
-                                onCheckedChange={(v) => setCell(p.id, "starter", v === true)}
+                                checked={row.starter}
+                                onCheckedChange={(value) => setCell(player.id, "starter", value === true)}
                               />
                             </td>
                             <td className="p-2">{num("minutes")}</td>
@@ -490,7 +543,7 @@ function MatchesPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
+      <AlertDialog open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir partida contra {toDelete?.opponent}?</AlertDialogTitle>

@@ -1,30 +1,133 @@
 import { api } from "@/lib/api";
 
-export const POSITIONS = ["goleiro", "zagueiro", "lateral", "meio", "atacante"] as const;
-export const STATUSES = ["agendada", "realizada", "cancelada"] as const;
+// ---------------------------------------------------------------------------
+// Posições
+// ---------------------------------------------------------------------------
+export const POSITIONS = [
+  "goleiro",
+  "lateral_direito",
+  "lateral_esquerdo",
+  "volante",
+  "meia",
+  "meia_esquerda",
+  "meia_direita",
+  "meia_atacante",
+  "atacante",
+  "ponta_esquerda",
+  "ponta_direita",
+  "centro_avante",
+] as const;
 
-export type Position = (typeof POSITIONS)[number];
+export type Position = (typeof POSITIONS)[number] | "zagueiro" | "lateral" | "meio";
+
+export const POSITION_LABELS: Record<Position, string> = {
+  goleiro: "Goleiro",
+  lateral_direito: "Lateral Direito",
+  lateral_esquerdo: "Lateral Esquerdo",
+  volante: "Volante",
+  meia: "Meia",
+  meia_esquerda: "Meia Esquerda",
+  meia_direita: "Meia Direita",
+  meia_atacante: "Meia Atacante",
+  atacante: "Atacante",
+  ponta_esquerda: "Ponta Esquerda",
+  ponta_direita: "Ponta Direita",
+  centro_avante: "Centro Avante",
+  zagueiro: "Zagueiro",
+  lateral: "Lateral",
+  meio: "Meio",
+};
+
+export const POSITION_ABBR: Record<Position, string> = {
+  goleiro: "GOL",
+  lateral_direito: "LD",
+  lateral_esquerdo: "LE",
+  volante: "VOL",
+  meia: "MEI",
+  meia_esquerda: "ME",
+  meia_direita: "MD",
+  meia_atacante: "MA",
+  atacante: "ATA",
+  ponta_esquerda: "PE",
+  ponta_direita: "PD",
+  centro_avante: "CA",
+  zagueiro: "ZAG",
+  lateral: "LAT",
+  meio: "MEI",
+};
+
+// ---------------------------------------------------------------------------
+// Status da partida
+// ---------------------------------------------------------------------------
+export const STATUSES = ["agendada", "realizada", "cancelada"] as const;
 export type Status = (typeof STATUSES)[number];
-export type Venue = "casa" | "fora";
+
+export const STATUS_LABELS: Record<Status, string> = {
+  agendada: "Agendada",
+  realizada: "Realizada",
+  cancelada: "Cancelada",
+};
+
 export type Kind = "campeonato" | "amistoso";
 
+// ---------------------------------------------------------------------------
+// Local e mando
+// ---------------------------------------------------------------------------
+export const VENUES = ["trieste", "iguacu", "outro"] as const;
+export type Venue = (typeof VENUES)[number] | "casa" | "fora";
+
+export const VENUE_LABELS: Record<Venue, string> = {
+  trieste: "Trieste",
+  iguacu: "Iguaçu",
+  outro: "Outro campo",
+  casa: "Casa",
+  fora: "Fora",
+};
+
+export const MANDOS = ["mandante", "visitante"] as const;
+export type Mando = (typeof MANDOS)[number];
+
+export const MANDO_LABELS: Record<Mando, string> = {
+  mandante: "Mandante",
+  visitante: "Visitante",
+};
+
+export const TEAM_NAME = "Suprema Corte FC";
+
+export function matchTitle(match: { opponent: string }): string {
+  return `${TEAM_NAME} × ${match.opponent}`;
+}
+
+// ---------------------------------------------------------------------------
+// Tipos usados pelas telas
+// ---------------------------------------------------------------------------
 export type Player = {
   id: string;
   name: string;
   nickname: string | null;
   position: Position;
+  positions: Position[];
   shirt_number: number | null;
   birth_date: string | null;
   active: boolean;
 };
 
-export type PlayerInput = Omit<Player, "id">;
+export type PlayerInput = {
+  name: string;
+  nickname: string | null;
+  positions: Position[];
+  shirt_number: number | null;
+  birth_date: string | null;
+  active: boolean;
+};
 
 export type Match = {
   id: string;
   match_date: string;
   opponent: string;
   venue: Venue;
+  venue_detail: string | null;
+  mando: Mando;
   status: Status;
   kind: Kind;
   notes: string | null;
@@ -51,13 +154,14 @@ export type MatchStat = {
 export type MatchStatInput = Omit<MatchStat, "id" | "match_id" | "player_id">;
 
 // ---------------------------------------------------------------------------
-// Formatos crus como o backend FastAPI devolve (nomes em português)
+// Formatos crus como o backend FastAPI devolve
 // ---------------------------------------------------------------------------
 type JogadorApi = {
   id: string;
   nome: string;
   apelido: string | null;
-  posicao: Position;
+  posicao?: Position;
+  posicoes?: Position[];
   numero_camisa: number | null;
   data_nascimento: string | null;
   ativo: boolean;
@@ -68,6 +172,8 @@ type PartidaApi = {
   data: string;
   adversario: string;
   local: Venue;
+  local_detalhe?: string | null;
+  mando?: Mando;
   status: Status;
   placar_suprema: number;
   placar_adversario: number;
@@ -90,17 +196,29 @@ type EstatisticaApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Tradução: API (português) <-> tipos usados pelas telas (inglês)
+// Tradução: API <-> tipos usados pelas telas
 // ---------------------------------------------------------------------------
-function toPlayer(j: JogadorApi): Player {
+function normalizePositions(player: JogadorApi): Position[] {
+  if (player.posicoes && player.posicoes.length > 0) {
+    return player.posicoes;
+  }
+  if (player.posicao) {
+    return [player.posicao];
+  }
+  return ["goleiro"];
+}
+
+function toPlayer(player: JogadorApi): Player {
+  const positions = normalizePositions(player);
   return {
-    id: j.id,
-    name: j.nome,
-    nickname: j.apelido,
-    position: j.posicao,
-    shirt_number: j.numero_camisa,
-    birth_date: j.data_nascimento,
-    active: j.ativo,
+    id: player.id,
+    name: player.nome,
+    nickname: player.apelido,
+    position: positions[0],
+    positions,
+    shirt_number: player.numero_camisa,
+    birth_date: player.data_nascimento,
+    active: player.ativo,
   };
 }
 
@@ -108,25 +226,32 @@ function toJogadorPayload(input: PlayerInput) {
   return {
     nome: input.name,
     apelido: input.nickname,
-    posicao: input.position,
+    position: input.positions[0],
+    posicao: input.positions[0],
+    posicoes: input.positions,
     numero_camisa: input.shirt_number,
     data_nascimento: input.birth_date,
     ativo: input.active,
   };
 }
 
-function toMatch(p: PartidaApi): Match {
-  const kind: Kind = p.campeonato_ou_amistoso === "amistoso" ? "amistoso" : "campeonato";
+function toMatch(match: PartidaApi): Match {
+  const kind: Kind = match.campeonato_ou_amistoso === "amistoso" ? "amistoso" : "campeonato";
+  const mando: Mando =
+    match.mando ?? (match.local === "fora" ? "visitante" : "mandante");
+
   return {
-    id: p.id,
-    match_date: p.data,
-    opponent: p.adversario,
-    venue: p.local,
-    status: p.status,
+    id: match.id,
+    match_date: match.data,
+    opponent: match.adversario,
+    venue: match.local,
+    venue_detail: match.local_detalhe ?? null,
+    mando,
+    status: match.status,
     kind,
-    notes: p.observacoes,
-    goals_for: p.status === "realizada" ? p.placar_suprema : null,
-    goals_against: p.status === "realizada" ? p.placar_adversario : null,
+    notes: match.observacoes,
+    goals_for: match.status === "realizada" ? match.placar_suprema : null,
+    goals_against: match.status === "realizada" ? match.placar_adversario : null,
   };
 }
 
@@ -135,6 +260,8 @@ function toPartidaPayload(input: MatchInput) {
     data: input.match_date,
     adversario: input.opponent,
     local: input.venue,
+    local_detalhe: input.venue_detail,
+    mando: input.mando,
     status: input.status,
     campeonato_ou_amistoso: input.kind,
     observacoes: input.notes,
@@ -143,19 +270,19 @@ function toPartidaPayload(input: MatchInput) {
   };
 }
 
-function toMatchStat(e: EstatisticaApi): MatchStat {
+function toMatchStat(stat: EstatisticaApi): MatchStat {
   return {
-    id: e.id,
-    match_id: e.partida_id,
-    player_id: e.jogador_id,
-    starter: e.titular,
-    minutes: e.minutos_jogados,
-    goals: e.gols,
-    assists: e.assistencias,
-    yellow_cards: e.cartoes_amarelos,
-    red_cards: e.cartoes_vermelhos,
-    saves: e.defesas ?? 0,
-    goals_conceded: e.gols_sofridos ?? 0,
+    id: stat.id,
+    match_id: stat.partida_id,
+    player_id: stat.jogador_id,
+    starter: stat.titular,
+    minutes: stat.minutos_jogados,
+    goals: stat.gols,
+    assists: stat.assistencias,
+    yellow_cards: stat.cartoes_amarelos,
+    red_cards: stat.cartoes_vermelhos,
+    saves: stat.defesas ?? 0,
+    goals_conceded: stat.gols_sofridos ?? 0,
   };
 }
 
@@ -212,30 +339,25 @@ export async function fetchAllStats(): Promise<MatchStat[]> {
   return data.map(toMatchStat);
 }
 
-/**
- * Salva (cria ou atualiza) as estatísticas de vários jogadores para uma partida.
- * `existing` é a lista já carregada via fetchMatchStats — usada pra saber se
- * cada jogador já tem uma linha (PATCH) ou não (POST) nessa partida.
- */
 export async function upsertMatchStats(
   matchId: string,
   rows: Record<string, MatchStatInput>,
   existing: MatchStat[],
 ): Promise<void> {
-  const byPlayer = new Map(existing.map((s) => [s.player_id, s]));
+  const byPlayer = new Map(existing.map((stat) => [stat.player_id, stat]));
 
-  for (const [playerId, r] of Object.entries(rows)) {
+  for (const [playerId, row] of Object.entries(rows)) {
     const payload = {
       jogador_id: playerId,
       partida_id: matchId,
-      titular: r.starter,
-      minutos_jogados: r.minutes,
-      gols: r.goals,
-      assistencias: r.assists,
-      cartoes_amarelos: r.yellow_cards,
-      cartoes_vermelhos: r.red_cards,
-      defesas: r.saves,
-      gols_sofridos: r.goals_conceded,
+      titular: row.starter,
+      minutos_jogados: row.minutes,
+      gols: row.goals,
+      assistencias: row.assists,
+      cartoes_amarelos: row.yellow_cards,
+      cartoes_vermelhos: row.red_cards,
+      defesas: row.saves,
+      gols_sofridos: row.goals_conceded,
     };
 
     const found = byPlayer.get(playerId);
@@ -249,6 +371,6 @@ export async function upsertMatchStats(
 
 export function formatDate(value: string | null) {
   if (!value) return "—";
-  const [y, m, d] = value.split("-");
-  return `${d}/${m}/${y}`;
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
 }
