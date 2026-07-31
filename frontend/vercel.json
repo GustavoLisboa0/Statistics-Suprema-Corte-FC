@@ -1,5 +1,4 @@
 {
   "framework": "tanstack-start",
-  "buildCommand": "npm run build",
-  "outputDirectory": ".output"
+  "buildCommand": "NITRO_PRESET=vercel npm run build"
 }
