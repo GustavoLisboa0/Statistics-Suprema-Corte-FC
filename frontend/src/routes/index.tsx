@@ -173,7 +173,7 @@ function StatisticsPage() {
                       className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
                     >
                       <span className="font-medium">{nameOf(playerId)}</span>
-                      <Badge variant="secondary">{total}</Badge>
+                      <Badge className="bg-amber-500 text-white hover:bg-amber-500">{total}</Badge>
                     </div>
                   ))}
                 </div>

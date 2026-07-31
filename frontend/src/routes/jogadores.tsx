@@ -49,15 +49,64 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+type PlayerGroupKey = "goleiro" | "defesa" | "meio_campo" | "ataque";
+
+const PLAYER_GROUPS: Array<{
+  key: PlayerGroupKey;
+  label: string;
+}> = [
+  {
+    key: "goleiro",
+    label: "Goleiro",
+  },
+  {
+    key: "defesa",
+    label: "Defesa",
+  },
+  {
+    key: "meio_campo",
+    label: "Meio Campo",
+  },
+  {
+    key: "ataque",
+    label: "Ataque",
+  },
+];
+
+function getPlayerGroup(position: Position): PlayerGroupKey {
+  switch (position) {
+    case "goleiro":
+      return "goleiro";
+    case "lateral_direito":
+    case "lateral_esquerdo":
+    case "zagueiro":
+    case "lateral":
+      return "defesa";
+    case "volante":
+    case "meia":
+    case "meia_esquerda":
+    case "meia_direita":
+    case "meia_atacante":
+    case "meio":
+      return "meio_campo";
+    default:
+      return "ataque";
+  }
+}
+
+function secondaryPositionBadgeClass() {
+  return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300";
+}
+
 export const Route = createFileRoute("/jogadores")({
   head: () => ({
     meta: [
-            { title: "SCFC - Jogadores" },
+      { title: "SCFC - Jogadores" },
       {
         name: "description",
-        content: "Elenco do Suprema Corte FC: cadastro, posiÃ§Ãµes e situaÃ§Ã£o de cada jogador.",
+        content: "Elenco do Suprema Corte FC: cadastro, posições e situação de cada jogador.",
       },
-            { property: "og:title", content: "SCFC - Jogadores" },
+      { property: "og:title", content: "SCFC - Jogadores" },
       { property: "og:description", content: "Elenco completo do Suprema Corte FC." },
     ],
   }),
@@ -109,8 +158,12 @@ function PlayerCard({
             <div className="truncate text-xs text-muted-foreground">"{player.nickname}"</div>
           ) : null}
           <div className="mt-1 flex flex-wrap gap-1">
-            {player.positions.map((position) => (
-              <Badge key={position} variant="secondary" className="px-1.5 text-[10px]">
+            {player.positions.map((position, index) => (
+              <Badge
+                key={position}
+                variant={index === 0 ? "default" : "secondary"}
+                className={`px-1.5 text-[10px] ${index > 0 ? secondaryPositionBadgeClass() : ""}`}
+              >
                 {POSITION_ABBR[position]}
               </Badge>
             ))}
@@ -134,7 +187,7 @@ function PlayersPage() {
   const { data, isLoading } = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
 
   const [search, setSearch] = useState("");
-  const [positionFilter, setPositionFilter] = useState("todas");
+  const [positionFilter, setPositionFilter] = useState<PlayerGroupKey | "todas">("todas");
   const [showInactive, setShowInactive] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Player | null>(null);
@@ -200,17 +253,21 @@ function PlayersPage() {
   const players = (data ?? []).filter((player) => {
     if (!showInactive && !player.active) return false;
     const query = search.trim().toLowerCase();
-    if (query && !player.name.toLowerCase().includes(query) && !(player.nickname ?? "").toLowerCase().includes(query)) {
+    if (
+      query &&
+      !player.name.toLowerCase().includes(query) &&
+      !(player.nickname ?? "").toLowerCase().includes(query)
+    ) {
       return false;
     }
     return true;
   });
 
-  const groups = POSITIONS.map((position) => ({
-    position,
-    players: players.filter((player) => player.positions.includes(position)),
+  const groups = PLAYER_GROUPS.map((group) => ({
+    ...group,
+    players: players.filter((player) => getPlayerGroup(player.position) === group.key),
   }))
-    .filter((group) => positionFilter === "todas" || group.position === positionFilter)
+    .filter((group) => positionFilter === "todas" || group.key === positionFilter)
     .filter((group) => group.players.length > 0);
 
   const submit = () => {
@@ -238,15 +295,15 @@ function PlayersPage() {
           onChange={(event) => setSearch(event.target.value)}
           className="md:max-w-xs"
         />
-        <Select value={positionFilter} onValueChange={setPositionFilter}>
+        <Select value={positionFilter} onValueChange={(value) => setPositionFilter(value as PlayerGroupKey | "todas")}>
           <SelectTrigger className="md:w-56">
-            <SelectValue placeholder="Posição" />
+            <SelectValue placeholder="Categoria" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="todas">Todas as posições</SelectItem>
-            {POSITIONS.map((position) => (
-              <SelectItem key={position} value={position}>
-                {POSITION_LABELS[position]}
+            <SelectItem value="todas">Todas as categorias</SelectItem>
+            {PLAYER_GROUPS.map((group) => (
+              <SelectItem key={group.key} value={group.key}>
+                {group.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -274,9 +331,9 @@ function PlayersPage() {
       ) : (
         <div className="space-y-6">
           {groups.map((group) => (
-            <div key={group.position}>
+            <div key={group.key}>
               <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {POSITION_LABELS[group.position]}
+                {group.label}
                 <Badge variant="outline" className="font-normal">
                   {group.players.length}
                 </Badge>
@@ -402,6 +459,3 @@ function PlayersPage() {
     </div>
   );
 }
-
-
-
