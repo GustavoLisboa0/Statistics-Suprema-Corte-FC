@@ -192,7 +192,7 @@ function RootComponent() {
         <div className="flex min-h-screen w-full">
           <AppSidebar />
           <div className="flex flex-1 flex-col">
-            <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-card/80 px-4 backdrop-blur">
+            <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-topbar/80 px-4 backdrop-blur">
               <SidebarTrigger />
               <span className="font-display text-xl tracking-wide">Suprema Corte FC</span>
               <div className="ml-auto flex items-center gap-2">
