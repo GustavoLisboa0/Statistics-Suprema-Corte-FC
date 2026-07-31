@@ -13,14 +13,31 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
 
   if (!response.ok) {
-    let detail = `Erro ${response.status}`;
+    const fallback = `Erro ${response.status}`;
+    let message = fallback;
     try {
-      const body = (await response.json()) as { detail?: string };
-      detail = body.detail ?? detail;
+      const body = (await response.json()) as {
+        detail?: unknown;
+        message?: unknown;
+        error?: unknown;
+      };
+      const detail = body.detail ?? body.message ?? body.error;
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (detail && typeof detail === "object") {
+        const nested = detail as { message?: unknown; detail?: unknown };
+        if (typeof nested.message === "string") {
+          message = nested.message;
+        } else if (typeof nested.detail === "string") {
+          message = nested.detail;
+        } else {
+          message = JSON.stringify(detail);
+        }
+      }
     } catch {
       // corpo não era JSON, mantém a mensagem genérica
     }
-    throw new Error(detail);
+    throw new Error(message);
   }
 
   if (response.status === 204) return undefined as T;
