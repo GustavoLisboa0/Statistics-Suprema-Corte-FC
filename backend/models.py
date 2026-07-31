@@ -8,6 +8,7 @@ Posicao = Literal[
     "goleiro",
     "lateral_direito",
     "lateral_esquerdo",
+    "zagueiro",
     "volante",
     "meia",
     "meia_esquerda",
