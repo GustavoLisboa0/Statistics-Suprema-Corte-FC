@@ -12,7 +12,7 @@ app = FastAPI(
 # Libera acesso do front-end local (ajuste as origens conforme necessário em produção)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://statistics-suprema-corte-fc.vercel.app/"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
