@@ -20,18 +20,21 @@ Statistics-Suprema-Corte-FC/
 │   ├── schema.sql
 │   └── migration_001_status_partidas.sql
 ├── frontend/
-│   ├── index.html
-│   ├── css/
-│   │   └── styles.css
-│   └── js/
-│       ├── api.js          # comunicação com o backend
-│       ├── ui.js            # utilitários (modal, toast, formatação)
-│       ├── jogadores.js
-│       ├── partidas.js      # inclui lançamento de estatísticas
-│       ├── dashboard.js
-│       └── app.js           # navegação e inicialização
+│   ├── src/
+│   │   ├── routes/           # páginas: dashboard (index), jogadores, partidas
+│   │   ├── components/       # UI (shadcn/ui em components/ui)
+│   │   ├── lib/
+│   │   │   ├── api.ts         # cliente HTTP para o backend
+│   │   │   └── football.ts    # dados + tradução de campos PT <-> EN
+│   │   ├── router.tsx
+│   │   └── start.ts
+│   ├── vite.config.ts
+│   └── package.json
 └── README.md
 ```
+
+Stack do frontend: TanStack Start (React 19 + Vite + SSR) + TypeScript +
+Tailwind CSS v4 + shadcn/ui. Detalhes em `frontend/README.md`.
 
 ## Setup
 
@@ -75,25 +78,20 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa automática em
 
 ### 4. Frontend
 
-SPA em HTML/CSS/JS puro (sem build step). Como ele faz `fetch` para a API,
-precisa ser servido por um servidor local (abrir o `index.html` direto com
-`file://` bloqueia as requisições por CORS).
-
 ```bash
 cd frontend
-python -m http.server 5500
+npm install
+cp .env.example .env    # ajuste VITE_API_BASE_URL se o backend não estiver em 127.0.0.1:8000
+npm run dev
 ```
 
-Depois acesse `http://127.0.0.1:5500`. Com o backend rodando em paralelo
-(`http://127.0.0.1:8000`), o app já deve carregar jogadores, partidas e o
-dashboard.
-
-Se o backend estiver em outro endereço, ajuste `API_BASE` em `frontend/js/api.js`.
+Acesse `http://localhost:3000`. Com o backend rodando em paralelo
+(`http://127.0.0.1:8000`), o app já carrega jogadores, partidas e o dashboard.
 
 ## Roadmap
 
 - [x] Backend (FastAPI + Supabase)
-- [x] Frontend (jogadores, partidas + estatísticas, dashboard)
+- [x] Frontend (jogadores, partidas + estatísticas, dashboard) — TanStack Start
 - [ ] Upload de fotos de jogadores (Supabase Storage) — v2
 - [ ] Autenticação/login para edição
 - [ ] Filtro por campeonato no dashboard
