@@ -18,7 +18,7 @@ import {
 
 
 const items = [
-  { title: "Dashboard", url: "/", icon: BarChart3 },
+  { title: "Estatísticas", url: "/", icon: BarChart3 },
   { title: "Jogadores", url: "/jogadores", icon: Users },
   { title: "Partidas", url: "/partidas", icon: CalendarDays },
 ] as const;
@@ -44,9 +44,7 @@ export function AppSidebar() {
           collapsed && "justify-center px-2",
         )}
       >
-        <span className="font-display text-2xl leading-none text-sidebar-primary">
-          SCFC
-        </span>
+        <span className="font-display text-2xl leading-none text-sidebar-primary">SCFC</span>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

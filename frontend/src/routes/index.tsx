@@ -17,15 +17,15 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-            { title: "SCFC - Estatísticas" },
+      { title: "SCFC - Estatísticas" },
       {
         name: "description",
-        content: "Artilharia, cartÃƒÂµes, desempenho do time e prÃƒÂ³ximas partidas do Suprema Corte FC.",
+        content: "Artilharia, cartões, desempenho do time e próximas partidas do Suprema Corte FC.",
       },
-            { property: "og:title", content: "SCFC - Estatísticas" },
+      { property: "og:title", content: "SCFC - Estatísticas" },
       {
         property: "og:description",
-        content: "Artilharia, cartÃƒÂµes e desempenho do Suprema Corte FC.",
+        content: "Artilharia, cartões e desempenho do Suprema Corte FC.",
       },
     ],
   }),
@@ -63,21 +63,35 @@ function StatisticsPage() {
   };
 
   const goalsByPlayer = new Map<string, number>();
-  const cardsByPlayer = new Map<string, number>();
+  const yellowCardsByPlayer = new Map<string, number>();
+  const redCardsByPlayer = new Map<string, number>();
 
   for (const stat of allStats) {
     goalsByPlayer.set(stat.player_id, (goalsByPlayer.get(stat.player_id) ?? 0) + stat.goals);
-    cardsByPlayer.set(
+    yellowCardsByPlayer.set(
       stat.player_id,
-      (cardsByPlayer.get(stat.player_id) ?? 0) + stat.yellow_cards + stat.red_cards,
+      (yellowCardsByPlayer.get(stat.player_id) ?? 0) + stat.yellow_cards,
+    );
+    redCardsByPlayer.set(
+      stat.player_id,
+      (redCardsByPlayer.get(stat.player_id) ?? 0) + stat.red_cards,
     );
   }
 
-  const top = (map: Map<string, number>) =>
-    [...map.entries()].filter(([, value]) => value > 0).sort((a, b) => b[1] - a[1])[0];
+  const topThreeScorers = [...goalsByPlayer.entries()]
+    .filter(([, value]) => value > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
 
-  const topScorer = top(goalsByPlayer);
-  const topCarded = top(cardsByPlayer);
+  const topYellowCards = [...yellowCardsByPlayer.entries()]
+    .filter(([, value]) => value > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+
+  const topRedCards = [...redCardsByPlayer.entries()]
+    .filter(([, value]) => value > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
 
   const played = allMatches.filter((match) => match.status === "realizada");
   let wins = 0;
@@ -108,23 +122,33 @@ function StatisticsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-4xl">Estatísticas</h1>
-        <p className="text-sm text-muted-foreground">VisÃ£o geral do desempenho do time</p>
+        <p className="text-sm text-muted-foreground">Visão geral do desempenho do time</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <Goal className="h-5 w-5 text-accent" />
-            <CardTitle className="text-lg">Artilheiro</CardTitle>
+            <CardTitle className="text-lg">Artilheiros</CardTitle>
           </CardHeader>
-          <CardContent>
-            {topScorer ? (
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-semibold">{nameOf(topScorer[0])}</span>
-                <span className="font-display text-4xl text-accent">{topScorer[1]}</span>
-              </div>
+          <CardContent className="space-y-3">
+            {topThreeScorers.length === 0 ? (
+              <Empty>Nenhum gol lançado ainda</Empty>
             ) : (
-              <Empty>Nenhum gol lanÃ§ado ainda</Empty>
+              topThreeScorers.map(([playerId, total], index) => (
+                <div
+                  key={playerId}
+                  className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                      {index + 1}
+                    </span>
+                    <span className="font-medium">{nameOf(playerId)}</span>
+                  </div>
+                  <span className="font-display text-2xl text-accent">{total}</span>
+                </div>
+              ))
             )}
           </CardContent>
         </Card>
@@ -132,54 +156,86 @@ function StatisticsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <ShieldAlert className="h-5 w-5 text-destructive" />
-            <CardTitle className="text-lg">Mais advertido</CardTitle>
+            <CardTitle className="text-lg">Advertidos</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                Cartões amarelos
+              </p>
+              {topYellowCards.length === 0 ? (
+                <Empty>Nenhum cartão amarelo lançado ainda</Empty>
+              ) : (
+                <div className="space-y-2">
+                  {topYellowCards.map(([playerId, total]) => (
+                    <div
+                      key={playerId}
+                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                    >
+                      <span className="font-medium">{nameOf(playerId)}</span>
+                      <Badge variant="secondary">{total}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                Cartões vermelhos
+              </p>
+              {topRedCards.length === 0 ? (
+                <Empty>Nenhum cartão vermelho lançado ainda</Empty>
+              ) : (
+                <div className="space-y-2">
+                  {topRedCards.map(([playerId, total]) => (
+                    <div
+                      key={playerId}
+                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                    >
+                      <span className="font-medium">{nameOf(playerId)}</span>
+                      <Badge variant="destructive">{total}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-2">
+            <TrendingUp className="h-5 w-5 text-accent" />
+            <CardTitle className="text-lg">Desempenho geral</CardTitle>
           </CardHeader>
           <CardContent>
-            {topCarded ? (
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-semibold">{nameOf(topCarded[0])}</span>
-                <span className="font-display text-4xl text-destructive">{topCarded[1]}</span>
-              </div>
+            {played.length === 0 ? (
+              <Empty>Nenhuma partida realizada ainda</Empty>
             ) : (
-              <Empty>Nenhum cartÃ£o lanÃ§ado ainda</Empty>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { label: "Vitórias", value: wins },
+                  { label: "Empates", value: draws },
+                  { label: "Derrotas", value: losses },
+                  { label: "Saldo de gols", value: `${goalsFor - goalsAgainst > 0 ? "+" : ""}${goalsFor - goalsAgainst}` },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-lg bg-muted p-4 text-center">
+                    <div className="font-display text-3xl">{item.value}</div>
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                      {item.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center gap-2 pb-2">
-          <TrendingUp className="h-5 w-5 text-accent" />
-          <CardTitle className="text-lg">Desempenho geral</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {played.length === 0 ? (
-            <Empty>Nenhuma partida realizada ainda</Empty>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              {[
-                { label: "VitÃ³rias", value: wins },
-                { label: "Empates", value: draws },
-                { label: "Derrotas", value: losses },
-                { label: "Gols sofridos", value: goalsAgainst },
-                { label: "Saldo de gols", value: `${goalsFor - goalsAgainst > 0 ? "+" : ""}${goalsFor - goalsAgainst}` },
-              ].map((item) => (
-                <div key={item.label} className="rounded-lg bg-muted p-4 text-center">
-                  <div className="font-display text-3xl">{item.value}</div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    {item.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">PrÃ³ximas partidas</CardTitle>
+            <CardTitle className="text-lg">Próximas partidas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {upcoming.length === 0 ? (
@@ -204,7 +260,7 @@ function StatisticsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <Award className="h-5 w-5 text-accent" />
-            <CardTitle className="text-lg">Ãšltimos resultados</CardTitle>
+            <CardTitle className="text-lg">Últimos resultados</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {recent.length === 0 ? (
@@ -220,7 +276,7 @@ function StatisticsPage() {
                     <div className="text-muted-foreground">{formatDate(match.match_date)}</div>
                   </div>
                   <span className="font-display text-2xl">
-                    {match.goals_for ?? 0} Ã— {match.goals_against ?? 0}
+                    {match.goals_for ?? 0} × {match.goals_against ?? 0}
                   </span>
                 </div>
               ))
@@ -231,6 +287,3 @@ function StatisticsPage() {
     </div>
   );
 }
-
-
-
