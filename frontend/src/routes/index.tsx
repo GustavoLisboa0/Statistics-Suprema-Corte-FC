@@ -17,26 +17,26 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-            { title: "SCFC - Estat�sticas" },
+            { title: "SCFC - Estatísticas" },
       {
         name: "description",
-        content: "Artilharia, cartÃµes, desempenho do time e prÃ³ximas partidas do Suprema Corte FC.",
+        content: "Artilharia, cartÃƒÂµes, desempenho do time e prÃƒÂ³ximas partidas do Suprema Corte FC.",
       },
-            { property: "og:title", content: "SCFC - Estat�sticas" },
+            { property: "og:title", content: "SCFC - Estatísticas" },
       {
         property: "og:description",
-        content: "Artilharia, cartÃµes e desempenho do Suprema Corte FC.",
+        content: "Artilharia, cartÃƒÂµes e desempenho do Suprema Corte FC.",
       },
     ],
   }),
-  component: Estat�sticas,
+  component: StatisticsPage,
 });
 
 function Empty({ children }: { children: string }) {
   return <p className="py-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
-function Estat�sticas() {
+function StatisticsPage() {
   const players = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
   const matches = useQuery({ queryKey: ["matches"], queryFn: fetchMatches });
   const stats = useQuery({ queryKey: ["stats"], queryFn: fetchAllStats });
@@ -107,8 +107,8 @@ function Estat�sticas() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-4xl">Estat�sticas</h1>
-        <p className="text-sm text-muted-foreground">Visão geral do desempenho do time</p>
+        <h1 className="text-4xl">Estatísticas</h1>
+        <p className="text-sm text-muted-foreground">VisÃ£o geral do desempenho do time</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -124,7 +124,7 @@ function Estat�sticas() {
                 <span className="font-display text-4xl text-accent">{topScorer[1]}</span>
               </div>
             ) : (
-              <Empty>Nenhum gol lançado ainda</Empty>
+              <Empty>Nenhum gol lanÃ§ado ainda</Empty>
             )}
           </CardContent>
         </Card>
@@ -141,7 +141,7 @@ function Estat�sticas() {
                 <span className="font-display text-4xl text-destructive">{topCarded[1]}</span>
               </div>
             ) : (
-              <Empty>Nenhum cartão lançado ainda</Empty>
+              <Empty>Nenhum cartÃ£o lanÃ§ado ainda</Empty>
             )}
           </CardContent>
         </Card>
@@ -158,7 +158,7 @@ function Estat�sticas() {
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
               {[
-                { label: "Vitórias", value: wins },
+                { label: "VitÃ³rias", value: wins },
                 { label: "Empates", value: draws },
                 { label: "Derrotas", value: losses },
                 { label: "Gols sofridos", value: goalsAgainst },
@@ -179,7 +179,7 @@ function Estat�sticas() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-lg">Próximas partidas</CardTitle>
+            <CardTitle className="text-lg">PrÃ³ximas partidas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {upcoming.length === 0 ? (
@@ -204,7 +204,7 @@ function Estat�sticas() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <Award className="h-5 w-5 text-accent" />
-            <CardTitle className="text-lg">Últimos resultados</CardTitle>
+            <CardTitle className="text-lg">Ãšltimos resultados</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {recent.length === 0 ? (
@@ -220,7 +220,7 @@ function Estat�sticas() {
                     <div className="text-muted-foreground">{formatDate(match.match_date)}</div>
                   </div>
                   <span className="font-display text-2xl">
-                    {match.goals_for ?? 0} × {match.goals_against ?? 0}
+                    {match.goals_for ?? 0} Ã— {match.goals_against ?? 0}
                   </span>
                 </div>
               ))
