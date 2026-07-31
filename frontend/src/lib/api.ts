@@ -1,5 +1,10 @@
-// Ajuste em .env: VITE_API_BASE_URL=http://127.0.0.1:8000
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
+
+if (!API_BASE) {
+  throw new Error(
+    "VITE_API_BASE_URL nao configurado. Defina a URL publica do backend no .env local e na Vercel.",
+  );
+}
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {

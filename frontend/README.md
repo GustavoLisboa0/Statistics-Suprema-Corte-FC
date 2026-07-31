@@ -1,12 +1,10 @@
-    # Suprema Corte FC — Frontend
+# Suprema Corte FC - Frontend
 
-Interface web do sistema de estatísticas do Suprema Corte FC.
+Interface web do sistema de estatisticas do Suprema Corte FC.
 
-Stack: **TanStack Start** (React 19 + Vite + SSR), **TypeScript**, **Tailwind CSS v4**, **shadcn/ui**.
+Stack: TanStack Start, React 19, Vite, SSR, TypeScript, Tailwind CSS v4 e shadcn/ui.
 
-> Este projeto foi originalmente gerado com o Lovable e depois desacoplado dele:
-> removemos toda a integração direta com Supabase/telemetria do editor e
-> conectamos a interface ao nosso backend FastAPI (pasta `../backend`).
+Este projeto foi desacoplado do editor original e conectado ao backend FastAPI em `../backend`.
 
 ## Setup
 
@@ -15,15 +13,15 @@ npm install
 cp .env.example .env
 ```
 
-Edite o `.env` se o backend não estiver em `http://127.0.0.1:8000`:
+Edite o `.env` para apontar para a URL publica do backend:
 
+```bash
+VITE_API_BASE_URL=https://seu-backend.onrender.com
 ```
-VITE_API_BASE_URL=http://127.0.0.1:8000
-```
 
-## Rodando
+## Rodando localmente
 
-Com o backend FastAPI já rodando (`../backend`, veja o README principal):
+Com o backend FastAPI rodando em paralelo:
 
 ```bash
 npm run dev
@@ -31,33 +29,27 @@ npm run dev
 
 Abre em `http://localhost:3000`.
 
-## Build de produção
+## Deploy
 
-```bash
-npm run build
-npm run start
-```
+Na Vercel, configure a variavel de ambiente `VITE_API_BASE_URL` com a URL publica do backend FastAPI. Sem isso, o front nao encontra os dados.
 
 ## Estrutura
 
-```
+```text
 frontend/
 ├── src/
-│   ├── routes/          # páginas (index = dashboard, jogadores, partidas)
-│   ├── components/      # componentes de UI (shadcn/ui em components/ui)
+│   ├── routes/       # paginas
+│   ├── components/   # componentes de UI
 │   ├── lib/
-│   │   ├── api.ts        # cliente HTTP genérico para o FastAPI
-│   │   └── football.ts   # funções de dados + tradução de campos (PT <-> EN)
+│   │   ├── api.ts    # cliente HTTP para o backend
+│   │   └── football.ts
 │   ├── router.tsx
 │   └── start.ts
 ├── vite.config.ts
 └── package.json
 ```
 
-## Sobre a camada de dados
+## Camada de dados
 
-O backend (FastAPI + Supabase) usa nomes em português (`jogadores`, `partidas`,
-`estatisticas`). A interface, por herança do que veio do Lovable, usa tipos em
-inglês (`Player`, `Match`, `MatchStat`). Toda a tradução entre os dois fica
-centralizada em `src/lib/football.ts` — as telas (`routes/*.tsx`) não sabem
-nada sobre o formato do backend.
+O backend usa nomes em portugues como `jogadores`, `partidas` e `estatisticas`.
+O frontend traduz esses formatos em `Player`, `Match` e `MatchStat` dentro de `src/lib/football.ts`.
