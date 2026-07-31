@@ -17,26 +17,26 @@ import {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Dashboard â€” Suprema Corte FC" },
+            { title: "SCFC - Estat�sticas" },
       {
         name: "description",
         content: "Artilharia, cartÃµes, desempenho do time e prÃ³ximas partidas do Suprema Corte FC.",
       },
-      { property: "og:title", content: "Dashboard â€” Suprema Corte FC" },
+            { property: "og:title", content: "SCFC - Estat�sticas" },
       {
         property: "og:description",
         content: "Artilharia, cartÃµes e desempenho do Suprema Corte FC.",
       },
     ],
   }),
-  component: Dashboard,
+  component: Estat�sticas,
 });
 
 function Empty({ children }: { children: string }) {
   return <p className="py-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
-function Dashboard() {
+function Estat�sticas() {
   const players = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
   const matches = useQuery({ queryKey: ["matches"], queryFn: fetchMatches });
   const stats = useQuery({ queryKey: ["stats"], queryFn: fetchAllStats });
@@ -107,7 +107,7 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-4xl">Dashboard</h1>
+        <h1 className="text-4xl">Estat�sticas</h1>
         <p className="text-sm text-muted-foreground">Visão geral do desempenho do time</p>
       </div>
 
@@ -231,3 +231,6 @@ function Dashboard() {
     </div>
   );
 }
+
+
+

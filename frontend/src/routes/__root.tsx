@@ -79,13 +79,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Suprema Corte FC — Estatísticas" },
+      { title: "SCFC" },
       {
         name: "description",
         content:
           "Sistema de estatísticas do Suprema Corte FC: elenco, partidas e desempenho do time.",
       },
-      { property: "og:title", content: "Suprema Corte FC — Estatísticas" },
+      { property: "og:title", content: "SCFC" },
       {
         property: "og:description",
         content: "Elenco, partidas e desempenho do Suprema Corte FC.",
@@ -211,3 +211,4 @@ function RootComponent() {
     </QueryClientProvider>
   );
 }
+

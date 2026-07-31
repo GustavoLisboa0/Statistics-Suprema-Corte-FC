@@ -52,12 +52,12 @@ import {
 export const Route = createFileRoute("/jogadores")({
   head: () => ({
     meta: [
-      { title: "Jogadores â€” Suprema Corte FC" },
+            { title: "SCFC - Jogadores" },
       {
         name: "description",
         content: "Elenco do Suprema Corte FC: cadastro, posiÃ§Ãµes e situaÃ§Ã£o de cada jogador.",
       },
-      { property: "og:title", content: "Jogadores â€” Suprema Corte FC" },
+            { property: "og:title", content: "SCFC - Jogadores" },
       { property: "og:description", content: "Elenco completo do Suprema Corte FC." },
     ],
   }),
@@ -402,3 +402,6 @@ function PlayersPage() {
     </div>
   );
 }
+
+
+

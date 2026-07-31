@@ -60,12 +60,12 @@ import {
 export const Route = createFileRoute("/partidas")({
   head: () => ({
     meta: [
-      { title: "Partidas â€” Suprema Corte FC" },
+            { title: "SCFC - Partidas" },
       {
         name: "description",
         content: "CalendÃ¡rio, resultados e estatÃ­sticas por partida do Suprema Corte FC.",
       },
-      { property: "og:title", content: "Partidas â€” Suprema Corte FC" },
+            { property: "og:title", content: "SCFC - Partidas" },
       { property: "og:description", content: "CalendÃ¡rio e resultados do Suprema Corte FC." },
     ],
   }),
@@ -164,7 +164,7 @@ function MatchesPage() {
     }
 
     setRows(next);
-  }, [existingStats, editing, activePlayers]);
+  }, [existingStats, editing, players]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -563,3 +563,6 @@ function MatchesPage() {
     </div>
   );
 }
+
+
+
