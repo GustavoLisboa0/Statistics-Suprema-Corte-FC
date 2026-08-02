@@ -156,7 +156,7 @@ function StatisticsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <ShieldAlert className="h-5 w-5 text-destructive" />
-            <CardTitle className="text-lg">Advertidos</CardTitle>
+            <CardTitle className="text-lg">Advertências</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
