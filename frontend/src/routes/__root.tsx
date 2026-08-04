@@ -80,13 +80,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Suprema Corte FC — Estatísticas" },
+      { title: "SCFC - Estatísticas" },
       {
         name: "description",
         content:
           "Sistema de estatísticas do Suprema Corte FC: elenco, partidas e desempenho do time.",
       },
-      { property: "og:title", content: "Suprema Corte FC — Estatísticas" },
+      { property: "og:title", content: "SCFC - Estatísticas" },
       {
         property: "og:description",
         content: "Elenco, partidas e desempenho do Suprema Corte FC.",
@@ -104,7 +104,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&display=swap",
       },
-      { rel: "icon", href: "/iconpage.svg", type: "image/x-icon" },
+      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
   shellComponent: RootShell,
@@ -204,7 +204,7 @@ function RootComponent() {
         <div className="flex min-h-screen w-full">
           <AppSidebar />
           <div className="flex flex-1 flex-col">
-            <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-card/80 px-4 backdrop-blur">
+            <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-header/95 px-4 text-header-foreground backdrop-blur">
               <SidebarTrigger />
               <span className="font-display text-xl tracking-wide">Suprema Corte FC</span>
               <div className="ml-auto flex items-center gap-2">

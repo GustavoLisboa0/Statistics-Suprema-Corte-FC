@@ -66,12 +66,12 @@ export const Route = createFileRoute("/partidas")({
   },
   head: () => ({
     meta: [
-      { title: "Partidas — Suprema Corte FC" },
+      { title: "SCFC - Partidas" },
       {
         name: "description",
         content: "Calendário, resultados e estatísticas por partida do Suprema Corte FC.",
       },
-      { property: "og:title", content: "Partidas — Suprema Corte FC" },
+      { property: "og:title", content: "SCFC - Partidas" },
       { property: "og:description", content: "Calendário e resultados do Suprema Corte FC." },
     ],
   }),
@@ -429,28 +429,33 @@ function MatchesPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label htmlFor="gf">Suprema Corte</Label>
-                <Input
-                  id="gf"
-                  type="number"
-                  min={0}
-                  value={form.goals_for}
-                  onChange={(e) => setForm({ ...form, goals_for: e.target.value })}
-                />
+            {form.status === "realizada" && (
+              <div className="sm:col-span-2">
+                <Label className="mb-2 block">Placar Final</Label>
+                <div className="grid grid-cols-2 gap-2 rounded-lg border p-3">
+                  <div>
+                    <Label htmlFor="gf">Suprema Corte</Label>
+                    <Input
+                      id="gf"
+                      type="number"
+                      min={0}
+                      value={form.goals_for}
+                      onChange={(e) => setForm({ ...form, goals_for: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="ga">Adversário</Label>
+                    <Input
+                      id="ga"
+                      type="number"
+                      min={0}
+                      value={form.goals_against}
+                      onChange={(e) => setForm({ ...form, goals_against: e.target.value })}
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <Label htmlFor="ga">Adversário</Label>
-                <Input
-                  id="ga"
-                  type="number"
-                  min={0}
-                  value={form.goals_against}
-                  onChange={(e) => setForm({ ...form, goals_against: e.target.value })}
-                />
-              </div>
-            </div>
+            )}
             <div className="sm:col-span-2">
               <Label htmlFor="notes">Observações</Label>
               <Textarea

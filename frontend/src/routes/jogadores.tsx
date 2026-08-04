@@ -9,6 +9,9 @@ import {
   POSITIONS,
   POSITION_LABELS,
   POSITION_ABBR,
+  CATEGORIES,
+  CATEGORY_LABELS,
+  POSITION_CATEGORY,
   fetchPlayers,
   createPlayer,
   updatePlayer,
@@ -58,12 +61,12 @@ export const Route = createFileRoute("/jogadores")({
   },
   head: () => ({
     meta: [
-      { title: "Jogadores — Suprema Corte FC" },
+      { title: "SCFC - Jogadores" },
       {
         name: "description",
         content: "Elenco do Suprema Corte FC: cadastro, posições e situação de cada jogador.",
       },
-      { property: "og:title", content: "Jogadores — Suprema Corte FC" },
+      { property: "og:title", content: "SCFC - Jogadores" },
       { property: "og:description", content: "Elenco completo do Suprema Corte FC." },
     ],
   }),
@@ -117,8 +120,12 @@ function PlayerCard({
             <div className="truncate text-xs text-muted-foreground">"{player.nickname}"</div>
           ) : null}
           <div className="mt-1 flex flex-wrap gap-1">
-            {player.positions.map((pos) => (
-              <Badge key={pos} variant="secondary" className="px-1.5 text-[10px]">
+            {player.positions.map((pos, i) => (
+              <Badge
+                key={pos}
+                variant={i === 0 ? "default" : "outline"}
+                className={`px-1.5 text-[10px] ${i === 0 ? "" : "border-accent bg-accent/15 text-accent-foreground"}`}
+              >
                 {POSITION_ABBR[pos]}
               </Badge>
             ))}
@@ -215,11 +222,11 @@ function PlayersPage() {
     return p.name.toLowerCase().includes(q) || (p.nickname ?? "").toLowerCase().includes(q);
   });
 
-  const groups = POSITIONS.map((pos) => ({
-    position: pos,
-    players: players.filter((p) => p.positions.includes(pos)),
+  const groups = CATEGORIES.map((cat) => ({
+    category: cat,
+    players: players.filter((p) => POSITION_CATEGORY[p.positions[0]] === cat),
   }))
-    .filter((g) => positionFilter === "todas" || g.position === positionFilter)
+    .filter((g) => positionFilter === "todas" || g.category === positionFilter)
     .filter((g) => g.players.length > 0);
 
   const submit = () => {
@@ -253,9 +260,9 @@ function PlayersPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todas">Todas as posições</SelectItem>
-            {POSITIONS.map((p) => (
-              <SelectItem key={p} value={p}>
-                {POSITION_LABELS[p]}
+            {CATEGORIES.map((c) => (
+              <SelectItem key={c} value={c}>
+                {CATEGORY_LABELS[c]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -283,9 +290,9 @@ function PlayersPage() {
       ) : (
         <div className="space-y-6">
           {groups.map((g) => (
-            <div key={g.position}>
+            <div key={g.category}>
               <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {POSITION_LABELS[g.position]}
+                {CATEGORY_LABELS[g.category]}
                 <Badge variant="outline" className="font-normal">
                   {g.players.length}
                 </Badge>
@@ -342,11 +349,15 @@ function PlayersPage() {
               />
             </div>
             <div className="sm:col-span-2">
-              <Label>Posições * (selecione uma ou mais)</Label>
+              <Label>Posições * (a primeira selecionada vira a posição principal)</Label>
               <ToggleGroup
                 type="multiple"
                 value={form.positions}
-                onValueChange={(v) => setForm({ ...form, positions: v as Position[] })}
+                onValueChange={(v) => {
+                  const mantidas = form.positions.filter((p) => v.includes(p));
+                  const novas = v.filter((p) => !form.positions.includes(p as Position)) as Position[];
+                  setForm({ ...form, positions: [...mantidas, ...novas] });
+                }}
                 className="flex flex-wrap justify-start gap-1.5"
               >
                 {POSITIONS.map((pos) => (
@@ -362,6 +373,11 @@ function PlayersPage() {
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
+              {form.positions.length > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Principal: <span className="font-medium text-foreground">{POSITION_LABELS[form.positions[0]]}</span>
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="birth">Data de nascimento</Label>

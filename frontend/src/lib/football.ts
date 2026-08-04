@@ -5,9 +5,9 @@ import { api } from "@/lib/api";
 // ---------------------------------------------------------------------------
 export const POSITIONS = [
   "goleiro",
+  "zagueiro",
   "lateral_direito",
   "lateral_esquerdo",
-  "zagueiro",
   "volante",
   "meia",
   "meia_esquerda",
@@ -19,13 +19,13 @@ export const POSITIONS = [
   "centro_avante",
 ] as const;
 
-export type Position = (typeof POSITIONS)[number] | "zagueiro" | "lateral" | "meio";
+export type Position = (typeof POSITIONS)[number];
 
 export const POSITION_LABELS: Record<Position, string> = {
   goleiro: "Goleiro",
+  zagueiro: "Zagueiro",
   lateral_direito: "Lateral Direito",
   lateral_esquerdo: "Lateral Esquerdo",
-  zagueiro: "Zagueiro",
   volante: "Volante",
   meia: "Meia",
   meia_esquerda: "Meia Esquerda",
@@ -35,16 +35,13 @@ export const POSITION_LABELS: Record<Position, string> = {
   ponta_esquerda: "Ponta Esquerda",
   ponta_direita: "Ponta Direita",
   centro_avante: "Centro Avante",
-  zagueiro: "Zagueiro",
-  lateral: "Lateral",
-  meio: "Meio",
 };
 
 export const POSITION_ABBR: Record<Position, string> = {
   goleiro: "GOL",
+  zagueiro: "ZAG",
   lateral_direito: "LD",
   lateral_esquerdo: "LE",
-  zagueiro: "ZAG",
   volante: "VOL",
   meia: "MEI",
   meia_esquerda: "ME",
@@ -54,9 +51,33 @@ export const POSITION_ABBR: Record<Position, string> = {
   ponta_esquerda: "PE",
   ponta_direita: "PD",
   centro_avante: "CA",
-  zagueiro: "ZAG",
-  lateral: "LAT",
-  meio: "MEI",
+};
+
+// Categorias "macro" usadas pra agrupar/filtrar o painel de jogadores
+export const CATEGORIES = ["goleiro", "defesa", "meio", "ataque"] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+export const CATEGORY_LABELS: Record<Category, string> = {
+  goleiro: "Goleiro",
+  defesa: "Defesa",
+  meio: "Meio Campo",
+  ataque: "Ataque",
+};
+
+export const POSITION_CATEGORY: Record<Position, Category> = {
+  goleiro: "goleiro",
+  zagueiro: "defesa",
+  lateral_direito: "defesa",
+  lateral_esquerdo: "defesa",
+  volante: "meio",
+  meia: "meio",
+  meia_esquerda: "meio",
+  meia_direita: "meio",
+  meia_atacante: "meio",
+  atacante: "ataque",
+  ponta_esquerda: "ataque",
+  ponta_direita: "ataque",
+  centro_avante: "ataque",
 };
 
 // ---------------------------------------------------------------------------
@@ -71,20 +92,16 @@ export const STATUS_LABELS: Record<Status, string> = {
   cancelada: "Cancelada",
 };
 
-export type Kind = "campeonato" | "amistoso";
-
 // ---------------------------------------------------------------------------
-// Local e mando
+// Local (campo físico) e mando de campo
 // ---------------------------------------------------------------------------
 export const VENUES = ["trieste", "iguacu", "outro"] as const;
-export type Venue = (typeof VENUES)[number] | "casa" | "fora";
+export type Venue = (typeof VENUES)[number];
 
 export const VENUE_LABELS: Record<Venue, string> = {
   trieste: "Trieste",
   iguacu: "Iguaçu",
   outro: "Outro campo",
-  casa: "Casa",
-  fora: "Fora",
 };
 
 export const MANDOS = ["mandante", "visitante"] as const;
@@ -95,8 +112,11 @@ export const MANDO_LABELS: Record<Mando, string> = {
   visitante: "Visitante",
 };
 
+export type Kind = "campeonato" | "amistoso";
+
 export const TEAM_NAME = "Suprema Corte FC";
 
+/** Título padrão de exibição de uma partida: "Suprema Corte FC × Adversário" */
 export function matchTitle(match: { opponent: string }): string {
   return `${TEAM_NAME} × ${match.opponent}`;
 }
@@ -108,21 +128,13 @@ export type Player = {
   id: string;
   name: string;
   nickname: string | null;
-  position: Position;
   positions: Position[];
   shirt_number: number | null;
   birth_date: string | null;
   active: boolean;
 };
 
-export type PlayerInput = {
-  name: string;
-  nickname: string | null;
-  positions: Position[];
-  shirt_number: number | null;
-  birth_date: string | null;
-  active: boolean;
-};
+export type PlayerInput = Omit<Player, "id">;
 
 export type Match = {
   id: string;
@@ -157,14 +169,13 @@ export type MatchStat = {
 export type MatchStatInput = Omit<MatchStat, "id" | "match_id" | "player_id">;
 
 // ---------------------------------------------------------------------------
-// Formatos crus como o backend FastAPI devolve
+// Formatos crus como o backend FastAPI devolve (nomes em português)
 // ---------------------------------------------------------------------------
 type JogadorApi = {
   id: string;
   nome: string;
   apelido: string | null;
-  posicao?: Position;
-  posicoes?: Position[];
+  posicoes: Position[];
   numero_camisa: number | null;
   data_nascimento: string | null;
   ativo: boolean;
@@ -175,8 +186,8 @@ type PartidaApi = {
   data: string;
   adversario: string;
   local: Venue;
-  local_detalhe?: string | null;
-  mando?: Mando;
+  local_detalhe: string | null;
+  mando: Mando;
   status: Status;
   placar_suprema: number;
   placar_adversario: number;
@@ -199,29 +210,17 @@ type EstatisticaApi = {
 };
 
 // ---------------------------------------------------------------------------
-// Tradução: API <-> tipos usados pelas telas
+// Tradução: API (português) <-> tipos usados pelas telas (inglês)
 // ---------------------------------------------------------------------------
-function normalizePositions(player: JogadorApi): Position[] {
-  if (player.posicoes && player.posicoes.length > 0) {
-    return player.posicoes;
-  }
-  if (player.posicao) {
-    return [player.posicao];
-  }
-  return ["goleiro"];
-}
-
-function toPlayer(player: JogadorApi): Player {
-  const positions = normalizePositions(player);
+function toPlayer(j: JogadorApi): Player {
   return {
-    id: player.id,
-    name: player.nome,
-    nickname: player.apelido,
-    position: positions[0],
-    positions,
-    shirt_number: player.numero_camisa,
-    birth_date: player.data_nascimento,
-    active: player.ativo,
+    id: j.id,
+    name: j.nome,
+    nickname: j.apelido,
+    positions: j.posicoes,
+    shirt_number: j.numero_camisa,
+    birth_date: j.data_nascimento,
+    active: j.ativo,
   };
 }
 
@@ -229,8 +228,6 @@ function toJogadorPayload(input: PlayerInput) {
   return {
     nome: input.name,
     apelido: input.nickname,
-    position: input.positions[0],
-    posicao: input.positions[0],
     posicoes: input.positions,
     numero_camisa: input.shirt_number,
     data_nascimento: input.birth_date,
@@ -238,23 +235,20 @@ function toJogadorPayload(input: PlayerInput) {
   };
 }
 
-function toMatch(match: PartidaApi): Match {
-  const kind: Kind = match.campeonato_ou_amistoso === "amistoso" ? "amistoso" : "campeonato";
-  const mando: Mando =
-    match.mando ?? (match.local === "fora" ? "visitante" : "mandante");
-
+function toMatch(p: PartidaApi): Match {
+  const kind: Kind = p.campeonato_ou_amistoso === "amistoso" ? "amistoso" : "campeonato";
   return {
-    id: match.id,
-    match_date: match.data,
-    opponent: match.adversario,
-    venue: match.local,
-    venue_detail: match.local_detalhe ?? null,
-    mando,
-    status: match.status,
+    id: p.id,
+    match_date: p.data,
+    opponent: p.adversario,
+    venue: p.local,
+    venue_detail: p.local_detalhe,
+    mando: p.mando,
+    status: p.status,
     kind,
-    notes: match.observacoes,
-    goals_for: match.status === "realizada" ? match.placar_suprema : null,
-    goals_against: match.status === "realizada" ? match.placar_adversario : null,
+    notes: p.observacoes,
+    goals_for: p.status === "realizada" ? p.placar_suprema : null,
+    goals_against: p.status === "realizada" ? p.placar_adversario : null,
   };
 }
 
@@ -263,7 +257,7 @@ function toPartidaPayload(input: MatchInput) {
     data: input.match_date,
     adversario: input.opponent,
     local: input.venue,
-    local_detalhe: input.venue_detail,
+    local_detalhe: input.venue === "outro" ? input.venue_detail : null,
     mando: input.mando,
     status: input.status,
     campeonato_ou_amistoso: input.kind,
@@ -273,19 +267,19 @@ function toPartidaPayload(input: MatchInput) {
   };
 }
 
-function toMatchStat(stat: EstatisticaApi): MatchStat {
+function toMatchStat(e: EstatisticaApi): MatchStat {
   return {
-    id: stat.id,
-    match_id: stat.partida_id,
-    player_id: stat.jogador_id,
-    starter: stat.titular,
-    minutes: stat.minutos_jogados,
-    goals: stat.gols,
-    assists: stat.assistencias,
-    yellow_cards: stat.cartoes_amarelos,
-    red_cards: stat.cartoes_vermelhos,
-    saves: stat.defesas ?? 0,
-    goals_conceded: stat.gols_sofridos ?? 0,
+    id: e.id,
+    match_id: e.partida_id,
+    player_id: e.jogador_id,
+    starter: e.titular,
+    minutes: e.minutos_jogados,
+    goals: e.gols,
+    assists: e.assistencias,
+    yellow_cards: e.cartoes_amarelos,
+    red_cards: e.cartoes_vermelhos,
+    saves: e.defesas ?? 0,
+    goals_conceded: e.gols_sofridos ?? 0,
   };
 }
 
@@ -342,25 +336,30 @@ export async function fetchAllStats(): Promise<MatchStat[]> {
   return data.map(toMatchStat);
 }
 
+/**
+ * Salva (cria ou atualiza) as estatísticas de vários jogadores para uma partida.
+ * `existing` é a lista já carregada via fetchMatchStats — usada pra saber se
+ * cada jogador já tem uma linha (PATCH) ou não (POST) nessa partida.
+ */
 export async function upsertMatchStats(
   matchId: string,
   rows: Record<string, MatchStatInput>,
   existing: MatchStat[],
 ): Promise<void> {
-  const byPlayer = new Map(existing.map((stat) => [stat.player_id, stat]));
+  const byPlayer = new Map(existing.map((s) => [s.player_id, s]));
 
-  for (const [playerId, row] of Object.entries(rows)) {
+  for (const [playerId, r] of Object.entries(rows)) {
     const payload = {
       jogador_id: playerId,
       partida_id: matchId,
-      titular: row.starter,
-      minutos_jogados: row.minutes,
-      gols: row.goals,
-      assistencias: row.assists,
-      cartoes_amarelos: row.yellow_cards,
-      cartoes_vermelhos: row.red_cards,
-      defesas: row.saves,
-      gols_sofridos: row.goals_conceded,
+      titular: r.starter,
+      minutos_jogados: r.minutes,
+      gols: r.goals,
+      assistencias: r.assists,
+      cartoes_amarelos: r.yellow_cards,
+      cartoes_vermelhos: r.red_cards,
+      defesas: r.saves,
+      gols_sofridos: r.goals_conceded,
     };
 
     const found = byPlayer.get(playerId);
@@ -374,6 +373,6 @@ export async function upsertMatchStats(
 
 export function formatDate(value: string | null) {
   if (!value) return "—";
-  const [year, month, day] = value.split("-");
-  return `${day}/${month}/${year}`;
+  const [y, m, d] = value.split("-");
+  return `${d}/${m}/${y}`;
 }

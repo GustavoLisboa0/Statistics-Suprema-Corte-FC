@@ -20,7 +20,7 @@ import {
 
 
 const items = [
-  { title: "Dashboard", url: "/", icon: BarChart3 },
+  { title: "Estatísticas", url: "/", icon: BarChart3 },
   { title: "Jogadores", url: "/jogadores", icon: Users },
   { title: "Partidas", url: "/partidas", icon: CalendarDays },
 ] as const;

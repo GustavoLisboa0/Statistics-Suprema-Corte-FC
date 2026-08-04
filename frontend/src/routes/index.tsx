@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Award, Goal, ShieldAlert, TrendingUp } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { fetchAllStats, fetchMatches, fetchPlayers, formatDate, matchTitle, MANDO_LABELS } from "@/lib/football";
 
 export const Route = createFileRoute("/")({
@@ -16,12 +16,12 @@ export const Route = createFileRoute("/")({
   },
   head: () => ({
     meta: [
-      { title: "Dashboard — Suprema Corte FC" },
+      { title: "SCFC - Estatísticas" },
       {
         name: "description",
         content: "Artilharia, cartões, desempenho do time e próximas partidas do Suprema Corte FC.",
       },
-      { property: "og:title", content: "Dashboard — Suprema Corte FC" },
+      { property: "og:title", content: "SCFC - Estatísticas" },
       {
         property: "og:description",
         content: "Artilharia, cartões e desempenho do Suprema Corte FC.",
@@ -61,19 +61,22 @@ function Dashboard() {
   };
 
   const goalsByPlayer = new Map<string, number>();
-  const cardsByPlayer = new Map<string, number>();
+  const yellowByPlayer = new Map<string, number>();
+  const redByPlayer = new Map<string, number>();
   for (const s of allStats) {
     goalsByPlayer.set(s.player_id, (goalsByPlayer.get(s.player_id) ?? 0) + s.goals);
-    cardsByPlayer.set(
-      s.player_id,
-      (cardsByPlayer.get(s.player_id) ?? 0) + s.yellow_cards + s.red_cards,
-    );
+    yellowByPlayer.set(s.player_id, (yellowByPlayer.get(s.player_id) ?? 0) + s.yellow_cards);
+    redByPlayer.set(s.player_id, (redByPlayer.get(s.player_id) ?? 0) + s.red_cards);
   }
-  const top = (map: Map<string, number>) =>
-    [...map.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])[0];
+  const top3 = (map: Map<string, number>) =>
+    [...map.entries()]
+      .filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
 
-  const topScorer = top(goalsByPlayer);
-  const topCarded = top(cardsByPlayer);
+  const topScorers = top3(goalsByPlayer);
+  const topYellow = top3(yellowByPlayer);
+  const topRed = top3(redByPlayer);
 
   const played = allMatches.filter((m) => m.status === "realizada");
   let wins = 0,
@@ -101,41 +104,83 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-4xl font-bold">Dashboard</h1>
+        <h1 className="text-4xl">Estatísticas</h1>
         <p className="text-sm text-muted-foreground">Visão geral do desempenho do time</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <Goal className="h-5 w-5 text-accent" />
-            <CardTitle className="text-lg">Artilheiro</CardTitle>
+            <CardTitle className="text-lg">Artilheiros</CardTitle>
           </CardHeader>
           <CardContent>
-            {topScorer ? (
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-semibold">{nameOf(topScorer[0])}</span>
-                <span className="font-display text-4xl text-accent">{topScorer[1]}</span>
-              </div>
-            ) : (
+            {topScorers.length === 0 ? (
               <Empty>Nenhum gol lançado ainda</Empty>
+            ) : (
+              <ul className="space-y-2">
+                {topScorers.map(([id, valor], i) => (
+                  <li key={id} className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 font-medium">
+                      <span className="text-xs text-muted-foreground">{i + 1}º</span>
+                      {nameOf(id)}
+                    </span>
+                    <span className="font-display text-2xl text-accent">{valor}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-yellow-400 bg-yellow-400 text-yellow-950">
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
-            <ShieldAlert className="h-5 w-5 text-destructive" />
-            <CardTitle className="text-lg">Mais advertido</CardTitle>
+            <ShieldAlert className="h-5 w-5" />
+            <CardTitle className="text-lg text-yellow-950">Cartões amarelos</CardTitle>
           </CardHeader>
           <CardContent>
-            {topCarded ? (
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-semibold">{nameOf(topCarded[0])}</span>
-                <span className="font-display text-4xl text-destructive">{topCarded[1]}</span>
-              </div>
+            {topYellow.length === 0 ? (
+              <p className="py-6 text-center text-sm text-yellow-900/70">
+                Nenhum cartão amarelo lançado ainda
+              </p>
             ) : (
-              <Empty>Nenhum cartão lançado ainda</Empty>
+              <ul className="space-y-2">
+                {topYellow.map(([id, valor], i) => (
+                  <li key={id} className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 font-medium">
+                      <span className="text-xs text-yellow-900/70">{i + 1}º</span>
+                      {nameOf(id)}
+                    </span>
+                    <span className="font-display text-2xl">{valor}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-red-600 bg-red-600 text-white">
+          <CardHeader className="flex flex-row items-center gap-2 pb-2">
+            <ShieldAlert className="h-5 w-5" />
+            <CardTitle className="text-lg text-white">Cartões vermelhos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {topRed.length === 0 ? (
+              <p className="py-6 text-center text-sm text-white/75">
+                Nenhum cartão vermelho lançado ainda
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {topRed.map(([id, valor], i) => (
+                  <li key={id} className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 font-medium">
+                      <span className="text-xs text-white/75">{i + 1}º</span>
+                      {nameOf(id)}
+                    </span>
+                    <span className="font-display text-2xl">{valor}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </CardContent>
         </Card>
@@ -159,7 +204,7 @@ function Dashboard() {
                 { label: "Saldo de gols", value: `${gf - ga > 0 ? "+" : ""}${gf - ga}` },
               ].map((item) => (
                 <div key={item.label} className="rounded-lg bg-muted p-4 text-center">
-                  <div className="font-display text-3xl font-bold">{item.value}</div>
+                  <div className="font-display text-3xl">{item.value}</div>
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">
                     {item.label}
                   </div>
@@ -213,7 +258,7 @@ function Dashboard() {
                     <div className="font-semibold">{matchTitle(m)}</div>
                     <div className="text-muted-foreground">{formatDate(m.match_date)}</div>
                   </div>
-                  <span className="font-display text-2xl font-semibold">
+                  <span className="font-display text-2xl">
                     {m.goals_for ?? 0} × {m.goals_against ?? 0}
                   </span>
                 </div>
