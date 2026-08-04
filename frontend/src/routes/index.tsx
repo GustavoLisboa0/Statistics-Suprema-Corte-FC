@@ -126,7 +126,61 @@ function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <ShieldAlert className="h-5 w-5 text-destructive" />
+<<<<<<< HEAD
             <CardTitle className="text-lg">Mais advertido</CardTitle>
+=======
+            <CardTitle className="text-lg">Advertências</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                Cartões amarelos
+              </p>
+              {topYellowCards.length === 0 ? (
+                <Empty>Nenhum cartão amarelo lançado ainda</Empty>
+              ) : (
+                <div className="space-y-2">
+                  {topYellowCards.map(([playerId, total]) => (
+                    <div
+                      key={playerId}
+                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                    >
+                      <span className="font-medium">{nameOf(playerId)}</span>
+                      <Badge className="bg-amber-500 text-white hover:bg-amber-500">{total}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                Cartões vermelhos
+              </p>
+              {topRedCards.length === 0 ? (
+                <Empty>Nenhum cartão vermelho lançado ainda</Empty>
+              ) : (
+                <div className="space-y-2">
+                  {topRedCards.map(([playerId, total]) => (
+                    <div
+                      key={playerId}
+                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                    >
+                      <span className="font-medium">{nameOf(playerId)}</span>
+                      <Badge variant="destructive">{total}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-2">
+            <TrendingUp className="h-5 w-5 text-accent" />
+            <CardTitle className="text-lg">Desempenho geral</CardTitle>
+>>>>>>> dbbfabeef72627ee671c776e445cf46f145d0e5a
           </CardHeader>
           <CardContent>
             {topCarded ? (
