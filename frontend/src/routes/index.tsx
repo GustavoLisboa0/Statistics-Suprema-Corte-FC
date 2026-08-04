@@ -108,7 +108,7 @@ function Dashboard() {
         <p className="text-sm text-muted-foreground">Visão geral do desempenho do time</p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <Goal className="h-5 w-5 text-accent" />
@@ -133,51 +133,40 @@ function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="border-yellow-400 bg-yellow-400 text-yellow-950">
+        <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
-            <ShieldAlert className="h-5 w-5" />
-            <CardTitle className="text-lg text-yellow-950">Cartões amarelos</CardTitle>
+            <ShieldAlert className="h-5 w-5 text-accent" />
+            <CardTitle className="text-lg">Cartões</CardTitle>
           </CardHeader>
           <CardContent>
-            {topYellow.length === 0 ? (
-              <p className="py-6 text-center text-sm text-yellow-900/70">
-                Nenhum cartão amarelo lançado ainda
-              </p>
+            {topYellow.length === 0 && topRed.length === 0 ? (
+              <Empty>Nenhum cartão lançado ainda</Empty>
             ) : (
               <ul className="space-y-2">
                 {topYellow.map(([id, valor], i) => (
-                  <li key={id} className="flex items-center justify-between">
+                  <li key={`y-${id}`} className="flex items-center justify-between">
                     <span className="flex items-center gap-2 font-medium">
-                      <span className="text-xs text-yellow-900/70">{i + 1}º</span>
+                      <span className="text-xs text-muted-foreground">{i + 1}º</span>
                       {nameOf(id)}
+                      <span className="text-xs text-muted-foreground">Amarelo</span>
                     </span>
-                    <span className="font-display text-2xl">{valor}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="h-4 w-3 rounded-[2px] border border-yellow-500 bg-yellow-400" />
+                      <span className="font-display text-2xl">{valor}</span>
+                    </span>
                   </li>
                 ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-red-600 bg-red-600 text-white">
-          <CardHeader className="flex flex-row items-center gap-2 pb-2">
-            <ShieldAlert className="h-5 w-5" />
-            <CardTitle className="text-lg text-white">Cartões vermelhos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {topRed.length === 0 ? (
-              <p className="py-6 text-center text-sm text-white/75">
-                Nenhum cartão vermelho lançado ainda
-              </p>
-            ) : (
-              <ul className="space-y-2">
                 {topRed.map(([id, valor], i) => (
-                  <li key={id} className="flex items-center justify-between">
+                  <li key={`r-${id}`} className="flex items-center justify-between">
                     <span className="flex items-center gap-2 font-medium">
-                      <span className="text-xs text-white/75">{i + 1}º</span>
+                      <span className="text-xs text-muted-foreground">{i + 1}º</span>
                       {nameOf(id)}
+                      <span className="text-xs text-muted-foreground">Vermelho</span>
                     </span>
-                    <span className="font-display text-2xl">{valor}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="h-4 w-3 rounded-[2px] border border-red-700 bg-red-600" />
+                      <span className="font-display text-2xl">{valor}</span>
+                    </span>
                   </li>
                 ))}
               </ul>

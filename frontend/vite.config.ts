@@ -14,6 +14,10 @@ export default defineConfig({
     tailwindcss(),
     tanstackStart(),
     viteReact(),
-    nitro({ preset: "node-server" }),
+    // Na Vercel (variável de ambiente VERCEL definida automaticamente pelo
+    // build deles), deixa o Nitro auto-detectar e gerar o formato certo
+    // (.vercel/output). Local, força "node-server" pra rodar com
+    // `node .output/server/index.mjs`.
+    nitro(process.env.VERCEL ? undefined : { preset: "node-server" }),
   ],
 });
