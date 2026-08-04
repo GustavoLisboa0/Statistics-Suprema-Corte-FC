@@ -2,6 +2,18 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { isAutenticado } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { Award, Goal, ShieldAlert, TrendingUp } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +113,25 @@ function Dashboard() {
     .slice(0, 5);
   const recent = played.slice(0, 5);
 
+  const playedAsc = [...played].sort((a, b) => a.match_date.localeCompare(b.match_date));
+  let acW = 0,
+    acD = 0,
+    acL = 0;
+  const serieResultados = playedAsc.map((m) => {
+    const f = m.goals_for ?? 0;
+    const a = m.goals_against ?? 0;
+    if (f > a) acW++;
+    else if (f === a) acD++;
+    else acL++;
+    return { data: formatDate(m.match_date), Vitórias: acW, Empates: acD, Derrotas: acL };
+  });
+
+  const dadosGols = [
+    { nome: "Feitos", valor: gf, cor: "var(--accent)" },
+    { nome: "Sofridos", valor: ga, cor: "var(--destructive)" },
+    { nome: "Saldo", valor: gf - ga, cor: "var(--primary)" },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
@@ -142,34 +173,50 @@ function Dashboard() {
             {topYellow.length === 0 && topRed.length === 0 ? (
               <Empty>Nenhum cartão lançado ainda</Empty>
             ) : (
-              <ul className="space-y-2">
-                {topYellow.map(([id, valor], i) => (
-                  <li key={`y-${id}`} className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 font-medium">
-                      <span className="text-xs text-muted-foreground">{i + 1}º</span>
-                      {nameOf(id)}
-                      <span className="text-xs text-muted-foreground">Amarelo</span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <span className="h-4 w-3 rounded-[2px] border border-yellow-500 bg-yellow-400" />
-                      <span className="font-display text-2xl">{valor}</span>
-                    </span>
-                  </li>
-                ))}
-                {topRed.map(([id, valor], i) => (
-                  <li key={`r-${id}`} className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 font-medium">
-                      <span className="text-xs text-muted-foreground">{i + 1}º</span>
-                      {nameOf(id)}
-                      <span className="text-xs text-muted-foreground">Vermelho</span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <span className="h-4 w-3 rounded-[2px] border border-red-700 bg-red-600" />
-                      <span className="font-display text-2xl">{valor}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="grid grid-cols-1 gap-4 divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                <div className="sm:pr-4">
+                  <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <span className="h-4 w-3 rounded-[2px] border border-yellow-500 bg-yellow-400" />
+                    Amarelos
+                  </div>
+                  {topYellow.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhum ainda</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {topYellow.map(([id, valor], i) => (
+                        <li key={`y-${id}`} className="flex items-center justify-between">
+                          <span className="flex items-center gap-2 font-medium">
+                            <span className="text-xs text-muted-foreground">{i + 1}º</span>
+                            {nameOf(id)}
+                          </span>
+                          <span className="font-display text-2xl">{valor}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="pt-4 sm:pl-4 sm:pt-0">
+                  <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <span className="h-4 w-3 rounded-[2px] border border-red-700 bg-red-600" />
+                    Vermelhos
+                  </div>
+                  {topRed.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhum ainda</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {topRed.map(([id, valor], i) => (
+                        <li key={`r-${id}`} className="flex items-center justify-between">
+                          <span className="flex items-center gap-2 font-medium">
+                            <span className="text-xs text-muted-foreground">{i + 1}º</span>
+                            {nameOf(id)}
+                          </span>
+                          <span className="font-display text-2xl">{valor}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -180,26 +227,130 @@ function Dashboard() {
           <TrendingUp className="h-5 w-5 text-accent" />
           <CardTitle className="text-lg">Desempenho geral</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6">
           {played.length === 0 ? (
             <Empty>Nenhuma partida realizada ainda</Empty>
           ) : (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              {[
-                { label: "Vitórias", value: wins },
-                { label: "Empates", value: draws },
-                { label: "Derrotas", value: losses },
-                { label: "Gols sofridos", value: ga },
-                { label: "Saldo de gols", value: `${gf - ga > 0 ? "+" : ""}${gf - ga}` },
-              ].map((item) => (
-                <div key={item.label} className="rounded-lg bg-muted p-4 text-center">
-                  <div className="font-display text-3xl">{item.value}</div>
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    {item.label}
+            <>
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { label: "Vitórias", value: wins },
+                  { label: "Empates", value: draws },
+                  { label: "Derrotas", value: losses },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-lg bg-muted p-4 text-center">
+                    <div className="font-display text-3xl">{item.value}</div>
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                      {item.label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Gols feitos, sofridos e saldo
+                  </p>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={dadosGols} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis
+                        dataKey="nome"
+                        tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        axisLine={{ stroke: "var(--border)" }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "var(--popover)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                      <Bar dataKey="valor" radius={[4, 4, 4, 4]}>
+                        {dadosGols.map((d) => (
+                          <Cell key={d.nome} fill={d.cor} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Vitórias, empates e derrotas ao longo da temporada
+                  </p>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart data={serieResultados} margin={{ top: 4, right: 12, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis
+                        dataKey="data"
+                        tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        axisLine={{ stroke: "var(--border)" }}
+                        tickLine={false}
+                        minTickGap={24}
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          background: "var(--popover)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          fontSize: 12,
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="Vitórias"
+                        stroke="oklch(0.6 0.15 145)"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="Empates"
+                        stroke="var(--muted-foreground)"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="Derrotas"
+                        stroke="var(--destructive)"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <div className="mt-1 flex justify-center gap-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full" style={{ background: "oklch(0.6 0.15 145)" }} />
+                      Vitórias
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-muted-foreground" />
+                      Empates
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-destructive" />
+                      Derrotas
+                    </span>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
