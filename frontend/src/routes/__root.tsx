@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -79,13 +80,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "SCFC" },
+      { title: "Suprema Corte FC — Estatísticas" },
       {
         name: "description",
         content:
           "Sistema de estatísticas do Suprema Corte FC: elenco, partidas e desempenho do time.",
       },
-      { property: "og:title", content: "SCFC" },
+      { property: "og:title", content: "Suprema Corte FC — Estatísticas" },
       {
         property: "og:description",
         content: "Elenco, partidas e desempenho do Suprema Corte FC.",
@@ -103,8 +104,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&display=swap",
       },
-      { rel: "icon", href: "/iconpage.svg", type: "image/svg+xml" },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/iconpage.svg", type: "image/x-icon" },
     ],
   }),
   shellComponent: RootShell,
@@ -186,6 +186,17 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isLoginPage = pathname === "/login";
+
+  if (isLoginPage) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+        <Toaster richColors position="top-right" />
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -193,7 +204,7 @@ function RootComponent() {
         <div className="flex min-h-screen w-full">
           <AppSidebar />
           <div className="flex flex-1 flex-col">
-            <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-topbar/80 px-4 backdrop-blur">
+            <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-card/80 px-4 backdrop-blur">
               <SidebarTrigger />
               <span className="font-display text-xl tracking-wide">Suprema Corte FC</span>
               <div className="ml-auto flex items-center gap-2">
@@ -211,4 +222,3 @@ function RootComponent() {
     </QueryClientProvider>
   );
 }
-

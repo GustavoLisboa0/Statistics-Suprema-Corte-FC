@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { isAutenticado, getUsuario } from "@/lib/auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Eye } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -58,15 +59,20 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/partidas")({
+  beforeLoad: () => {
+    if (!isAutenticado()) {
+      throw redirect({ to: "/login" });
+    }
+  },
   head: () => ({
     meta: [
-            { title: "SCFC - Partidas" },
+      { title: "Partidas — Suprema Corte FC" },
       {
         name: "description",
-        content: "CalendÃ¡rio, resultados e estatÃ­sticas por partida do Suprema Corte FC.",
+        content: "Calendário, resultados e estatísticas por partida do Suprema Corte FC.",
       },
-            { property: "og:title", content: "SCFC - Partidas" },
-      { property: "og:description", content: "CalendÃ¡rio e resultados do Suprema Corte FC." },
+      { property: "og:title", content: "Partidas — Suprema Corte FC" },
+      { property: "og:description", content: "Calendário e resultados do Suprema Corte FC." },
     ],
   }),
   component: MatchesPage,
@@ -120,11 +126,12 @@ const emptyStat: StatRow = {
   goals_conceded: 0,
 };
 
-const statusVariant = (value: string) =>
-  value === "realizada" ? "default" : value === "cancelada" ? "destructive" : "secondary";
+const statusVariant = (s: string) =>
+  s === "realizada" ? "default" : s === "cancelada" ? "destructive" : "secondary";
 
 function MatchesPage() {
   const qc = useQueryClient();
+  const podeEditar = getUsuario()?.papel === "editor";
   const { data, isLoading } = useQuery({ queryKey: ["matches"], queryFn: fetchMatches });
   const { data: players } = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
 
@@ -141,15 +148,14 @@ function MatchesPage() {
     enabled: !!editing && open,
   });
 
-  const activePlayers = (players ?? []).filter((player) => player.active);
+  const activePlayers = (players ?? []).filter((p) => p.active);
 
   useEffect(() => {
     if (!editing) return;
     const next: Record<string, StatRow> = {};
-
-    for (const player of activePlayers) {
-      const found = existingStats?.find((stat) => stat.player_id === player.id);
-      next[player.id] = found
+    for (const p of activePlayers) {
+      const found = existingStats?.find((s) => s.player_id === p.id);
+      next[p.id] = found
         ? {
             starter: found.starter,
             minutes: found.minutes,
@@ -162,8 +168,8 @@ function MatchesPage() {
           }
         : { ...emptyStat };
     }
-
     setRows(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existingStats, editing, players]);
 
   const save = useMutation({
@@ -180,12 +186,10 @@ function MatchesPage() {
         goals_for: form.goals_for === "" ? null : Number(form.goals_for),
         goals_against: form.goals_against === "" ? null : Number(form.goals_against),
       };
-
       if (!editing) {
         await createMatch(payload);
         return;
       }
-
       await updateMatch(editing.id, payload);
       if (Object.keys(rows).length) {
         await upsertMatchStats(editing.id, rows, existingStats ?? []);
@@ -198,7 +202,7 @@ function MatchesPage() {
       qc.invalidateQueries({ queryKey: ["match-stats"] });
       setOpen(false);
     },
-    onError: (error: Error) => toast.error("Erro ao salvar: " + error.message),
+    onError: (e: Error) => toast.error("Erro ao salvar: " + e.message),
   });
 
   const remove = useMutation({
@@ -211,7 +215,7 @@ function MatchesPage() {
       qc.invalidateQueries({ queryKey: ["stats"] });
       setToDelete(null);
     },
-    onError: (error: Error) => toast.error("Erro ao excluir: " + error.message),
+    onError: (e: Error) => toast.error("Erro ao excluir: " + e.message),
   });
 
   const openNew = () => {
@@ -221,19 +225,19 @@ function MatchesPage() {
     setOpen(true);
   };
 
-  const openEdit = (match: Match) => {
-    setEditing(match);
+  const openEdit = (m: Match) => {
+    setEditing(m);
     setForm({
-      match_date: match.match_date,
-      opponent: match.opponent,
-      venue: match.venue,
-      venue_detail: match.venue_detail ?? "",
-      mando: match.mando,
-      status: match.status,
-      kind: match.kind,
-      notes: match.notes ?? "",
-      goals_for: match.goals_for?.toString() ?? "",
-      goals_against: match.goals_against?.toString() ?? "",
+      match_date: m.match_date,
+      opponent: m.opponent,
+      venue: m.venue,
+      venue_detail: m.venue_detail ?? "",
+      mando: m.mando,
+      status: m.status,
+      kind: m.kind,
+      notes: m.notes ?? "",
+      goals_for: m.goals_for?.toString() ?? "",
+      goals_against: m.goals_against?.toString() ?? "",
     });
     setOpen(true);
   };
@@ -245,12 +249,9 @@ function MatchesPage() {
   };
 
   const setCell = (playerId: string, key: keyof StatRow, value: number | boolean) =>
-    setRows((previous) => ({
-      ...previous,
-      [playerId]: { ...previous[playerId], [key]: value },
-    }));
+    setRows((prev) => ({ ...prev, [playerId]: { ...prev[playerId], [key]: value } }));
 
-  const matches = (data ?? []).filter((match) => status === "todos" || match.status === status);
+  const matches = (data ?? []).filter((m) => status === "todos" || m.status === status);
 
   return (
     <div className="space-y-6">
@@ -259,7 +260,7 @@ function MatchesPage() {
           <h1 className="text-4xl">Partidas</h1>
           <p className="text-sm text-muted-foreground">Calendário, resultados e estatísticas</p>
         </div>
-        <Button onClick={openNew}>
+        <Button onClick={openNew} className={podeEditar ? undefined : "hidden"}>
           <Plus className="mr-1 h-4 w-4" /> Nova partida
         </Button>
       </div>
@@ -270,9 +271,9 @@ function MatchesPage() {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="todos">Todos os status</SelectItem>
-          {STATUSES.map((item) => (
-            <SelectItem key={item} value={item}>
-              {STATUS_LABELS[item]}
+          {STATUSES.map((s) => (
+            <SelectItem key={s} value={s}>
+              {STATUS_LABELS[s]}
             </SelectItem>
           ))}
         </SelectContent>
@@ -280,8 +281,8 @@ function MatchesPage() {
 
       {isLoading ? (
         <div className="space-y-2">
-          {[0, 1, 2].map((index) => (
-            <Skeleton key={index} className="h-20 w-full" />
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-20 w-full" />
           ))}
         </div>
       ) : matches.length === 0 ? (
@@ -294,36 +295,36 @@ function MatchesPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {matches.map((match) => (
-            <Card key={match.id}>
+          {matches.map((m) => (
+            <Card key={m.id}>
               <CardContent className="flex flex-wrap items-center gap-4 p-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">{matchTitle(match)}</span>
-                    <Badge variant={statusVariant(match.status)}>{STATUS_LABELS[match.status]}</Badge>
+                    <span className="font-semibold">{matchTitle(m)}</span>
+                    <Badge variant={statusVariant(m.status)}>{STATUS_LABELS[m.status]}</Badge>
                     <Badge variant="outline">
-                      {VENUE_LABELS[match.venue]}
-                      {match.venue === "outro" && match.venue_detail ? ` (${match.venue_detail})` : ""}
+                      {VENUE_LABELS[m.venue]}
+                      {m.venue === "outro" && m.venue_detail ? ` (${m.venue_detail})` : ""}
                     </Badge>
-                    <Badge variant="outline">{MANDO_LABELS[match.mando]}</Badge>
-                    <Badge variant="outline">
-                      {match.kind === "amistoso" ? "Amistoso" : "Campeonato"}
-                    </Badge>
+                    <Badge variant="outline">{MANDO_LABELS[m.mando]}</Badge>
+                    <Badge variant="outline">{m.kind === "amistoso" ? "Amistoso" : "Campeonato"}</Badge>
                   </div>
-                  <div className="text-sm text-muted-foreground">{formatDate(match.match_date)}</div>
+                  <div className="text-sm text-muted-foreground">{formatDate(m.match_date)}</div>
                 </div>
-                {match.status === "realizada" && (
+                {m.status === "realizada" && (
                   <span className="font-display text-3xl">
-                    {match.goals_for ?? 0} × {match.goals_against ?? 0}
+                    {m.goals_for ?? 0} × {m.goals_against ?? 0}
                   </span>
                 )}
                 <div className="flex gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => openEdit(match)}>
-                    <Pencil className="h-4 w-4" />
+                  <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
+                    {podeEditar ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => setToDelete(match)}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  {podeEditar && (
+                    <Button size="icon" variant="ghost" onClick={() => setToDelete(m)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -334,9 +335,12 @@ function MatchesPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{editing ? "Editar partida" : "Nova partida"}</DialogTitle>
+            <DialogTitle>
+              {!podeEditar ? "Ver partida" : editing ? "Editar partida" : "Nova partida"}
+            </DialogTitle>
           </DialogHeader>
 
+          <fieldset disabled={!podeEditar} className="contents">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="date">Data *</Label>
@@ -344,7 +348,7 @@ function MatchesPage() {
                 id="date"
                 type="date"
                 value={form.match_date}
-                onChange={(event) => setForm({ ...form, match_date: event.target.value })}
+                onChange={(e) => setForm({ ...form, match_date: e.target.value })}
               />
             </div>
             <div>
@@ -353,34 +357,19 @@ function MatchesPage() {
                 id="opponent"
                 maxLength={100}
                 value={form.opponent}
-                onChange={(event) => setForm({ ...form, opponent: event.target.value })}
+                onChange={(e) => setForm({ ...form, opponent: e.target.value })}
               />
             </div>
             <div>
               <Label>Local</Label>
-              <Select value={form.venue} onValueChange={(value) => setForm({ ...form, venue: value })}>
+              <Select value={form.venue} onValueChange={(v) => setForm({ ...form, venue: v })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {VENUES.map((venue) => (
-                    <SelectItem key={venue} value={venue}>
-                      {VENUE_LABELS[venue]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Mando</Label>
-              <Select value={form.mando} onValueChange={(value) => setForm({ ...form, mando: value })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MANDOS.map((mando) => (
-                    <SelectItem key={mando} value={mando}>
-                      {MANDO_LABELS[mando]}
+                  {VENUES.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {VENUE_LABELS[v]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -394,20 +383,35 @@ function MatchesPage() {
                   maxLength={100}
                   placeholder="Ex: Campo do Bairro Tal"
                   value={form.venue_detail}
-                  onChange={(event) => setForm({ ...form, venue_detail: event.target.value })}
+                  onChange={(e) => setForm({ ...form, venue_detail: e.target.value })}
                 />
               </div>
             )}
             <div>
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={(value) => setForm({ ...form, status: value })}>
+              <Label>Mando</Label>
+              <Select value={form.mando} onValueChange={(v) => setForm({ ...form, mando: v })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STATUSES.map((item) => (
-                    <SelectItem key={item} value={item}>
-                      {STATUS_LABELS[item]}
+                  {MANDOS.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {MANDO_LABELS[m]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {STATUS_LABELS[s]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -415,7 +419,7 @@ function MatchesPage() {
             </div>
             <div>
               <Label>Tipo</Label>
-              <Select value={form.kind} onValueChange={(value) => setForm({ ...form, kind: value })}>
+              <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v })}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -433,7 +437,7 @@ function MatchesPage() {
                   type="number"
                   min={0}
                   value={form.goals_for}
-                  onChange={(event) => setForm({ ...form, goals_for: event.target.value })}
+                  onChange={(e) => setForm({ ...form, goals_for: e.target.value })}
                 />
               </div>
               <div>
@@ -443,7 +447,7 @@ function MatchesPage() {
                   type="number"
                   min={0}
                   value={form.goals_against}
-                  onChange={(event) => setForm({ ...form, goals_against: event.target.value })}
+                  onChange={(e) => setForm({ ...form, goals_against: e.target.value })}
                 />
               </div>
             </div>
@@ -453,7 +457,7 @@ function MatchesPage() {
                 id="notes"
                 maxLength={1000}
                 value={form.notes}
-                onChange={(event) => setForm({ ...form, notes: event.target.value })}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
               />
             </div>
           </div>
@@ -483,28 +487,27 @@ function MatchesPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {activePlayers.map((player) => {
-                        const row = rows[player.id] ?? emptyStat;
-                        const gk = player.positions.includes("goleiro");
+                      {activePlayers.map((p) => {
+                        const r = rows[p.id] ?? emptyStat;
+                        const gk = p.positions.includes("goleiro");
                         const num = (key: keyof StatRow) => (
                           <Input
                             type="number"
                             min={0}
                             className="h-8 w-16"
-                            value={row[key] as number}
-                            onChange={(event) => setCell(player.id, key, Number(event.target.value) || 0)}
+                            value={r[key] as number}
+                            onChange={(e) => setCell(p.id, key, Number(e.target.value) || 0)}
                           />
                         );
-
                         return (
-                          <tr key={player.id} className="border-b last:border-0">
+                          <tr key={p.id} className="border-b last:border-0">
                             <td className="whitespace-nowrap p-2 font-medium">
-                              {player.nickname || player.name}
+                              {p.nickname || p.name}
                             </td>
                             <td className="p-2">
                               <Checkbox
-                                checked={row.starter}
-                                onCheckedChange={(value) => setCell(player.id, "starter", value === true)}
+                                checked={r.starter}
+                                onCheckedChange={(v) => setCell(p.id, "starter", v === true)}
                               />
                             </td>
                             <td className="p-2">{num("minutes")}</td>
@@ -531,19 +534,22 @@ function MatchesPage() {
               )}
             </>
           )}
+          </fieldset>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancelar
+              {podeEditar ? "Cancelar" : "Fechar"}
             </Button>
-            <Button onClick={submit} disabled={save.isPending}>
-              {save.isPending ? "Salvando..." : "Salvar"}
-            </Button>
+            {podeEditar && (
+              <Button onClick={submit} disabled={save.isPending}>
+                {save.isPending ? "Salvando..." : "Salvar"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)}>
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir partida contra {toDelete?.opponent}?</AlertDialogTitle>
@@ -563,6 +569,3 @@ function MatchesPage() {
     </div>
   );
 }
-
-
-

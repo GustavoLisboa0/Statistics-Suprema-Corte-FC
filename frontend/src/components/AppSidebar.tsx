@@ -1,7 +1,9 @@
-import { Link, useRouterState } from "@tanstack/react-router";
-import { BarChart3, CalendarDays, Instagram, Users } from "lucide-react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { BarChart3, CalendarDays, Instagram, LogOut, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { getUsuario, logout } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -18,7 +20,7 @@ import {
 
 
 const items = [
-  { title: "Estatísticas", url: "/", icon: BarChart3 },
+  { title: "Dashboard", url: "/", icon: BarChart3 },
   { title: "Jogadores", url: "/jogadores", icon: Users },
   { title: "Partidas", url: "/partidas", icon: CalendarDays },
 ] as const;
@@ -33,8 +35,15 @@ function WhatsAppIcon(props: React.SVGProps<SVGSVGElement>) {
 
 export function AppSidebar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
+  const navigate = useNavigate();
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
+  const usuario = getUsuario();
+
+  const sair = () => {
+    logout();
+    navigate({ to: "/login" });
+  };
 
   return (
     <Sidebar collapsible="icon">
@@ -44,7 +53,9 @@ export function AppSidebar() {
           collapsed && "justify-center px-2",
         )}
       >
-        <span className="font-display text-2xl leading-none text-sidebar-primary">SCFC</span>
+        <span className="font-display text-2xl leading-none text-sidebar-primary">
+          SCFC
+        </span>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -82,6 +93,27 @@ export function AppSidebar() {
             {!collapsed && <span>Instagram</span>}
           </a>
         </div>
+        {usuario && (
+          <div className={cn("mt-2 border-t pt-2", collapsed ? "flex flex-col items-center gap-1" : "px-2")}>
+            {!collapsed && (
+              <div className="mb-1 min-w-0">
+                <div className="truncate text-xs font-medium text-sidebar-foreground">
+                  {usuario.email}
+                </div>
+                <div className="text-[11px] capitalize text-muted-foreground">{usuario.papel}</div>
+              </div>
+            )}
+            <Button
+              variant="ghost"
+              size={collapsed ? "icon" : "sm"}
+              onClick={sair}
+              className="w-full justify-start gap-2 text-sidebar-foreground"
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>Sair</span>}
+            </Button>
+          </div>
+        )}
       </SidebarFooter>
     </Sidebar>
   );

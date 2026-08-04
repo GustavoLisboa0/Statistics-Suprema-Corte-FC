@@ -1,42 +1,41 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { isAutenticado } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { Award, Goal, ShieldAlert, TrendingUp } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  fetchAllStats,
-  fetchMatches,
-  fetchPlayers,
-  formatDate,
-  matchTitle,
-  MANDO_LABELS,
-} from "@/lib/football";
+import { fetchAllStats, fetchMatches, fetchPlayers, formatDate, matchTitle, MANDO_LABELS } from "@/lib/football";
 
 export const Route = createFileRoute("/")({
+  beforeLoad: () => {
+    if (!isAutenticado()) {
+      throw redirect({ to: "/login" });
+    }
+  },
   head: () => ({
     meta: [
-      { title: "SCFC - Estatísticas" },
+      { title: "Dashboard — Suprema Corte FC" },
       {
         name: "description",
         content: "Artilharia, cartões, desempenho do time e próximas partidas do Suprema Corte FC.",
       },
-      { property: "og:title", content: "SCFC - Estatísticas" },
+      { property: "og:title", content: "Dashboard — Suprema Corte FC" },
       {
         property: "og:description",
         content: "Artilharia, cartões e desempenho do Suprema Corte FC.",
       },
     ],
   }),
-  component: StatisticsPage,
+  component: Dashboard,
 });
 
 function Empty({ children }: { children: string }) {
   return <p className="py-6 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
-function StatisticsPage() {
+function Dashboard() {
   const players = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
   const matches = useQuery({ queryKey: ["matches"], queryFn: fetchMatches });
   const stats = useQuery({ queryKey: ["stats"], queryFn: fetchAllStats });
@@ -46,8 +45,8 @@ function StatisticsPage() {
   if (loading) {
     return (
       <div className="grid gap-4 md:grid-cols-2">
-        {[0, 1, 2, 3].map((index) => (
-          <Skeleton key={index} className="h-40 w-full" />
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-40 w-full" />
         ))}
       </div>
     );
@@ -56,64 +55,45 @@ function StatisticsPage() {
   const allPlayers = players.data ?? [];
   const allMatches = matches.data ?? [];
   const allStats = stats.data ?? [];
-
   const nameOf = (id: string) => {
-    const player = allPlayers.find((entry) => entry.id === id);
-    return player ? player.nickname || player.name : "Desconhecido";
+    const p = allPlayers.find((x) => x.id === id);
+    return p ? (p.nickname || p.name) : "Desconhecido";
   };
 
   const goalsByPlayer = new Map<string, number>();
-  const yellowCardsByPlayer = new Map<string, number>();
-  const redCardsByPlayer = new Map<string, number>();
-
-  for (const stat of allStats) {
-    goalsByPlayer.set(stat.player_id, (goalsByPlayer.get(stat.player_id) ?? 0) + stat.goals);
-    yellowCardsByPlayer.set(
-      stat.player_id,
-      (yellowCardsByPlayer.get(stat.player_id) ?? 0) + stat.yellow_cards,
-    );
-    redCardsByPlayer.set(
-      stat.player_id,
-      (redCardsByPlayer.get(stat.player_id) ?? 0) + stat.red_cards,
+  const cardsByPlayer = new Map<string, number>();
+  for (const s of allStats) {
+    goalsByPlayer.set(s.player_id, (goalsByPlayer.get(s.player_id) ?? 0) + s.goals);
+    cardsByPlayer.set(
+      s.player_id,
+      (cardsByPlayer.get(s.player_id) ?? 0) + s.yellow_cards + s.red_cards,
     );
   }
+  const top = (map: Map<string, number>) =>
+    [...map.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])[0];
 
-  const topThreeScorers = [...goalsByPlayer.entries()]
-    .filter(([, value]) => value > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
+  const topScorer = top(goalsByPlayer);
+  const topCarded = top(cardsByPlayer);
 
-  const topYellowCards = [...yellowCardsByPlayer.entries()]
-    .filter(([, value]) => value > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
-
-  const topRedCards = [...redCardsByPlayer.entries()]
-    .filter(([, value]) => value > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
-
-  const played = allMatches.filter((match) => match.status === "realizada");
-  let wins = 0;
-  let draws = 0;
-  let losses = 0;
-  let goalsFor = 0;
-  let goalsAgainst = 0;
-
-  for (const match of played) {
-    const scored = match.goals_for ?? 0;
-    const conceded = match.goals_against ?? 0;
-    goalsFor += scored;
-    goalsAgainst += conceded;
-
-    if (scored > conceded) wins++;
-    else if (scored === conceded) draws++;
+  const played = allMatches.filter((m) => m.status === "realizada");
+  let wins = 0,
+    draws = 0,
+    losses = 0,
+    gf = 0,
+    ga = 0;
+  for (const m of played) {
+    const f = m.goals_for ?? 0;
+    const a = m.goals_against ?? 0;
+    gf += f;
+    ga += a;
+    if (f > a) wins++;
+    else if (f === a) draws++;
     else losses++;
   }
 
   const today = new Date().toISOString().slice(0, 10);
   const upcoming = allMatches
-    .filter((match) => match.status === "agendada" && match.match_date >= today)
+    .filter((m) => m.status === "agendada" && m.match_date >= today)
     .sort((a, b) => a.match_date.localeCompare(b.match_date))
     .slice(0, 5);
   const recent = played.slice(0, 5);
@@ -121,34 +101,24 @@ function StatisticsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-4xl">Estatísticas</h1>
+        <h1 className="text-4xl">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Visão geral do desempenho do time</p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <Goal className="h-5 w-5 text-accent" />
-            <CardTitle className="text-lg">Artilheiros</CardTitle>
+            <CardTitle className="text-lg">Artilheiro</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {topThreeScorers.length === 0 ? (
-              <Empty>Nenhum gol lançado ainda</Empty>
+          <CardContent>
+            {topScorer ? (
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-semibold">{nameOf(topScorer[0])}</span>
+                <span className="font-display text-4xl text-accent">{topScorer[1]}</span>
+              </div>
             ) : (
-              topThreeScorers.map(([playerId, total], index) => (
-                <div
-                  key={playerId}
-                  className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                      {index + 1}
-                    </span>
-                    <span className="font-medium">{nameOf(playerId)}</span>
-                  </div>
-                  <span className="font-display text-2xl text-accent">{total}</span>
-                </div>
-              ))
+              <Empty>Nenhum gol lançado ainda</Empty>
             )}
           </CardContent>
         </Card>
@@ -156,81 +126,49 @@ function StatisticsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <ShieldAlert className="h-5 w-5 text-destructive" />
-            <CardTitle className="text-lg">Advertidos</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                Cartões amarelos
-              </p>
-              {topYellowCards.length === 0 ? (
-                <Empty>Nenhum cartão amarelo lançado ainda</Empty>
-              ) : (
-                <div className="space-y-2">
-                  {topYellowCards.map(([playerId, total]) => (
-                    <div
-                      key={playerId}
-                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                    >
-                      <span className="font-medium">{nameOf(playerId)}</span>
-                      <Badge className="bg-amber-500 text-white hover:bg-amber-500">{total}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                Cartões vermelhos
-              </p>
-              {topRedCards.length === 0 ? (
-                <Empty>Nenhum cartão vermelho lançado ainda</Empty>
-              ) : (
-                <div className="space-y-2">
-                  {topRedCards.map(([playerId, total]) => (
-                    <div
-                      key={playerId}
-                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                    >
-                      <span className="font-medium">{nameOf(playerId)}</span>
-                      <Badge variant="destructive">{total}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-2">
-            <TrendingUp className="h-5 w-5 text-accent" />
-            <CardTitle className="text-lg">Desempenho geral</CardTitle>
+            <CardTitle className="text-lg">Mais advertido</CardTitle>
           </CardHeader>
           <CardContent>
-            {played.length === 0 ? (
-              <Empty>Nenhuma partida realizada ainda</Empty>
-            ) : (
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { label: "Vitórias", value: wins },
-                  { label: "Empates", value: draws },
-                  { label: "Derrotas", value: losses },
-                  { label: "Saldo de gols", value: `${goalsFor - goalsAgainst > 0 ? "+" : ""}${goalsFor - goalsAgainst}` },
-                ].map((item) => (
-                  <div key={item.label} className="rounded-lg bg-muted p-4 text-center">
-                    <div className="font-display text-3xl">{item.value}</div>
-                    <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                      {item.label}
-                    </div>
-                  </div>
-                ))}
+            {topCarded ? (
+              <div className="flex items-baseline justify-between">
+                <span className="text-2xl font-semibold">{nameOf(topCarded[0])}</span>
+                <span className="font-display text-4xl text-destructive">{topCarded[1]}</span>
               </div>
+            ) : (
+              <Empty>Nenhum cartão lançado ainda</Empty>
             )}
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2 pb-2">
+          <TrendingUp className="h-5 w-5 text-accent" />
+          <CardTitle className="text-lg">Desempenho geral</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {played.length === 0 ? (
+            <Empty>Nenhuma partida realizada ainda</Empty>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {[
+                { label: "Vitórias", value: wins },
+                { label: "Empates", value: draws },
+                { label: "Derrotas", value: losses },
+                { label: "Gols sofridos", value: ga },
+                { label: "Saldo de gols", value: `${gf - ga > 0 ? "+" : ""}${gf - ga}` },
+              ].map((item) => (
+                <div key={item.label} className="rounded-lg bg-muted p-4 text-center">
+                  <div className="font-display text-3xl">{item.value}</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {item.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -241,16 +179,16 @@ function StatisticsPage() {
             {upcoming.length === 0 ? (
               <Empty>Nenhuma partida agendada</Empty>
             ) : (
-              upcoming.map((match) => (
+              upcoming.map((m) => (
                 <div
-                  key={match.id}
+                  key={m.id}
                   className="flex items-center justify-between rounded-md border p-3 text-sm"
                 >
                   <div>
-                    <div className="font-semibold">{matchTitle(match)}</div>
-                    <div className="text-muted-foreground">{formatDate(match.match_date)}</div>
+                    <div className="font-semibold">{matchTitle(m)}</div>
+                    <div className="text-muted-foreground">{formatDate(m.match_date)}</div>
                   </div>
-                  <Badge variant="secondary">{MANDO_LABELS[match.mando]}</Badge>
+                  <Badge variant="secondary">{MANDO_LABELS[m.mando]}</Badge>
                 </div>
               ))
             )}
@@ -266,17 +204,17 @@ function StatisticsPage() {
             {recent.length === 0 ? (
               <Empty>Nenhum resultado registrado</Empty>
             ) : (
-              recent.map((match) => (
+              recent.map((m) => (
                 <div
-                  key={match.id}
+                  key={m.id}
                   className="flex items-center justify-between rounded-md border p-3 text-sm"
                 >
                   <div>
-                    <div className="font-semibold">{matchTitle(match)}</div>
-                    <div className="text-muted-foreground">{formatDate(match.match_date)}</div>
+                    <div className="font-semibold">{matchTitle(m)}</div>
+                    <div className="text-muted-foreground">{formatDate(m.match_date)}</div>
                   </div>
                   <span className="font-display text-2xl">
-                    {match.goals_for ?? 0} × {match.goals_against ?? 0}
+                    {m.goals_for ?? 0} × {m.goals_against ?? 0}
                   </span>
                 </div>
               ))

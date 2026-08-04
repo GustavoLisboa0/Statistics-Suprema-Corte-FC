@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import estatisticas, jogadores, partidas
+from routers import auth, estatisticas, jogadores, partidas
 
 app = FastAPI(
     title="Statistics Suprema Corte FC",
@@ -17,6 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(jogadores.router)
 app.include_router(partidas.router)
 app.include_router(estatisticas.router)

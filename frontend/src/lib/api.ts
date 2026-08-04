@@ -1,43 +1,41 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
+import { getAccessToken, tentarRenovarSessao, logout } from "@/lib/auth";
 
-if (!API_BASE) {
-  throw new Error(
-    "VITE_API_BASE_URL nao configurado. Defina a URL publica do backend no .env local e na Vercel.",
-  );
+// Ajuste em .env: VITE_API_BASE_URL=http://127.0.0.1:8000
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
+
+async function fazerRequisicao(path: string, options: RequestInit): Promise<Response> {
+  const token = getAccessToken();
+  const headers = new Headers(options.headers);
+  headers.set("Content-Type", "application/json");
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  return fetch(`${API_BASE}${path}`, { ...options, headers });
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  let response = await fazerRequisicao(path, options);
+
+  // Sessão expirada: tenta renovar uma vez e repete a requisição original
+  if (response.status === 401) {
+    const renovou = await tentarRenovarSessao();
+    if (renovou) {
+      response = await fazerRequisicao(path, options);
+    } else {
+      logout();
+      window.location.href = "/login";
+      throw new Error("Sessão expirada");
+    }
+  }
 
   if (!response.ok) {
-    const fallback = `Erro ${response.status}`;
-    let message = fallback;
+    let detail = `Erro ${response.status}`;
     try {
-      const body = (await response.json()) as {
-        detail?: unknown;
-        message?: unknown;
-        error?: unknown;
-      };
-      const detail = body.detail ?? body.message ?? body.error;
-      if (typeof detail === "string") {
-        message = detail;
-      } else if (detail && typeof detail === "object") {
-        const nested = detail as { message?: unknown; detail?: unknown };
-        if (typeof nested.message === "string") {
-          message = nested.message;
-        } else if (typeof nested.detail === "string") {
-          message = nested.detail;
-        } else {
-          message = JSON.stringify(detail);
-        }
-      }
+      const body = (await response.json()) as { detail?: string };
+      detail = body.detail ?? detail;
     } catch {
       // corpo não era JSON, mantém a mensagem genérica
     }
-    throw new Error(message);
+    throw new Error(detail);
   }
 
   if (response.status === 204) return undefined as T;

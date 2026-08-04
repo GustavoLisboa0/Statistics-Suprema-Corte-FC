@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { isAutenticado, getUsuario } from "@/lib/auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
@@ -49,64 +50,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type PlayerGroupKey = "goleiro" | "defesa" | "meio_campo" | "ataque";
-
-const PLAYER_GROUPS: Array<{
-  key: PlayerGroupKey;
-  label: string;
-}> = [
-  {
-    key: "goleiro",
-    label: "Goleiro",
-  },
-  {
-    key: "defesa",
-    label: "Defesa",
-  },
-  {
-    key: "meio_campo",
-    label: "Meio Campo",
-  },
-  {
-    key: "ataque",
-    label: "Ataque",
-  },
-];
-
-function getPlayerGroup(position: Position): PlayerGroupKey {
-  switch (position) {
-    case "goleiro":
-      return "goleiro";
-    case "lateral_direito":
-    case "lateral_esquerdo":
-    case "zagueiro":
-    case "lateral":
-      return "defesa";
-    case "volante":
-    case "meia":
-    case "meia_esquerda":
-    case "meia_direita":
-    case "meia_atacante":
-    case "meio":
-      return "meio_campo";
-    default:
-      return "ataque";
-  }
-}
-
-function secondaryPositionBadgeClass() {
-  return "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-300";
-}
-
 export const Route = createFileRoute("/jogadores")({
+  beforeLoad: () => {
+    if (!isAutenticado()) {
+      throw redirect({ to: "/login" });
+    }
+  },
   head: () => ({
     meta: [
-      { title: "SCFC - Jogadores" },
+      { title: "Jogadores — Suprema Corte FC" },
       {
         name: "description",
         content: "Elenco do Suprema Corte FC: cadastro, posições e situação de cada jogador.",
       },
-      { property: "og:title", content: "SCFC - Jogadores" },
+      { property: "og:title", content: "Jogadores — Suprema Corte FC" },
       { property: "og:description", content: "Elenco completo do Suprema Corte FC." },
     ],
   }),
@@ -133,10 +90,12 @@ const emptyForm: FormState = {
 
 function PlayerCard({
   player,
+  podeEditar,
   onEdit,
   onDelete,
 }: {
   player: Player;
+  podeEditar: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -158,25 +117,23 @@ function PlayerCard({
             <div className="truncate text-xs text-muted-foreground">"{player.nickname}"</div>
           ) : null}
           <div className="mt-1 flex flex-wrap gap-1">
-            {player.positions.map((position, index) => (
-              <Badge
-                key={position}
-                variant={index === 0 ? "default" : "secondary"}
-                className={`px-1.5 text-[10px] ${index > 0 ? secondaryPositionBadgeClass() : ""}`}
-              >
-                {POSITION_ABBR[position]}
+            {player.positions.map((pos) => (
+              <Badge key={pos} variant="secondary" className="px-1.5 text-[10px]">
+                {POSITION_ABBR[pos]}
               </Badge>
             ))}
           </div>
         </div>
-        <div className="flex shrink-0 flex-col gap-1">
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDelete}>
-            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-          </Button>
-        </div>
+        {podeEditar && (
+          <div className="flex shrink-0 flex-col gap-1">
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDelete}>
+              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -185,9 +142,10 @@ function PlayerCard({
 function PlayersPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
+  const podeEditar = getUsuario()?.papel === "editor";
 
   const [search, setSearch] = useState("");
-  const [positionFilter, setPositionFilter] = useState<PlayerGroupKey | "todas">("todas");
+  const [positionFilter, setPositionFilter] = useState("todas");
   const [showInactive, setShowInactive] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Player | null>(null);
@@ -215,7 +173,7 @@ function PlayersPage() {
       qc.invalidateQueries({ queryKey: ["players"] });
       setOpen(false);
     },
-    onError: (error: Error) => toast.error("Erro ao salvar: " + error.message),
+    onError: (e: Error) => toast.error("Erro ao salvar: " + e.message),
   });
 
   const remove = useMutation({
@@ -228,7 +186,7 @@ function PlayersPage() {
       qc.invalidateQueries({ queryKey: ["stats"] });
       setToDelete(null);
     },
-    onError: (error: Error) => toast.error("Erro ao excluir: " + error.message),
+    onError: (e: Error) => toast.error("Erro ao excluir: " + e.message),
   });
 
   const openNew = () => {
@@ -237,38 +195,32 @@ function PlayersPage() {
     setOpen(true);
   };
 
-  const openEdit = (player: Player) => {
-    setEditing(player);
+  const openEdit = (p: Player) => {
+    setEditing(p);
     setForm({
-      name: player.name,
-      nickname: player.nickname ?? "",
-      positions: player.positions,
-      shirt_number: player.shirt_number?.toString() ?? "",
-      birth_date: player.birth_date ?? "",
-      active: player.active,
+      name: p.name,
+      nickname: p.nickname ?? "",
+      positions: p.positions,
+      shirt_number: p.shirt_number?.toString() ?? "",
+      birth_date: p.birth_date ?? "",
+      active: p.active,
     });
     setOpen(true);
   };
 
-  const players = (data ?? []).filter((player) => {
-    if (!showInactive && !player.active) return false;
-    const query = search.trim().toLowerCase();
-    if (
-      query &&
-      !player.name.toLowerCase().includes(query) &&
-      !(player.nickname ?? "").toLowerCase().includes(query)
-    ) {
-      return false;
-    }
-    return true;
+  const players = (data ?? []).filter((p) => {
+    if (!showInactive && !p.active) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return p.name.toLowerCase().includes(q) || (p.nickname ?? "").toLowerCase().includes(q);
   });
 
-  const groups = PLAYER_GROUPS.map((group) => ({
-    ...group,
-    players: players.filter((player) => getPlayerGroup(player.position) === group.key),
+  const groups = POSITIONS.map((pos) => ({
+    position: pos,
+    players: players.filter((p) => p.positions.includes(pos)),
   }))
-    .filter((group) => positionFilter === "todas" || group.key === positionFilter)
-    .filter((group) => group.players.length > 0);
+    .filter((g) => positionFilter === "todas" || g.position === positionFilter)
+    .filter((g) => g.players.length > 0);
 
   const submit = () => {
     if (!form.name.trim()) return toast.error("Informe o nome do jogador");
@@ -283,7 +235,7 @@ function PlayersPage() {
           <h1 className="text-4xl">Jogadores</h1>
           <p className="text-sm text-muted-foreground">Elenco do Suprema Corte FC</p>
         </div>
-        <Button onClick={openNew}>
+        <Button onClick={openNew} className={podeEditar ? undefined : "hidden"}>
           <Plus className="mr-1 h-4 w-4" /> Novo jogador
         </Button>
       </div>
@@ -292,18 +244,18 @@ function PlayersPage() {
         <Input
           placeholder="Buscar por nome..."
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
           className="md:max-w-xs"
         />
-        <Select value={positionFilter} onValueChange={(value) => setPositionFilter(value as PlayerGroupKey | "todas")}>
+        <Select value={positionFilter} onValueChange={setPositionFilter}>
           <SelectTrigger className="md:w-56">
-            <SelectValue placeholder="Categoria" />
+            <SelectValue placeholder="Posição" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="todas">Todas as categorias</SelectItem>
-            {PLAYER_GROUPS.map((group) => (
-              <SelectItem key={group.key} value={group.key}>
-                {group.label}
+            <SelectItem value="todas">Todas as posições</SelectItem>
+            {POSITIONS.map((p) => (
+              <SelectItem key={p} value={p}>
+                {POSITION_LABELS[p]}
               </SelectItem>
             ))}
           </SelectContent>
@@ -316,8 +268,8 @@ function PlayersPage() {
 
       {isLoading ? (
         <div className="space-y-2">
-          {[0, 1, 2].map((index) => (
-            <Skeleton key={index} className="h-20 w-full" />
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-20 w-full" />
           ))}
         </div>
       ) : groups.length === 0 ? (
@@ -330,21 +282,22 @@ function PlayersPage() {
         </Card>
       ) : (
         <div className="space-y-6">
-          {groups.map((group) => (
-            <div key={group.key}>
+          {groups.map((g) => (
+            <div key={g.position}>
               <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {group.label}
+                {POSITION_LABELS[g.position]}
                 <Badge variant="outline" className="font-normal">
-                  {group.players.length}
+                  {g.players.length}
                 </Badge>
               </h2>
               <div className="flex flex-wrap gap-3">
-                {group.players.map((player) => (
+                {g.players.map((p) => (
                   <PlayerCard
-                    key={player.id}
-                    player={player}
-                    onEdit={() => openEdit(player)}
-                    onDelete={() => setToDelete(player)}
+                    key={p.id}
+                    player={p}
+                    podeEditar={podeEditar}
+                    onEdit={() => openEdit(p)}
+                    onDelete={() => setToDelete(p)}
                   />
                 ))}
               </div>
@@ -365,7 +318,7 @@ function PlayersPage() {
                 id="name"
                 maxLength={100}
                 value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
             <div>
@@ -374,7 +327,7 @@ function PlayersPage() {
                 id="nickname"
                 maxLength={50}
                 value={form.nickname}
-                onChange={(event) => setForm({ ...form, nickname: event.target.value })}
+                onChange={(e) => setForm({ ...form, nickname: e.target.value })}
               />
             </div>
             <div>
@@ -385,7 +338,7 @@ function PlayersPage() {
                 min={0}
                 max={99}
                 value={form.shirt_number}
-                onChange={(event) => setForm({ ...form, shirt_number: event.target.value })}
+                onChange={(e) => setForm({ ...form, shirt_number: e.target.value })}
               />
             </div>
             <div className="sm:col-span-2">
@@ -393,19 +346,19 @@ function PlayersPage() {
               <ToggleGroup
                 type="multiple"
                 value={form.positions}
-                onValueChange={(value) => setForm({ ...form, positions: value as Position[] })}
+                onValueChange={(v) => setForm({ ...form, positions: v as Position[] })}
                 className="flex flex-wrap justify-start gap-1.5"
               >
-                {POSITIONS.map((position) => (
+                {POSITIONS.map((pos) => (
                   <ToggleGroupItem
-                    key={position}
-                    value={position}
+                    key={pos}
+                    value={pos}
                     variant="outline"
                     className="h-8 px-2.5 text-xs"
-                    aria-label={POSITION_LABELS[position]}
-                    title={POSITION_LABELS[position]}
+                    aria-label={POSITION_LABELS[pos]}
+                    title={POSITION_LABELS[pos]}
                   >
-                    {POSITION_ABBR[position]}
+                    {POSITION_ABBR[pos]}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
@@ -416,14 +369,14 @@ function PlayersPage() {
                 id="birth"
                 type="date"
                 value={form.birth_date}
-                onChange={(event) => setForm({ ...form, birth_date: event.target.value })}
+                onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
               />
             </div>
             <div className="flex items-center gap-2">
               <Switch
                 id="active"
                 checked={form.active}
-                onCheckedChange={(value) => setForm({ ...form, active: value })}
+                onCheckedChange={(v) => setForm({ ...form, active: v })}
               />
               <Label htmlFor="active">Jogador ativo</Label>
             </div>
@@ -439,7 +392,7 @@ function PlayersPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)}>
+      <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir {toDelete?.name}?</AlertDialogTitle>
