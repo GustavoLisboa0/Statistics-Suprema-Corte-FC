@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Award, Goal, ShieldAlert, TrendingUp } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { fetchAllStats, fetchMatches, fetchPlayers, formatDate, matchTitle, MANDO_LABELS } from "@/lib/football";
 
 export const Route = createFileRoute("/")({
@@ -101,7 +101,7 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-4xl">Dashboard</h1>
+        <h1 className="text-4xl font-bold">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Visão geral do desempenho do time</p>
       </div>
 
@@ -126,61 +126,7 @@ function Dashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-2">
             <ShieldAlert className="h-5 w-5 text-destructive" />
-<<<<<<< HEAD
             <CardTitle className="text-lg">Mais advertido</CardTitle>
-=======
-            <CardTitle className="text-lg">Advertências</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                Cartões amarelos
-              </p>
-              {topYellowCards.length === 0 ? (
-                <Empty>Nenhum cartão amarelo lançado ainda</Empty>
-              ) : (
-                <div className="space-y-2">
-                  {topYellowCards.map(([playerId, total]) => (
-                    <div
-                      key={playerId}
-                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                    >
-                      <span className="font-medium">{nameOf(playerId)}</span>
-                      <Badge className="bg-amber-500 text-white hover:bg-amber-500">{total}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                Cartões vermelhos
-              </p>
-              {topRedCards.length === 0 ? (
-                <Empty>Nenhum cartão vermelho lançado ainda</Empty>
-              ) : (
-                <div className="space-y-2">
-                  {topRedCards.map(([playerId, total]) => (
-                    <div
-                      key={playerId}
-                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                    >
-                      <span className="font-medium">{nameOf(playerId)}</span>
-                      <Badge variant="destructive">{total}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-2">
-            <TrendingUp className="h-5 w-5 text-accent" />
-            <CardTitle className="text-lg">Desempenho geral</CardTitle>
->>>>>>> dbbfabeef72627ee671c776e445cf46f145d0e5a
           </CardHeader>
           <CardContent>
             {topCarded ? (
@@ -213,7 +159,7 @@ function Dashboard() {
                 { label: "Saldo de gols", value: `${gf - ga > 0 ? "+" : ""}${gf - ga}` },
               ].map((item) => (
                 <div key={item.label} className="rounded-lg bg-muted p-4 text-center">
-                  <div className="font-display text-3xl">{item.value}</div>
+                  <div className="font-display text-3xl font-bold">{item.value}</div>
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">
                     {item.label}
                   </div>
@@ -267,7 +213,7 @@ function Dashboard() {
                     <div className="font-semibold">{matchTitle(m)}</div>
                     <div className="text-muted-foreground">{formatDate(m.match_date)}</div>
                   </div>
-                  <span className="font-display text-2xl">
+                  <span className="font-display text-2xl font-semibold">
                     {m.goals_for ?? 0} × {m.goals_against ?? 0}
                   </span>
                 </div>
