@@ -2,8 +2,12 @@ import { createFileRoute, redirect } from "@tanstack/react-router";
 import { isAutenticado, getUsuario } from "@/lib/auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { CalendarIcon, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
+
+import { cn } from "@/lib/utils";
 
 import {
   POSITIONS,
@@ -12,6 +16,8 @@ import {
   CATEGORIES,
   CATEGORY_LABELS,
   POSITION_CATEGORY,
+  PHONE_REGEX,
+  formatPhone,
   fetchPlayers,
   createPlayer,
   updatePlayer,
@@ -27,6 +33,8 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
@@ -76,6 +84,7 @@ export const Route = createFileRoute("/jogadores")({
 type FormState = {
   name: string;
   nickname: string;
+  phone: string;
   positions: Position[];
   shirt_number: string;
   birth_date: string;
@@ -85,6 +94,7 @@ type FormState = {
 const emptyForm: FormState = {
   name: "",
   nickname: "",
+  phone: "",
   positions: [],
   shirt_number: "",
   birth_date: "",
@@ -164,6 +174,7 @@ function PlayersPage() {
       const payload: PlayerInput = {
         name: form.name.trim(),
         nickname: form.nickname.trim() || null,
+        phone: form.phone.trim(),
         positions: form.positions,
         shirt_number: form.shirt_number ? Number(form.shirt_number) : null,
         birth_date: form.birth_date || null,
@@ -207,6 +218,7 @@ function PlayersPage() {
     setForm({
       name: p.name,
       nickname: p.nickname ?? "",
+      phone: p.phone ?? "",
       positions: p.positions,
       shirt_number: p.shirt_number?.toString() ?? "",
       birth_date: p.birth_date ?? "",
@@ -231,6 +243,7 @@ function PlayersPage() {
 
   const submit = () => {
     if (!form.name.trim()) return toast.error("Informe o nome do jogador");
+    if (!PHONE_REGEX.test(form.phone)) return toast.error("Informe um telefone válido: (DDD) 91234-1234");
     if (form.positions.length === 0) return toast.error("Selecione ao menos uma posição");
     save.mutate();
   };
@@ -338,6 +351,18 @@ function PlayersPage() {
               />
             </div>
             <div>
+              <Label htmlFor="phone">Telefone *</Label>
+              <Input
+                id="phone"
+                type="tel"
+                inputMode="numeric"
+                placeholder="(11) 91234-5678"
+                maxLength={15}
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: formatPhone(e.target.value) })}
+              />
+            </div>
+            <div>
               <Label htmlFor="shirt">Número da camisa</Label>
               <Input
                 id="shirt"
@@ -348,8 +373,44 @@ function PlayersPage() {
                 onChange={(e) => setForm({ ...form, shirt_number: e.target.value })}
               />
             </div>
+            <div>
+              <Label htmlFor="birth">Data de nascimento</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="birth"
+                    type="button"
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start gap-2 font-normal",
+                      !form.birth_date && "text-muted-foreground",
+                    )}
+                  >
+                    <CalendarIcon className="h-4 w-4 shrink-0" />
+                    {form.birth_date ? format(parseISO(form.birth_date), "dd/MM/yyyy") : "Selecione a data"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    locale={ptBR}
+                    captionLayout="dropdown"
+                    startMonth={new Date(1950, 0)}
+                    endMonth={new Date()}
+                    disabled={{ after: new Date() }}
+                    selected={form.birth_date ? parseISO(form.birth_date) : undefined}
+                    onSelect={(date) =>
+                      setForm({ ...form, birth_date: date ? format(date, "yyyy-MM-dd") : "" })
+                    }
+                    formatters={{
+                      formatMonthDropdown: (date) => format(date, "MMM", { locale: ptBR }),
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
             <div className="sm:col-span-2">
-              <Label>Posições * (a primeira selecionada vira a posição principal)</Label>
+              <Label>Posições *</Label>
               <ToggleGroup
                 type="multiple"
                 value={form.positions}
@@ -378,15 +439,6 @@ function PlayersPage() {
                   Principal: <span className="font-medium text-foreground">{POSITION_LABELS[form.positions[0]]}</span>
                 </p>
               )}
-            </div>
-            <div>
-              <Label htmlFor="birth">Data de nascimento</Label>
-              <Input
-                id="birth"
-                type="date"
-                value={form.birth_date}
-                onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
-              />
             </div>
             <div className="flex items-center gap-2">
               <Switch

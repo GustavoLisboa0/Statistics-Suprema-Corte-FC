@@ -128,6 +128,7 @@ export type Player = {
   id: string;
   name: string;
   nickname: string | null;
+  phone: string | null;
   positions: Position[];
   shirt_number: number | null;
   birth_date: string | null;
@@ -175,6 +176,7 @@ type JogadorApi = {
   id: string;
   nome: string;
   apelido: string | null;
+  telefone: string | null;
   posicoes: Position[];
   numero_camisa: number | null;
   data_nascimento: string | null;
@@ -217,6 +219,7 @@ function toPlayer(j: JogadorApi): Player {
     id: j.id,
     name: j.nome,
     nickname: j.apelido,
+    phone: j.telefone,
     positions: j.posicoes,
     shirt_number: j.numero_camisa,
     birth_date: j.data_nascimento,
@@ -228,6 +231,7 @@ function toJogadorPayload(input: PlayerInput) {
   return {
     nome: input.name,
     apelido: input.nickname,
+    telefone: input.phone,
     posicoes: input.positions,
     numero_camisa: input.shirt_number,
     data_nascimento: input.birth_date,
@@ -375,4 +379,17 @@ export function formatDate(value: string | null) {
   if (!value) return "—";
   const [y, m, d] = value.split("-");
   return `${d}/${m}/${y}`;
+}
+
+// ---------------------------------------------------------------------------
+// Telefone
+// ---------------------------------------------------------------------------
+export const PHONE_REGEX = /^\(\d{2}\) \d{5}-\d{4}$/;
+
+/** Formata dígitos digitados progressivamente como "(DDD) 91234-1234". */
+export function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 11);
+  if (digits.length <= 2) return digits.length ? `(${digits}` : "";
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }

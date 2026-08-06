@@ -23,6 +23,8 @@ Local = Literal["trieste", "iguacu", "outro"]
 Mando = Literal["mandante", "visitante"]
 StatusPartida = Literal["agendada", "realizada", "cancelada"]
 
+TELEFONE_REGEX = r"^\(\d{2}\) \d{5}-\d{4}$"
+
 
 # ---------------------------------------------------------------------------
 # Jogadores
@@ -37,12 +39,13 @@ class JogadorBase(BaseModel):
 
 
 class JogadorCreate(JogadorBase):
-    pass
+    telefone: str = Field(pattern=TELEFONE_REGEX)
 
 
 class JogadorUpdate(BaseModel):
     nome: Optional[str] = None
     apelido: Optional[str] = None
+    telefone: Optional[str] = Field(default=None, pattern=TELEFONE_REGEX)
     posicoes: Optional[list[Posicao]] = None
     numero_camisa: Optional[int] = None
     data_nascimento: Optional[date] = None
@@ -51,6 +54,10 @@ class JogadorUpdate(BaseModel):
 
 class Jogador(JogadorBase):
     id: UUID
+    # Opcional aqui (diferente de JogadorCreate) para não quebrar a leitura
+    # de jogadores cadastrados antes deste campo existir, que ficam com
+    # telefone nulo no banco até serem editados.
+    telefone: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

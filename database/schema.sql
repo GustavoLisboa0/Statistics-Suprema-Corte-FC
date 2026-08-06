@@ -13,12 +13,21 @@ create table if not exists jogadores (
     id              uuid primary key default gen_random_uuid(),
     nome            text not null,
     apelido         text,
+    telefone        text,
     posicao         text not null check (posicao in ('goleiro', 'zagueiro', 'lateral', 'meio', 'atacante')),
     numero_camisa   integer,
     data_nascimento date,
     ativo           boolean not null default true,
     created_at      timestamptz not null default now()
 );
+
+-- Migração para bancos já existentes (a tabela real diverge deste script,
+-- veja nota no topo do arquivo). A coluna fica opcional no banco de
+-- propósito: jogadores cadastrados antes deste campo existir continuam
+-- com telefone nulo até serem editados. A obrigatoriedade ao cadastrar
+-- um jogador novo é garantida pela API, não por uma constraint aqui.
+alter table jogadores add column if not exists telefone text;
+alter table jogadores alter column telefone drop not null;
 
 -- =========================================================
 -- Tabela: partidas
