@@ -1,13 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { isAutenticado, getUsuario } from "@/lib/auth";
+import { isAutenticado } from "@/lib/auth";
+import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { CalendarIcon, Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { format, parseISO } from "date-fns";
-import { ptBR } from "date-fns/locale";
-
-import { cn } from "@/lib/utils";
 
 import {
   POSITIONS,
@@ -33,8 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DatePicker } from "@/components/DatePicker";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
@@ -159,7 +155,7 @@ function PlayerCard({
 function PlayersPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
-  const podeEditar = getUsuario()?.papel === "editor";
+  const podeEditar = useUsuario()?.papel === "editor";
 
   const [search, setSearch] = useState("");
   const [positionFilter, setPositionFilter] = useState("todas");
@@ -375,39 +371,13 @@ function PlayersPage() {
             </div>
             <div>
               <Label htmlFor="birth">Data de nascimento</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    id="birth"
-                    type="button"
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start gap-2 font-normal",
-                      !form.birth_date && "text-muted-foreground",
-                    )}
-                  >
-                    <CalendarIcon className="h-4 w-4 shrink-0" />
-                    {form.birth_date ? format(parseISO(form.birth_date), "dd/MM/yyyy") : "Selecione a data"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    locale={ptBR}
-                    captionLayout="dropdown"
-                    startMonth={new Date(1950, 0)}
-                    endMonth={new Date()}
-                    disabled={{ after: new Date() }}
-                    selected={form.birth_date ? parseISO(form.birth_date) : undefined}
-                    onSelect={(date) =>
-                      setForm({ ...form, birth_date: date ? format(date, "yyyy-MM-dd") : "" })
-                    }
-                    formatters={{
-                      formatMonthDropdown: (date) => format(date, "MMM", { locale: ptBR }),
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
+              <DatePicker
+                id="birth"
+                value={form.birth_date}
+                onChange={(v) => setForm({ ...form, birth_date: v })}
+                endMonth={new Date()}
+                disabled={{ after: new Date() }}
+              />
             </div>
             <div className="sm:col-span-2">
               <Label>Posições *</Label>

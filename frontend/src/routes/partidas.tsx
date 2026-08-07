@@ -1,5 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { isAutenticado, getUsuario } from "@/lib/auth";
+import { isAutenticado } from "@/lib/auth";
+import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Pencil, Plus, Trash2, Eye } from "lucide-react";
@@ -33,6 +34,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { DatePicker } from "@/components/DatePicker";
 import {
   Select,
   SelectContent,
@@ -131,7 +133,7 @@ const statusVariant = (s: string) =>
 
 function MatchesPage() {
   const qc = useQueryClient();
-  const podeEditar = getUsuario()?.papel === "editor";
+  const podeEditar = useUsuario()?.papel === "editor";
   const { data, isLoading } = useQuery({ queryKey: ["matches"], queryFn: fetchMatches });
   const { data: players } = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
 
@@ -344,11 +346,10 @@ function MatchesPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="date">Data *</Label>
-              <Input
+              <DatePicker
                 id="date"
-                type="date"
                 value={form.match_date}
-                onChange={(e) => setForm({ ...form, match_date: e.target.value })}
+                onChange={(v) => setForm({ ...form, match_date: v })}
               />
             </div>
             <div>

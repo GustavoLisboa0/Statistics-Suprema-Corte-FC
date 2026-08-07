@@ -2,7 +2,8 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { BarChart3, CalendarDays, Instagram, LogOut, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { getUsuario, logout } from "@/lib/auth";
+import { logout } from "@/lib/auth";
+import { useUsuario } from "@/lib/useUsuario";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -38,7 +39,8 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const usuario = getUsuario();
+
+  const usuario = useUsuario();
 
   const sair = () => {
     logout();

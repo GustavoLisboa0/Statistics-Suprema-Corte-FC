@@ -310,9 +310,30 @@ export async function deletePlayer(id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Partidas
 // ---------------------------------------------------------------------------
+/**
+ * Ordena as partidas pela proximidade com hoje: primeiro as que ainda vão
+ * acontecer (da mais próxima para a mais distante) e, na sequência, as que já
+ * passaram (da mais recente para a mais antiga).
+ */
+export function sortMatches(matches: Match[]): Match[] {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    now.getDate(),
+  ).padStart(2, "0")}`;
+
+  return [...matches].sort((a, b) => {
+    const aUpcoming = a.match_date >= today;
+    const bUpcoming = b.match_date >= today;
+    if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+    return aUpcoming
+      ? a.match_date.localeCompare(b.match_date)
+      : b.match_date.localeCompare(a.match_date);
+  });
+}
+
 export async function fetchMatches(): Promise<Match[]> {
   const data = await api.get<PartidaApi[]>("/partidas/");
-  return data.map(toMatch);
+  return sortMatches(data.map(toMatch));
 }
 
 export async function createMatch(input: MatchInput): Promise<void> {
