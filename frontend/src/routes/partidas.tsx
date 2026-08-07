@@ -9,10 +9,16 @@ import { toast } from "sonner";
 import {
   STATUSES,
   STATUS_LABELS,
+  STATUS_LABELS_PLURAL,
   VENUES,
   VENUE_LABELS,
   MANDOS,
   MANDO_LABELS,
+  CATEGORIES,
+  CATEGORY_LABELS,
+  POSITION_CATEGORY,
+  POSITION_LABELS,
+  POSITION_ABBR,
   matchTitle,
   fetchMatchStats,
   fetchMatches,
@@ -24,7 +30,9 @@ import {
   upsertMatchStats,
   type Match,
   type MatchInput,
+  type Position,
 } from "@/lib/football";
+import { ResultBadge } from "@/components/ResultBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,6 +115,7 @@ const emptyMatch: MatchForm = {
 };
 
 type StatRow = {
+  position: Position | null;
   starter: boolean;
   minutes: number;
   goals: number;
@@ -118,6 +127,7 @@ type StatRow = {
 };
 
 const emptyStat: StatRow = {
+  position: null,
   starter: false,
   minutes: 0,
   goals: 0,
@@ -157,8 +167,11 @@ function MatchesPage() {
     const next: Record<string, StatRow> = {};
     for (const p of activePlayers) {
       const found = existingStats?.find((s) => s.player_id === p.id);
+      // Sem posição salva (lançamento antigo ou novo), assume a principal.
+      const principal = p.positions[0] ?? null;
       next[p.id] = found
         ? {
+            position: found.position ?? principal,
             starter: found.starter,
             minutes: found.minutes,
             goals: found.goals,
@@ -168,7 +181,7 @@ function MatchesPage() {
             saves: found.saves,
             goals_conceded: found.goals_conceded,
           }
-        : { ...emptyStat };
+        : { ...emptyStat, position: principal };
     }
     setRows(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -250,10 +263,22 @@ function MatchesPage() {
     save.mutate();
   };
 
-  const setCell = (playerId: string, key: keyof StatRow, value: number | boolean) =>
+  const setCell = (playerId: string, key: keyof StatRow, value: number | boolean | Position) =>
     setRows((prev) => ({ ...prev, [playerId]: { ...prev[playerId], [key]: value } }));
 
   const matches = (data ?? []).filter((m) => status === "todos" || m.status === status);
+
+  // Seções fixas: Agendadas, Realizadas e Canceladas (nessa ordem).
+  const matchGroups = STATUSES.map((s) => ({
+    status: s,
+    matches: matches.filter((m) => m.status === s),
+  })).filter((g) => g.matches.length > 0);
+
+  // Jogadores do lançamento de estatísticas, agrupados por setor do campo.
+  const playersByCategory = CATEGORIES.map((cat) => ({
+    category: cat,
+    players: activePlayers.filter((p) => POSITION_CATEGORY[p.positions[0]] === cat),
+  })).filter((g) => g.players.length > 0);
 
   return (
     <div className="space-y-6">
@@ -296,40 +321,61 @@ function MatchesPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {matches.map((m) => (
-            <Card key={m.id}>
-              <CardContent className="flex flex-wrap items-center gap-4 p-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">{matchTitle(m)}</span>
-                    <Badge variant={statusVariant(m.status)}>{STATUS_LABELS[m.status]}</Badge>
-                    <Badge variant="outline">
-                      {VENUE_LABELS[m.venue]}
-                      {m.venue === "outro" && m.venue_detail ? ` (${m.venue_detail})` : ""}
-                    </Badge>
-                    <Badge variant="outline">{MANDO_LABELS[m.mando]}</Badge>
-                    <Badge variant="outline">{m.kind === "amistoso" ? "Amistoso" : "Campeonato"}</Badge>
-                  </div>
-                  <div className="text-sm text-muted-foreground">{formatDate(m.match_date)}</div>
-                </div>
-                {m.status === "realizada" && (
-                  <span className="font-display text-3xl">
-                    {m.goals_for ?? 0} × {m.goals_against ?? 0}
-                  </span>
-                )}
-                <div className="flex gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
-                    {podeEditar ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                  {podeEditar && (
-                    <Button size="icon" variant="ghost" onClick={() => setToDelete(m)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+        <div className="space-y-6">
+          {matchGroups.map((g) => (
+            <div key={g.status}>
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                {STATUS_LABELS_PLURAL[g.status]}
+                <Badge variant="outline" className="font-normal">
+                  {g.matches.length}
+                </Badge>
+              </h2>
+              <div className="space-y-3">
+                {g.matches.map((m) => (
+                  <Card key={m.id}>
+                    <CardContent className="flex flex-wrap items-center gap-4 p-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold">{matchTitle(m)}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <Badge variant={statusVariant(m.status)}>{STATUS_LABELS[m.status]}</Badge>
+                          <span className="text-sm text-muted-foreground">
+                            {formatDate(m.match_date)}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <Badge variant="outline">
+                            {VENUE_LABELS[m.venue]}
+                            {m.venue === "outro" && m.venue_detail ? ` (${m.venue_detail})` : ""}
+                          </Badge>
+                          <Badge variant="outline">{MANDO_LABELS[m.mando]}</Badge>
+                          <Badge variant="outline">
+                            {m.kind === "amistoso" ? "Amistoso" : "Campeonato"}
+                          </Badge>
+                        </div>
+                      </div>
+                      {m.status === "realizada" && (
+                        <div className="flex items-center gap-2">
+                          <span className="font-display text-3xl">
+                            {m.goals_for ?? 0} × {m.goals_against ?? 0}
+                          </span>
+                          <ResultBadge match={m} />
+                        </div>
+                      )}
+                      <div className="flex gap-1">
+                        <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
+                          {podeEditar ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                        {podeEditar && (
+                          <Button size="icon" variant="ghost" onClick={() => setToDelete(m)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -482,6 +528,7 @@ function MatchesPage() {
                     <thead>
                       <tr className="border-b text-left text-xs uppercase text-muted-foreground">
                         <th className="p-2">Jogador</th>
+                        <th className="p-2">Posição</th>
                         <th className="p-2">Tit.</th>
                         <th className="p-2">Min</th>
                         <th className="p-2">Gols</th>
@@ -492,49 +539,94 @@ function MatchesPage() {
                         <th className="p-2">GS</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {activePlayers.map((p) => {
-                        const r = rows[p.id] ?? emptyStat;
-                        const gk = p.positions.includes("goleiro");
-                        const num = (key: keyof StatRow) => (
-                          <Input
-                            type="number"
-                            min={0}
-                            className="h-8 w-16"
-                            value={r[key] as number}
-                            onChange={(e) => setCell(p.id, key, Number(e.target.value) || 0)}
-                          />
-                        );
-                        return (
-                          <tr key={p.id} className="border-b last:border-0">
-                            <td className="whitespace-nowrap p-2 font-medium">
-                              {p.nickname || p.name}
-                            </td>
-                            <td className="p-2">
-                              <Checkbox
-                                checked={r.starter}
-                                onCheckedChange={(v) => setCell(p.id, "starter", v === true)}
-                              />
-                            </td>
-                            <td className="p-2">{num("minutes")}</td>
-                            <td className="p-2">{num("goals")}</td>
-                            <td className="p-2">{num("assists")}</td>
-                            <td className="p-2">{num("yellow_cards")}</td>
-                            <td className="p-2">{num("red_cards")}</td>
-                            <td className="p-2">
-                              {gk ? num("saves") : <span className="text-muted-foreground">—</span>}
-                            </td>
-                            <td className="p-2">
-                              {gk ? (
-                                num("goals_conceded")
-                              ) : (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
+                    {playersByCategory.map((g) => (
+                      <tbody key={g.category}>
+                        <tr className="border-b bg-muted/40">
+                          <td
+                            colSpan={10}
+                            className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                          >
+                            {CATEGORY_LABELS[g.category]}
+                          </td>
+                        </tr>
+                        {g.players.map((p) => {
+                          const r = rows[p.id] ?? emptyStat;
+                          const gk = p.positions.includes("goleiro");
+                          const num = (key: keyof StatRow) => (
+                            <Input
+                              type="number"
+                              min={0}
+                              className="h-8 w-16"
+                              value={r[key] as number}
+                              onChange={(e) => setCell(p.id, key, Number(e.target.value) || 0)}
+                            />
+                          );
+                          return (
+                            <tr key={p.id} className="border-b last:border-0">
+                              <td className="whitespace-nowrap p-2 font-medium">
+                                {p.nickname || p.name}
+                              </td>
+                              <td className="p-2">
+                                {/* Só a tag da posição. Quem tem mais de uma ganha
+                                    uma setinha para trocar pelas secundárias. */}
+                                {p.positions.length > 1 ? (
+                                  <Select
+                                    value={r.position ?? p.positions[0]}
+                                    onValueChange={(v) => setCell(p.id, "position", v as Position)}
+                                  >
+                                    <SelectTrigger className="h-auto w-auto gap-1 border-0 bg-transparent p-0 shadow-none focus:ring-0 [&>svg]:h-3 [&>svg]:w-3">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {p.positions.map((pos) => (
+                                        <SelectItem key={pos} value={pos}>
+                                          <Badge
+                                            variant="secondary"
+                                            className="font-normal"
+                                            title={POSITION_LABELS[pos]}
+                                          >
+                                            {POSITION_ABBR[pos]}
+                                          </Badge>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <Badge
+                                    variant="secondary"
+                                    className="font-normal"
+                                    title={POSITION_LABELS[r.position ?? p.positions[0]]}
+                                  >
+                                    {POSITION_ABBR[r.position ?? p.positions[0]]}
+                                  </Badge>
+                                )}
+                              </td>
+                              <td className="p-2">
+                                <Checkbox
+                                  checked={r.starter}
+                                  onCheckedChange={(v) => setCell(p.id, "starter", v === true)}
+                                />
+                              </td>
+                              <td className="p-2">{num("minutes")}</td>
+                              <td className="p-2">{num("goals")}</td>
+                              <td className="p-2">{num("assists")}</td>
+                              <td className="p-2">{num("yellow_cards")}</td>
+                              <td className="p-2">{num("red_cards")}</td>
+                              <td className="p-2">
+                                {gk ? num("saves") : <span className="text-muted-foreground">—</span>}
+                              </td>
+                              <td className="p-2">
+                                {gk ? (
+                                  num("goals_conceded")
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    ))}
                   </table>
                 </div>
               )}

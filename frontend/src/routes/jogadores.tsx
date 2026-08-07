@@ -14,6 +14,11 @@ import {
   CATEGORY_LABELS,
   POSITION_CATEGORY,
   PHONE_REGEX,
+  MAX_POSITIONS,
+  MAX_NAME_LENGTH,
+  MAX_NICKNAME_LENGTH,
+  MAX_SHIRT_DIGITS,
+  nameHasDigits,
   formatPhone,
   fetchPlayers,
   createPlayer,
@@ -23,6 +28,7 @@ import {
   type PlayerInput,
   type Position,
 } from "@/lib/football";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -109,7 +115,12 @@ function PlayerCard({
   onDelete: () => void;
 }) {
   return (
-    <Card className="w-64 shrink-0">
+    <Card
+      className={cn(
+        "w-64 shrink-0",
+        !player.active && "border-purple-300 bg-purple-100 dark:border-purple-400/30 dark:bg-purple-400/15",
+      )}
+    >
       <CardContent className="flex items-center gap-3 p-3">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary font-display text-lg text-primary-foreground">
           {player.shirt_number ?? "–"}
@@ -238,9 +249,17 @@ function PlayersPage() {
     .filter((g) => g.players.length > 0);
 
   const submit = () => {
-    if (!form.name.trim()) return toast.error("Informe o nome do jogador");
+    const name = form.name.trim();
+    if (!name) return toast.error("Informe o nome do jogador");
+    if (nameHasDigits(name)) return toast.error("O nome não pode conter números");
+    if (name.length > MAX_NAME_LENGTH)
+      return toast.error(`O nome deve ter no máximo ${MAX_NAME_LENGTH} caracteres`);
+    if (form.nickname.trim().length > MAX_NICKNAME_LENGTH)
+      return toast.error(`O apelido deve ter no máximo ${MAX_NICKNAME_LENGTH} caracteres`);
     if (!PHONE_REGEX.test(form.phone)) return toast.error("Informe um telefone válido: (DDD) 91234-1234");
     if (form.positions.length === 0) return toast.error("Selecione ao menos uma posição");
+    if (form.positions.length > MAX_POSITIONS)
+      return toast.error(`Selecione no máximo ${MAX_POSITIONS} posições`);
     save.mutate();
   };
 
@@ -332,7 +351,7 @@ function PlayersPage() {
               <Label htmlFor="name">Nome *</Label>
               <Input
                 id="name"
-                maxLength={100}
+                maxLength={MAX_NAME_LENGTH}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
@@ -341,7 +360,7 @@ function PlayersPage() {
               <Label htmlFor="nickname">Apelido</Label>
               <Input
                 id="nickname"
-                maxLength={50}
+                maxLength={MAX_NICKNAME_LENGTH}
                 value={form.nickname}
                 onChange={(e) => setForm({ ...form, nickname: e.target.value })}
               />
@@ -362,11 +381,17 @@ function PlayersPage() {
               <Label htmlFor="shirt">Número da camisa</Label>
               <Input
                 id="shirt"
-                type="number"
-                min={0}
-                max={99}
+                type="text"
+                inputMode="numeric"
+                maxLength={MAX_SHIRT_DIGITS}
                 value={form.shirt_number}
-                onChange={(e) => setForm({ ...form, shirt_number: e.target.value })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    // só dígitos, no máximo 3 — `type="number"` ignora maxLength
+                    shirt_number: e.target.value.replace(/\D/g, "").slice(0, MAX_SHIRT_DIGITS),
+                  })
+                }
               />
             </div>
             <div>
@@ -380,14 +405,19 @@ function PlayersPage() {
               />
             </div>
             <div className="sm:col-span-2">
-              <Label>Posições *</Label>
+              <Label>Posições * (máximo {MAX_POSITIONS})</Label>
               <ToggleGroup
                 type="multiple"
                 value={form.positions}
                 onValueChange={(v) => {
                   const mantidas = form.positions.filter((p) => v.includes(p));
                   const novas = v.filter((p) => !form.positions.includes(p as Position)) as Position[];
-                  setForm({ ...form, positions: [...mantidas, ...novas] });
+                  const todas = [...mantidas, ...novas];
+                  if (todas.length > MAX_POSITIONS) {
+                    toast.error(`Máximo de ${MAX_POSITIONS} posições por jogador`);
+                    return;
+                  }
+                  setForm({ ...form, positions: todas });
                 }}
                 className="flex flex-wrap justify-start gap-1.5"
               >

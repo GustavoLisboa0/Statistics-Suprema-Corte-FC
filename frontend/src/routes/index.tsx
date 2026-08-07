@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { isAutenticado } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
-import { Award, Goal, ShieldAlert, TrendingUp } from "lucide-react";
+import { Award, CalendarDays, Goal, ShieldAlert, TrendingUp } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchAllStats, fetchMatches, fetchPlayers, formatDate, matchTitle, MANDO_LABELS } from "@/lib/football";
+import { ResultBadge } from "@/components/ResultBadge";
 
 export const Route = createFileRoute("/")({
   beforeLoad: () => {
@@ -357,7 +358,8 @@ function Dashboard() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="flex flex-row items-center gap-2 pb-2">
+            <CalendarDays className="h-5 w-5 text-accent" />
             <CardTitle className="text-lg">Próximas partidas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -398,9 +400,12 @@ function Dashboard() {
                     <div className="font-semibold">{matchTitle(m)}</div>
                     <div className="text-muted-foreground">{formatDate(m.match_date)}</div>
                   </div>
-                  <span className="font-display text-2xl">
-                    {m.goals_for ?? 0} × {m.goals_against ?? 0}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-2xl">
+                      {m.goals_for ?? 0} × {m.goals_against ?? 0}
+                    </span>
+                    <ResultBadge match={m} />
+                  </div>
                 </div>
               ))
             )}

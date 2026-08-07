@@ -21,6 +21,17 @@ export const POSITIONS = [
 
 export type Position = (typeof POSITIONS)[number];
 
+// Limites do cadastro de jogador (a primeira posição é a principal)
+export const MAX_POSITIONS = 3;
+export const MAX_NAME_LENGTH = 100;
+export const MAX_NICKNAME_LENGTH = 30;
+export const MAX_SHIRT_DIGITS = 3;
+
+/** Nome não pode conter dígitos. */
+export function nameHasDigits(name: string): boolean {
+  return /\d/.test(name);
+}
+
 export const POSITION_LABELS: Record<Position, string> = {
   goleiro: "Goleiro",
   zagueiro: "Zagueiro",
@@ -92,6 +103,13 @@ export const STATUS_LABELS: Record<Status, string> = {
   cancelada: "Cancelada",
 };
 
+/** Usado nos títulos das seções da tela de partidas. */
+export const STATUS_LABELS_PLURAL: Record<Status, string> = {
+  agendada: "Agendadas",
+  realizada: "Realizadas",
+  cancelada: "Canceladas",
+};
+
 // ---------------------------------------------------------------------------
 // Local (campo físico) e mando de campo
 // ---------------------------------------------------------------------------
@@ -113,6 +131,31 @@ export const MANDO_LABELS: Record<Mando, string> = {
 };
 
 export type Kind = "campeonato" | "amistoso";
+
+// ---------------------------------------------------------------------------
+// Resultado da partida (do ponto de vista do Suprema Corte)
+// ---------------------------------------------------------------------------
+export type Result = "vitoria" | "empate" | "derrota";
+
+export const RESULT_LABELS: Record<Result, string> = {
+  vitoria: "Vitória",
+  empate: "Empate",
+  derrota: "Derrota",
+};
+
+/** Resultado de uma partida já realizada; `null` enquanto não houver placar. */
+export function matchResult(match: {
+  status: Status;
+  goals_for: number | null;
+  goals_against: number | null;
+}): Result | null {
+  if (match.status !== "realizada") return null;
+  const gf = match.goals_for ?? 0;
+  const ga = match.goals_against ?? 0;
+  if (gf > ga) return "vitoria";
+  if (gf < ga) return "derrota";
+  return "empate";
+}
 
 export const TEAM_NAME = "Suprema Corte FC";
 
@@ -157,6 +200,8 @@ export type MatchStat = {
   id: string;
   match_id: string;
   player_id: string;
+  /** Posição em que atuou nesta partida; null em lançamentos antigos. */
+  position: Position | null;
   starter: boolean;
   minutes: number;
   goals: number;
@@ -201,6 +246,7 @@ type EstatisticaApi = {
   id: string;
   jogador_id: string;
   partida_id: string;
+  posicao: Position | null;
   gols: number;
   assistencias: number;
   cartoes_amarelos: number;
@@ -276,6 +322,7 @@ function toMatchStat(e: EstatisticaApi): MatchStat {
     id: e.id,
     match_id: e.partida_id,
     player_id: e.jogador_id,
+    position: e.posicao,
     starter: e.titular,
     minutes: e.minutos_jogados,
     goals: e.gols,
@@ -377,6 +424,7 @@ export async function upsertMatchStats(
     const payload = {
       jogador_id: playerId,
       partida_id: matchId,
+      posicao: r.position,
       titular: r.starter,
       minutos_jogados: r.minutes,
       gols: r.goals,

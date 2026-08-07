@@ -103,6 +103,9 @@ class Partida(PartidaBase):
 class EstatisticaBase(BaseModel):
     jogador_id: UUID
     partida_id: UUID
+    # Posição em que o jogador atuou nesta partida. Opcional: lançamentos
+    # antigos não têm o dado, e o front assume a posição principal dele.
+    posicao: Optional[Posicao] = None
     gols: int = 0
     assistencias: int = 0
     cartoes_amarelos: int = 0
@@ -118,6 +121,7 @@ class EstatisticaCreate(EstatisticaBase):
 
 
 class EstatisticaUpdate(BaseModel):
+    posicao: Optional[Posicao] = None
     gols: Optional[int] = None
     assistencias: Optional[int] = None
     cartoes_amarelos: Optional[int] = None

@@ -29,6 +29,9 @@ create table if not exists jogadores (
 alter table jogadores add column if not exists telefone text;
 alter table jogadores alter column telefone drop not null;
 
+-- Posição em que cada jogador atuou por partida (nullable pelo mesmo motivo).
+alter table estatisticas_partida add column if not exists posicao text;
+
 -- =========================================================
 -- Tabela: partidas
 -- =========================================================
@@ -53,6 +56,10 @@ create table if not exists estatisticas_partida (
     id                  uuid primary key default gen_random_uuid(),
     jogador_id          uuid not null references jogadores(id) on delete cascade,
     partida_id          uuid not null references partidas(id) on delete cascade,
+
+    -- Posição em que o jogador atuou nesta partida. Nullable: lançamentos
+    -- antigos não têm o dado e o front cai na posição principal do jogador.
+    posicao             text,
 
     gols                integer not null default 0,
     assistencias        integer not null default 0,
