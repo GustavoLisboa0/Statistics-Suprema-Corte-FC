@@ -43,6 +43,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/DatePicker";
+import { NumberInput } from "@/components/NumberInput";
 import {
   Select,
   SelectContent,
@@ -381,7 +382,7 @@ function MatchesPage() {
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[52rem]">
           <DialogHeader>
             <DialogTitle>
               {!podeEditar ? "Ver partida" : editing ? "Editar partida" : "Nova partida"}
@@ -482,22 +483,20 @@ function MatchesPage() {
                 <div className="grid grid-cols-2 gap-2 rounded-lg border p-3">
                   <div>
                     <Label htmlFor="gf">Suprema Corte</Label>
-                    <Input
+                    <NumberInput
                       id="gf"
-                      type="number"
-                      min={0}
                       value={form.goals_for}
-                      onChange={(e) => setForm({ ...form, goals_for: e.target.value })}
+                      onChange={(v) => setForm({ ...form, goals_for: v })}
+                      max={99}
                     />
                   </div>
                   <div>
                     <Label htmlFor="ga">Adversário</Label>
-                    <Input
+                    <NumberInput
                       id="ga"
-                      type="number"
-                      min={0}
                       value={form.goals_against}
-                      onChange={(e) => setForm({ ...form, goals_against: e.target.value })}
+                      onChange={(v) => setForm({ ...form, goals_against: v })}
+                      max={99}
                     />
                   </div>
                 </div>
@@ -526,17 +525,17 @@ function MatchesPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                        <th className="p-2">Jogador</th>
-                        <th className="p-2">Posição</th>
-                        <th className="p-2">Tit.</th>
-                        <th className="p-2">Min</th>
-                        <th className="p-2">Gols</th>
-                        <th className="p-2">Assist.</th>
-                        <th className="p-2">CA</th>
-                        <th className="p-2">CV</th>
-                        <th className="p-2">Def.</th>
-                        <th className="p-2">GS</th>
+                      <tr className="border-b text-center text-xs uppercase text-muted-foreground">
+                        <th className="px-1.5 py-2 text-left">Jogador</th>
+                        <th className="px-1.5 py-2 text-left">Posição</th>
+                        <th className="px-1.5 py-2">Tit.</th>
+                        <th className="px-1.5 py-2">Min</th>
+                        <th className="px-1.5 py-2">Gols</th>
+                        <th className="px-1.5 py-2">Assist.</th>
+                        <th className="px-1.5 py-2">CA</th>
+                        <th className="px-1.5 py-2">CV</th>
+                        <th className="px-1.5 py-2">Def.</th>
+                        <th className="px-1.5 py-2">GS</th>
                       </tr>
                     </thead>
                     {playersByCategory.map((g) => (
@@ -553,25 +552,36 @@ function MatchesPage() {
                           const r = rows[p.id] ?? emptyStat;
                           const gk = p.positions.includes("goleiro");
                           const num = (key: keyof StatRow) => (
-                            <Input
-                              type="number"
-                              min={0}
-                              className="h-8 w-16"
-                              value={r[key] as number}
-                              onChange={(e) => setCell(p.id, key, Number(e.target.value) || 0)}
+                            <NumberInput
+                              className="mx-auto w-16"
+                              inputClassName="h-8 text-center"
+                              max={999}
+                              value={String(r[key] ?? 0)}
+                              onChange={(v) => setCell(p.id, key, Number(v) || 0)}
                             />
+                          );
+                          const posicao = r.position ?? p.positions[0];
+                          const tagPosicao = (
+                            <Badge
+                              variant="secondary"
+                              className="font-normal"
+                              title={POSITION_LABELS[posicao]}
+                            >
+                              {POSITION_ABBR[posicao]}
+                            </Badge>
                           );
                           return (
                             <tr key={p.id} className="border-b last:border-0">
-                              <td className="whitespace-nowrap p-2 font-medium">
+                              <td className="whitespace-nowrap px-1.5 py-1.5 text-left font-medium">
                                 {p.nickname || p.name}
                               </td>
-                              <td className="p-2">
-                                {/* Só a tag da posição. Quem tem mais de uma ganha
-                                    uma setinha para trocar pelas secundárias. */}
-                                {p.positions.length > 1 ? (
+                              <td className="px-1.5 py-1.5">
+                                {/* Só a tag da posição. Quem edita e tem mais de uma
+                                    posição ganha uma setinha para trocar; quem só
+                                    visualiza vê a tag pura, sem sugerir interação. */}
+                                {podeEditar && p.positions.length > 1 ? (
                                   <Select
-                                    value={r.position ?? p.positions[0]}
+                                    value={posicao}
                                     onValueChange={(v) => setCell(p.id, "position", v as Position)}
                                   >
                                     <SelectTrigger className="h-auto w-auto gap-1 border-0 bg-transparent p-0 shadow-none focus:ring-0 [&>svg]:h-3 [&>svg]:w-3">
@@ -592,30 +602,26 @@ function MatchesPage() {
                                     </SelectContent>
                                   </Select>
                                 ) : (
-                                  <Badge
-                                    variant="secondary"
-                                    className="font-normal"
-                                    title={POSITION_LABELS[r.position ?? p.positions[0]]}
-                                  >
-                                    {POSITION_ABBR[r.position ?? p.positions[0]]}
-                                  </Badge>
+                                  <div className="flex justify-start">{tagPosicao}</div>
                                 )}
                               </td>
-                              <td className="p-2">
-                                <Checkbox
-                                  checked={r.starter}
-                                  onCheckedChange={(v) => setCell(p.id, "starter", v === true)}
-                                />
+                              <td className="px-1.5 py-1.5">
+                                <div className="flex justify-center">
+                                  <Checkbox
+                                    checked={r.starter}
+                                    onCheckedChange={(v) => setCell(p.id, "starter", v === true)}
+                                  />
+                                </div>
                               </td>
-                              <td className="p-2">{num("minutes")}</td>
-                              <td className="p-2">{num("goals")}</td>
-                              <td className="p-2">{num("assists")}</td>
-                              <td className="p-2">{num("yellow_cards")}</td>
-                              <td className="p-2">{num("red_cards")}</td>
-                              <td className="p-2">
+                              <td className="px-1.5 py-1.5">{num("minutes")}</td>
+                              <td className="px-1.5 py-1.5">{num("goals")}</td>
+                              <td className="px-1.5 py-1.5">{num("assists")}</td>
+                              <td className="px-1.5 py-1.5">{num("yellow_cards")}</td>
+                              <td className="px-1.5 py-1.5">{num("red_cards")}</td>
+                              <td className="px-1.5 py-1.5 text-center">
                                 {gk ? num("saves") : <span className="text-muted-foreground">—</span>}
                               </td>
-                              <td className="p-2">
+                              <td className="px-1.5 py-1.5 text-center">
                                 {gk ? (
                                   num("goals_conceded")
                                 ) : (

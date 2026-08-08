@@ -35,10 +35,12 @@ function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-accent/100 p-4">
-      <Card className="w-full max-w-sm">
+    // No claro o fundo é o dourado cheio; no escuro ele viraria um bloco muito
+    // berrante, então usa o cinza do tema e o dourado fica na borda do card.
+    <div className="flex min-h-screen items-center justify-center bg-accent/100 p-4 dark:bg-background">
+      <Card className="w-full max-w-sm dark:border-accent/30">
         <CardHeader className="text-center">
-          <CardTitle className="font-display text-3xl">Suprema Corte FC</CardTitle>
+          <CardTitle className="font-display text-3xl dark:text-accent">Suprema Corte FC</CardTitle>
           <p className="text-sm text-muted-foreground">Entre para acessar o sistema</p>
         </CardHeader>
         <CardContent>

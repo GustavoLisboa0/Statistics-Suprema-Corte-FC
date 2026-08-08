@@ -37,6 +37,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DatePicker } from "@/components/DatePicker";
+import { NumberInput } from "@/components/NumberInput";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Select,
@@ -141,7 +142,9 @@ function PlayerCard({
               <Badge
                 key={pos}
                 variant={i === 0 ? "default" : "outline"}
-                className={`px-1.5 text-[10px] ${i === 0 ? "" : "border-accent bg-accent/15 text-accent-foreground"}`}
+                // secundária: só o contorno dourado e um véu da cor; o texto
+                // segue o foreground para continuar legível nos dois temas
+                className={`px-1.5 text-[10px] ${i === 0 ? "" : "border-accent/50 bg-accent/15 text-foreground"}`}
               >
                 {POSITION_ABBR[pos]}
               </Badge>
@@ -379,19 +382,13 @@ function PlayersPage() {
             </div>
             <div>
               <Label htmlFor="shirt">Número da camisa</Label>
-              <Input
+              <NumberInput
                 id="shirt"
-                type="text"
-                inputMode="numeric"
-                maxLength={MAX_SHIRT_DIGITS}
                 value={form.shirt_number}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    // só dígitos, no máximo 3 — `type="number"` ignora maxLength
-                    shirt_number: e.target.value.replace(/\D/g, "").slice(0, MAX_SHIRT_DIGITS),
-                  })
-                }
+                onChange={(v) => setForm({ ...form, shirt_number: v })}
+                min={0}
+                max={999}
+                maxDigits={MAX_SHIRT_DIGITS}
               />
             </div>
             <div>

@@ -14,7 +14,6 @@ import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { Button } from "@/components/ui/button";
 import { Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -113,6 +112,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
+/**
+ * Switch deslizante de tema. O sol/lua fica dentro do próprio botão que
+ * desliza; o trilho acende em dourado no escuro.
+ */
 function ThemeToggle() {
   const [isDark, setIsDark] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -135,23 +138,42 @@ function ThemeToggle() {
     localStorage.setItem("theme", next ? "dark" : "light");
   };
 
+  // Antes de montar não dá pra saber o tema (o valor vive no localStorage),
+  // então renderiza o trilho vazio pra não quebrar a hidratação nem "pular".
+  const trilho =
+    "relative inline-flex h-7 w-13 shrink-0 items-center rounded-full border transition-colors";
+
   if (!mounted) {
-    return (
-      <Button variant="outline" size="icon" aria-label="Alternar tema">
-        <Sun className="h-4 w-4" />
-      </Button>
-    );
+    return <div className={cn(trilho, "border-border/60 bg-muted/40")} aria-hidden="true" />;
   }
 
   return (
-    <Button
-      variant="outline"
-      size="icon"
+    <button
+      type="button"
+      role="switch"
+      aria-checked={isDark}
       onClick={toggle}
       aria-label={isDark ? "Ativar tema claro" : "Ativar tema escuro"}
+      title={isDark ? "Ativar tema claro" : "Ativar tema escuro"}
+      className={cn(
+        trilho,
+        "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-header",
+        isDark ? "border-primary/40 bg-primary/20" : "border-black/15 bg-black/10",
+      )}
     >
-      {isDark ? <Sun className="h-4 w-4 text-primary" /> : <Moon className="h-4 w-4 text-primary" />}
-    </Button>
+      <span
+        className={cn(
+          "flex h-5.5 w-5.5 items-center justify-center rounded-full shadow-sm transition-all duration-200",
+          isDark ? "translate-x-6.5 bg-primary" : "translate-x-0.5 bg-white",
+        )}
+      >
+        {isDark ? (
+          <Moon className="h-3.5 w-3.5 text-primary-foreground" />
+        ) : (
+          <Sun className="h-3.5 w-3.5 text-amber-500" />
+        )}
+      </span>
+    </button>
   );
 }
 

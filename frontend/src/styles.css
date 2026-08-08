@@ -104,43 +104,60 @@
   --sidebar-accent-foreground: oklch(1 0 0);
   --sidebar-border: oklch(0.4 0.13 312);
   --sidebar-ring: oklch(0.727 0.147 82);
+  /* Barra de rolagem: roxo bem diluído no claro. */
+  --scrollbar-thumb: oklch(0.78 0.04 312);
+  --scrollbar-thumb-hover: oklch(0.62 0.08 312);
 }
 
+/*
+ * Tema escuro: roxo do time nas superfícies de "moldura" (fundo, sidebar e
+ * header), cinza arroxeado nos cards para suavizar a leitura e o dourado
+ * reservado aos detalhes — ícones, destaques, foco e logo.
+ *
+ * A ideia é o roxo emoldurar e o cinza acalmar o conteúdo: por isso os cards
+ * têm chroma bem menor (~0.022) que a sidebar (~0.055), mesmo estando na
+ * mesma tonalidade (312). Hierarquia: background < sidebar/header < card <
+ * popover.
+ */
 .dark {
-  --background: oklch(0.17 0.075 312);
-  --foreground: oklch(0.98 0.005 312);
-  --card: oklch(0.23 0.095 312);
-  --card-foreground: oklch(0.98 0.005 312);
-  --header: oklch(0.727 0.147 82);
-  --header-foreground: oklch(0.98 0.005 312);
-  --popover: oklch(0.23 0.095 312);
-  --popover-foreground: oklch(0.98 0.005 312);
-  --primary: oklch(0.727 0.147 82);
-  --primary-foreground: oklch(0.19 0.09 312);
-  --secondary: oklch(0.3 0.11 312);
-  --secondary-foreground: oklch(0.98 0.005 312);
-  --muted: oklch(0.3 0.11 312);
-  --muted-foreground: oklch(0.76 0.04 312);
-  --accent: oklch(0.727 0.147 82);
-  --accent-foreground: oklch(0.19 0.09 312);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
+  --background: oklch(0.17 0.042 312);
+  --foreground: oklch(0.97 0.006 312);
+  --card: oklch(0.235 0.024 312);
+  --card-foreground: oklch(0.97 0.006 312);
+  --header: oklch(0.215 0.055 312);
+  --header-foreground: oklch(0.85 0.12 82);
+  --popover: oklch(0.255 0.026 312);
+  --popover-foreground: oklch(0.97 0.006 312);
+  --primary: oklch(0.78 0.14 82);
+  --primary-foreground: oklch(0.2 0.03 82);
+  --secondary: oklch(0.3 0.028 312);
+  --secondary-foreground: oklch(0.96 0.006 312);
+  --muted: oklch(0.29 0.026 312);
+  --muted-foreground: oklch(0.75 0.022 312);
+  --accent: oklch(0.78 0.14 82);
+  --accent-foreground: oklch(0.2 0.03 82);
+  --destructive: oklch(0.65 0.19 25);
+  --destructive-foreground: oklch(0.98 0.003 250);
+  --border: oklch(1 0 0 / 11%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.727 0.147 82);
-  --chart-1: oklch(0.727 0.147 82);
-  --chart-2: oklch(0.62 0.15 312);
-  --chart-3: oklch(0.83 0.13 88);
-  --chart-4: oklch(0.45 0.16 312);
-  --chart-5: oklch(0.9 0.06 90);
-  --sidebar: oklch(0.23 0.095 312);
-  --sidebar-foreground: oklch(0.98 0.005 312);
-  --sidebar-primary: oklch(0.727 0.147 82);
-  --sidebar-primary-foreground: oklch(0.19 0.09 312);
-  --sidebar-accent: oklch(0.32 0.12 312);
-  --sidebar-accent-foreground: oklch(1 0 0);
+  --ring: oklch(0.78 0.14 82);
+  /* Gráficos alternam dourado e roxo, fechando com um cinza arroxeado. */
+  --chart-1: oklch(0.78 0.14 82);
+  --chart-2: oklch(0.64 0.17 312);
+  --chart-3: oklch(0.88 0.1 88);
+  --chart-4: oklch(0.76 0.13 312);
+  --chart-5: oklch(0.62 0.03 312);
+  --sidebar: oklch(0.215 0.055 312);
+  --sidebar-foreground: oklch(0.93 0.01 312);
+  --sidebar-primary: oklch(0.78 0.14 82);
+  --sidebar-primary-foreground: oklch(0.2 0.03 82);
+  --sidebar-accent: oklch(0.33 0.07 312);
+  --sidebar-accent-foreground: oklch(0.98 0.005 312);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.727 0.147 82);
+  --sidebar-ring: oklch(0.78 0.14 82);
+  /* No escuro a barra é um cinza arroxeado que some no fundo até o hover. */
+  --scrollbar-thumb: oklch(0.38 0.035 312);
+  --scrollbar-thumb-hover: oklch(0.52 0.06 312);
 }
 
 @layer base {
@@ -159,5 +176,50 @@
   h3 {
     font-family: var(--font-display);
     letter-spacing: 0.02em;
+  }
+
+  /*
+   * Avisa o navegador qual é o tema. Sem isso, os controles nativos
+   * (barra de rolagem, seletor de data, dropdown) continuam claros no
+   * modo escuro — era o motivo das barras aparecerem brancas.
+   */
+  :root {
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  /* Chrome / Edge / Safari */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border: 2px solid transparent;
+    /* a borda transparente + clip deixa a barra "flutuando" com folga */
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }
