@@ -3,7 +3,7 @@ import { isAutenticado } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2, Eye } from "lucide-react";
+import { Pencil, Plus, Trash2, Eye, UserCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -19,11 +19,19 @@ import {
   POSITION_CATEGORY,
   POSITION_LABELS,
   POSITION_ABBR,
+  MIN_LINE_SLOTS,
+  MAX_LINE_SLOTS,
   matchTitle,
   fetchMatchStats,
   fetchMatches,
   fetchPlayers,
+  fetchPresences,
+  updatePaymentStatus,
+  updatePresenceStatus,
   formatDate,
+  formatMoney,
+  teamCost,
+  feePerPlayer,
   createMatch,
   updateMatch,
   deleteMatch,
@@ -31,8 +39,11 @@ import {
   type Match,
   type MatchInput,
   type Position,
+  type Presence,
 } from "@/lib/football";
+import { cn } from "@/lib/utils";
 import { ResultBadge } from "@/components/ResultBadge";
+import { ConfirmarPresenca, PresenceBadge } from "@/components/ConfirmarPresenca";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -100,6 +111,10 @@ type MatchForm = {
   notes: string;
   goals_for: string;
   goals_against: string;
+  line_slots: string;
+  court_fee: string;
+  referee_fee: string;
+  keeper_fee: string;
 };
 
 const emptyMatch: MatchForm = {
@@ -113,6 +128,10 @@ const emptyMatch: MatchForm = {
   notes: "",
   goals_for: "",
   goals_against: "",
+  line_slots: "",
+  court_fee: "",
+  referee_fee: "",
+  keeper_fee: "",
 };
 
 type StatRow = {
@@ -144,7 +163,8 @@ const statusVariant = (s: string) =>
 
 function MatchesPage() {
   const qc = useQueryClient();
-  const podeEditar = useUsuario()?.papel === "editor";
+  const usuario = useUsuario();
+  const podeEditar = usuario?.papel === "editor";
   const { data, isLoading } = useQuery({ queryKey: ["matches"], queryFn: fetchMatches });
   const { data: players } = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
 
@@ -154,6 +174,7 @@ function MatchesPage() {
   const [form, setForm] = useState<MatchForm>(emptyMatch);
   const [toDelete, setToDelete] = useState<Match | null>(null);
   const [rows, setRows] = useState<Record<string, StatRow>>({});
+  const [confirmando, setConfirmando] = useState<Match | null>(null);
 
   const { data: existingStats } = useQuery({
     queryKey: ["match-stats", editing?.id],
@@ -161,18 +182,46 @@ function MatchesPage() {
     enabled: !!editing && open,
   });
 
+  // Presenças da partida aberta (para a lista) e da que está confirmando.
+  const partidaComPresenca = editing ?? confirmando;
+  const { data: presences } = useQuery({
+    queryKey: ["presences", partidaComPresenca?.id],
+    queryFn: () => fetchPresences(partidaComPresenca!.id),
+    enabled: !!partidaComPresenca,
+  });
+
   const activePlayers = (players ?? []).filter((p) => p.active);
+
+  // Qual jogador é a conta logada. Mesma regra do backend: casa pelo email.
+  const meuEmail = (usuario?.email ?? "").trim().toLowerCase();
+  const meuJogador =
+    (meuEmail && activePlayers.find((p) => (p.email ?? "").trim().toLowerCase() === meuEmail)) ||
+    null;
+
+  const minhaPresenca =
+    (meuJogador && (presences ?? []).find((p) => p.player_id === meuJogador.id)) || null;
+
+  // Partidas anteriores a esta feature não têm presença; nesse caso a tabela
+  // de estatísticas segue mostrando o elenco inteiro, senão sumiria tudo.
+  const temPresenca = (presences ?? []).length > 0;
+  const confirmados = (presences ?? []).filter((p) => p.status === "confirmado");
+  const jogadoresDaPartida = temPresenca
+    ? confirmados
+        .map((pr) => activePlayers.find((p) => p.id === pr.player_id))
+        .filter((p): p is (typeof activePlayers)[number] => !!p)
+    : activePlayers;
 
   useEffect(() => {
     if (!editing) return;
     const next: Record<string, StatRow> = {};
-    for (const p of activePlayers) {
+    for (const p of jogadoresDaPartida) {
       const found = existingStats?.find((s) => s.player_id === p.id);
-      // Sem posição salva (lançamento antigo ou novo), assume a principal.
-      const principal = p.positions[0] ?? null;
+      // Prioridade: posição já lançada > posição declarada na presença > principal.
+      const daPresenca = (presences ?? []).find((pr) => pr.player_id === p.id)?.position ?? null;
+      const padrao = daPresenca ?? p.positions[0] ?? null;
       next[p.id] = found
         ? {
-            position: found.position ?? principal,
+            position: found.position ?? padrao,
             starter: found.starter,
             minutes: found.minutes,
             goals: found.goals,
@@ -182,11 +231,11 @@ function MatchesPage() {
             saves: found.saves,
             goals_conceded: found.goals_conceded,
           }
-        : { ...emptyStat, position: principal };
+        : { ...emptyStat, position: padrao };
     }
     setRows(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [existingStats, editing, players]);
+  }, [existingStats, editing, players, presences]);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -201,6 +250,10 @@ function MatchesPage() {
         notes: form.notes.trim() || null,
         goals_for: form.goals_for === "" ? null : Number(form.goals_for),
         goals_against: form.goals_against === "" ? null : Number(form.goals_against),
+        line_slots: form.line_slots === "" ? null : Number(form.line_slots),
+        court_fee: form.court_fee === "" ? null : Number(form.court_fee),
+        referee_fee: form.referee_fee === "" ? null : Number(form.referee_fee),
+        keeper_fee: form.keeper_fee === "" ? null : Number(form.keeper_fee),
       };
       if (!editing) {
         await createMatch(payload);
@@ -254,6 +307,10 @@ function MatchesPage() {
       notes: m.notes ?? "",
       goals_for: m.goals_for?.toString() ?? "",
       goals_against: m.goals_against?.toString() ?? "",
+      line_slots: m.line_slots?.toString() ?? "",
+      court_fee: m.court_fee?.toString() ?? "",
+      referee_fee: m.referee_fee?.toString() ?? "",
+      keeper_fee: m.keeper_fee?.toString() ?? "",
     });
     setOpen(true);
   };
@@ -267,6 +324,16 @@ function MatchesPage() {
   const setCell = (playerId: string, key: keyof StatRow, value: number | boolean | Position) =>
     setRows((prev) => ({ ...prev, [playerId]: { ...prev[playerId], [key]: value } }));
 
+  // Prévia do rateio enquanto o organizador digita os valores no formulário.
+  const previaValores = {
+    court_fee: form.court_fee === "" ? null : Number(form.court_fee),
+    referee_fee: form.referee_fee === "" ? null : Number(form.referee_fee),
+    keeper_fee: form.keeper_fee === "" ? null : Number(form.keeper_fee),
+    line_slots: form.line_slots === "" ? null : Number(form.line_slots),
+  };
+  const previaCusto = teamCost(previaValores);
+  const previaRateio = feePerPlayer(previaValores);
+
   const matches = (data ?? []).filter((m) => status === "todos" || m.status === status);
 
   // Seções fixas: Agendadas, Realizadas e Canceladas (nessa ordem).
@@ -278,8 +345,25 @@ function MatchesPage() {
   // Jogadores do lançamento de estatísticas, agrupados por setor do campo.
   const playersByCategory = CATEGORIES.map((cat) => ({
     category: cat,
-    players: activePlayers.filter((p) => POSITION_CATEGORY[p.positions[0]] === cat),
+    players: jogadoresDaPartida.filter((p) => POSITION_CATEGORY[p.positions[0]] === cat),
   })).filter((g) => g.players.length > 0);
+
+  // Só jogadores de linha ocupam vaga; o goleiro entra por fora.
+  const confirmadosDeLinha = confirmados.filter((p) => p.position !== "goleiro").length;
+
+  const pagamento = useMutation({
+    mutationFn: ({ playerId, pago }: { playerId: string; pago: boolean }) =>
+      updatePaymentStatus(editing!.id, playerId, pago ? "pago" : "pendente"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["presences", editing?.id] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const promover = useMutation({
+    mutationFn: ({ playerId, status }: { playerId: string; status: Presence["status"] }) =>
+      updatePresenceStatus(editing!.id, playerId, status),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["presences", editing?.id] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   return (
     <div className="space-y-6">
@@ -361,6 +445,17 @@ function MatchesPage() {
                           </span>
                           <ResultBadge match={m} />
                         </div>
+                      )}
+                      {m.status === "agendada" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setConfirmando(m)}
+                          className="gap-1"
+                        >
+                          <UserCheck className="h-4 w-4" />
+                          Confirmar presença
+                        </Button>
                       )}
                       <div className="flex gap-1">
                         <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
@@ -477,6 +572,80 @@ function MatchesPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="sm:col-span-2">
+              <Label className="mb-2 block">Vagas e rateio</Label>
+              <div className="space-y-3 rounded-lg border p-3">
+                <div className="grid gap-3 sm:grid-cols-4">
+                  <div>
+                    <Label htmlFor="slots" className="text-xs">
+                      Jogadores de linha
+                    </Label>
+                    <NumberInput
+                      id="slots"
+                      value={form.line_slots}
+                      onChange={(v) => setForm({ ...form, line_slots: v })}
+                      min={MIN_LINE_SLOTS}
+                      max={MAX_LINE_SLOTS}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="court" className="text-xs">
+                      Quadra (R$)
+                    </Label>
+                    <NumberInput
+                      id="court"
+                      value={form.court_fee}
+                      onChange={(v) => setForm({ ...form, court_fee: v })}
+                      max={9999}
+                      maxDigits={4}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="ref" className="text-xs">
+                      Arbitragem (R$)
+                    </Label>
+                    <NumberInput
+                      id="ref"
+                      value={form.referee_fee}
+                      onChange={(v) => setForm({ ...form, referee_fee: v })}
+                      max={9999}
+                      maxDigits={4}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="keeper" className="text-xs">
+                      Goleiro (R$)
+                    </Label>
+                    <NumberInput
+                      id="keeper"
+                      value={form.keeper_fee}
+                      onChange={(v) => setForm({ ...form, keeper_fee: v })}
+                      max={9999}
+                      maxDigits={4}
+                    />
+                  </div>
+                </div>
+                {/* Quadra e arbitragem são rachadas com o adversário; o goleiro é só nosso. */}
+                <p className="text-xs text-muted-foreground">
+                  Quadra e arbitragem entram pela metade (rachadas com o adversário); o goleiro
+                  entra cheio.
+                  {previaRateio !== null && (
+                    <>
+                      {" "}
+                      Total do time:{" "}
+                      <span className="font-medium text-foreground">
+                        {formatMoney(previaCusto)}
+                      </span>{" "}
+                      ·{" "}
+                      <span className="font-medium text-accent">
+                        {formatMoney(previaRateio)} por jogador
+                      </span>
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
             {form.status === "realizada" && (
               <div className="sm:col-span-2">
                 <Label className="mb-2 block">Placar Final</Label>
@@ -516,10 +685,107 @@ function MatchesPage() {
           {editing && (
             <>
               <Separator className="my-2" />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-xl">Lista de presença</h3>
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="text-muted-foreground">
+                    Confirmados:{" "}
+                    <span className="font-semibold text-foreground">{confirmadosDeLinha}</span>
+                    {editing.line_slots ? ` / ${editing.line_slots}` : ""}
+                  </span>
+                  {feePerPlayer(editing) !== null && (
+                    <span className="font-display text-lg text-accent">
+                      {formatMoney(feePerPlayer(editing)!)}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {(presences ?? []).length === 0 ? (
+                <p className="py-3 text-sm text-muted-foreground">
+                  Ninguém respondeu ainda.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {(presences ?? []).map((pr) => {
+                    const jogador = (players ?? []).find((p) => p.id === pr.player_id);
+                    const pago = pr.payment_status === "pago";
+                    const salvando =
+                      (pagamento.isPending && pagamento.variables?.playerId === pr.player_id) ||
+                      (promover.isPending && promover.variables?.playerId === pr.player_id);
+                    return (
+                      <div
+                        key={pr.id}
+                        className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {jogador ? jogador.nickname || jogador.name : "Jogador removido"}
+                        </span>
+                        {pr.position && (
+                          <Badge variant="secondary" className="font-normal">
+                            {POSITION_ABBR[pr.position]}
+                          </Badge>
+                        )}
+                        <PresenceBadge status={pr.status} />
+
+                        {pr.status !== "ausente" &&
+                          (podeEditar ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={salvando}
+                              onClick={() =>
+                                pagamento.mutate({ playerId: pr.player_id, pago: !pago })
+                              }
+                              className={cn(
+                                "h-7 gap-1",
+                                pago
+                                  ? "border-emerald-600/50 text-emerald-700 dark:text-emerald-400"
+                                  : "border-amber-500/50 text-amber-700 dark:text-amber-400",
+                              )}
+                            >
+                              {salvando && <Loader2 className="h-3 w-3 animate-spin" />}
+                              {pago ? "Pago" : "Pendente"}
+                            </Button>
+                          ) : (
+                            <Badge
+                              className={cn(
+                                "border-transparent",
+                                pago
+                                  ? "bg-emerald-600 text-white hover:bg-emerald-600 dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-500"
+                                  : "bg-amber-500 text-amber-950 hover:bg-amber-500",
+                              )}
+                            >
+                              {pago ? "Pago" : "Pendente"}
+                            </Badge>
+                          ))}
+
+                        {podeEditar && pr.status === "espera" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7"
+                            disabled={salvando}
+                            onClick={() =>
+                              promover.mutate({ playerId: pr.player_id, status: "confirmado" })
+                            }
+                          >
+                            Promover
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <Separator className="my-2" />
               <h3 className="text-xl">Estatísticas dos jogadores</h3>
-              {activePlayers.length === 0 ? (
+              {jogadoresDaPartida.length === 0 ? (
                 <p className="py-4 text-sm text-muted-foreground">
-                  Nenhum jogador ativo cadastrado.
+                  {temPresenca
+                    ? "Ninguém confirmado ainda — a lista aparece conforme o pessoal confirmar."
+                    : "Nenhum jogador ativo cadastrado."}
                 </p>
               ) : (
                 <div className="overflow-x-auto">
@@ -652,6 +918,16 @@ function MatchesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {confirmando && (
+        <ConfirmarPresenca
+          match={confirmando}
+          player={meuJogador}
+          current={minhaPresenca}
+          open={!!confirmando}
+          onOpenChange={(aberto) => !aberto && setConfirmando(null)}
+        />
+      )}
 
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
         <AlertDialogContent>

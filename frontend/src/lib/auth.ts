@@ -53,12 +53,19 @@ async function chamarAuth<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    let detail = "Não foi possível entrar";
+    let detail = "Não foi possível concluir a operação";
     try {
-      const data = (await response.json()) as { detail?: string };
-      detail = data.detail ?? detail;
+      const data = (await response.json()) as { detail?: unknown };
+      // Erro do FastAPI é string; erro de validação do Pydantic vem como
+      // lista de objetos — nesse caso pega a primeira mensagem.
+      if (typeof data.detail === "string") {
+        detail = data.detail;
+      } else if (Array.isArray(data.detail)) {
+        const primeiro = data.detail[0] as { msg?: string } | undefined;
+        if (primeiro?.msg) detail = primeiro.msg;
+      }
     } catch {
-      // ignora
+      // corpo não era JSON, mantém a mensagem genérica
     }
     throw new Error(detail);
   }
@@ -73,6 +80,23 @@ export async function login(email: string, password: string): Promise<Usuario> {
 
 export function logout() {
   clearSession();
+}
+
+type RespostaCadastro = {
+  sessao: Sessao | null;
+  precisa_confirmar_email: boolean;
+};
+
+/**
+ * Cria a conta de um jogador que já está no elenco.
+ *
+ * Se o projeto do Supabase não exigir confirmação de email, já volta a sessão
+ * pronta e o usuário entra direto.
+ */
+export async function cadastrar(email: string, password: string): Promise<RespostaCadastro> {
+  const resposta = await chamarAuth<RespostaCadastro>("/auth/cadastro", { email, password });
+  if (resposta.sessao) writeSession(resposta.sessao);
+  return resposta;
 }
 
 /** Troca o refresh_token por um novo access_token. Retorna false se não deu certo. */

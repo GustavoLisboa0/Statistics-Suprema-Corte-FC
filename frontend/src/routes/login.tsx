@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -70,6 +70,12 @@ function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Entrando..." : "Entrar"}
             </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              Primeiro acesso?{" "}
+              <Link to="/cadastro" className="font-medium text-accent hover:underline">
+                Criar conta
+              </Link>
+            </p>
           </form>
         </CardContent>
       </Card>

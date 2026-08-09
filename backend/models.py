@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -22,8 +23,17 @@ Posicao = Literal[
 Local = Literal["trieste", "iguacu", "outro"]
 Mando = Literal["mandante", "visitante"]
 StatusPartida = Literal["agendada", "realizada", "cancelada"]
+StatusPresenca = Literal["confirmado", "espera", "ausente"]
+StatusPagamento = Literal["pendente", "pago"]
 
 TELEFONE_REGEX = r"^\(\d{2}\) \d{5}-\d{4}$"
+# Validação simples e sem dependência extra (`EmailStr` exigiria o pacote
+# email-validator, que teria de entrar também no deploy).
+EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+# Vagas de linha por partida: o time joga com no mínimo 10 e no máximo 20.
+MIN_VAGAS_LINHA = 10
+MAX_VAGAS_LINHA = 20
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +42,7 @@ TELEFONE_REGEX = r"^\(\d{2}\) \d{5}-\d{4}$"
 class JogadorBase(BaseModel):
     nome: str
     apelido: Optional[str] = None
+    email: Optional[str] = Field(default=None, pattern=EMAIL_REGEX)
     posicoes: list[Posicao] = Field(min_length=1)
     numero_camisa: Optional[int] = None
     data_nascimento: Optional[date] = None
@@ -45,6 +56,7 @@ class JogadorCreate(JogadorBase):
 class JogadorUpdate(BaseModel):
     nome: Optional[str] = None
     apelido: Optional[str] = None
+    email: Optional[str] = Field(default=None, pattern=EMAIL_REGEX)
     telefone: Optional[str] = Field(default=None, pattern=TELEFONE_REGEX)
     posicoes: Optional[list[Posicao]] = None
     numero_camisa: Optional[int] = None
@@ -58,6 +70,8 @@ class Jogador(JogadorBase):
     # de jogadores cadastrados antes deste campo existir, que ficam com
     # telefone nulo no banco até serem editados.
     telefone: Optional[str] = None
+    # Conta de login amarrada a este jogador (null enquanto ninguém reivindicou).
+    perfil_id: Optional[UUID] = None
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +88,15 @@ class PartidaBase(BaseModel):
     placar_adversario: int = 0
     campeonato_ou_amistoso: Optional[str] = None
     observacoes: Optional[str] = None
+    # Quantas vagas de linha a partida tem. Goleiros ficam fora dessa conta.
+    # Null = sem limite (partidas antigas continuam assim).
+    vagas_linha: Optional[int] = Field(default=None, ge=MIN_VAGAS_LINHA, le=MAX_VAGAS_LINHA)
+    # Custo do jogo, valores cheios como são cobrados no local.
+    # Quadra e arbitragem são rachadas com o time adversário; o goleiro é só
+    # nosso. Ver `custo_do_time()` para o rateio.
+    valor_quadra: Optional[Decimal] = Field(default=None, ge=0)
+    valor_arbitragem: Optional[Decimal] = Field(default=None, ge=0)
+    valor_goleiro: Optional[Decimal] = Field(default=None, ge=0)
 
 
 class PartidaCreate(PartidaBase):
@@ -91,10 +114,27 @@ class PartidaUpdate(BaseModel):
     placar_adversario: Optional[int] = None
     campeonato_ou_amistoso: Optional[str] = None
     observacoes: Optional[str] = None
+    vagas_linha: Optional[int] = Field(default=None, ge=MIN_VAGAS_LINHA, le=MAX_VAGAS_LINHA)
+    valor_quadra: Optional[Decimal] = Field(default=None, ge=0)
+    valor_arbitragem: Optional[Decimal] = Field(default=None, ge=0)
+    valor_goleiro: Optional[Decimal] = Field(default=None, ge=0)
 
 
 class Partida(PartidaBase):
     id: UUID
+
+
+def custo_do_time(partida: "PartidaBase | dict") -> Decimal:
+    """
+    Quanto o Suprema Corte paga pela partida.
+
+    Quadra e arbitragem são rachadas com o time adversário; o goleiro é
+    despesa só nossa. O valor por jogador é esse total dividido pelas vagas
+    de linha (o goleiro não paga).
+    """
+    dados = partida if isinstance(partida, dict) else partida.model_dump()
+    valor = lambda campo: Decimal(str(dados.get(campo) or 0))  # noqa: E731
+    return valor("valor_quadra") / 2 + valor("valor_arbitragem") / 2 + valor("valor_goleiro")
 
 
 # ---------------------------------------------------------------------------
@@ -134,3 +174,40 @@ class EstatisticaUpdate(BaseModel):
 
 class Estatistica(EstatisticaBase):
     id: UUID
+
+
+# ---------------------------------------------------------------------------
+# Presença e pagamento
+# ---------------------------------------------------------------------------
+class PresencaCreate(BaseModel):
+    """
+    O que o jogador envia ao confirmar (ou desmarcar) presença.
+
+    Não recebe `jogador_id`: quem está confirmando é sempre a conta logada, e
+    o backend resolve o jogador a partir dela. Isso evita alguém confirmar
+    presença no lugar de outro.
+    """
+
+    status: StatusPresenca
+    posicao: Optional[Posicao] = None
+    termos_aceitos: bool = False
+
+
+class PresencaUpdatePagamento(BaseModel):
+    status_pagamento: StatusPagamento
+
+
+class PresencaUpdateStatus(BaseModel):
+    """Usado pelo editor para promover alguém da espera (ou o contrário)."""
+
+    status: StatusPresenca
+
+
+class Presenca(BaseModel):
+    id: UUID
+    partida_id: UUID
+    jogador_id: UUID
+    status: StatusPresenca
+    posicao: Optional[Posicao] = None
+    termos_aceitos: bool = False
+    status_pagamento: StatusPagamento = "pendente"

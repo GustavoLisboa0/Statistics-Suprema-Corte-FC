@@ -157,6 +157,55 @@ export function matchResult(match: {
   return "empate";
 }
 
+// ---------------------------------------------------------------------------
+// Presença e rateio
+// ---------------------------------------------------------------------------
+export type PresenceStatus = "confirmado" | "espera" | "ausente";
+export type PaymentStatus = "pendente" | "pago";
+
+export const PRESENCE_LABELS: Record<PresenceStatus, string> = {
+  confirmado: "Confirmado",
+  espera: "Lista de espera",
+  ausente: "Não vou",
+};
+
+/** Vagas de linha por partida: o time joga com no mínimo 10 e no máximo 20. */
+export const MIN_LINE_SLOTS = 10;
+export const MAX_LINE_SLOTS = 20;
+
+export type Presence = {
+  id: string;
+  match_id: string;
+  player_id: string;
+  status: PresenceStatus;
+  position: Position | null;
+  terms_accepted: boolean;
+  payment_status: PaymentStatus;
+};
+
+/**
+ * Quanto o time paga pela partida.
+ *
+ * Quadra e arbitragem são rachadas com o adversário; o goleiro é despesa só
+ * nossa. Espelha `custo_do_time()` do backend — se mudar lá, mude aqui.
+ */
+export function teamCost(match: Pick<Match, "court_fee" | "referee_fee" | "keeper_fee">): number {
+  return (match.court_fee ?? 0) / 2 + (match.referee_fee ?? 0) / 2 + (match.keeper_fee ?? 0);
+}
+
+/** Valor por jogador de linha. `null` quando ainda não dá pra calcular. */
+export function feePerPlayer(
+  match: Pick<Match, "court_fee" | "referee_fee" | "keeper_fee" | "line_slots">,
+): number | null {
+  const total = teamCost(match);
+  if (!match.line_slots || total <= 0) return null;
+  return total / match.line_slots;
+}
+
+export function formatMoney(valor: number): string {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 export const TEAM_NAME = "Suprema Corte FC";
 
 /** Título padrão de exibição de uma partida: "Suprema Corte FC × Adversário" */
@@ -172,6 +221,8 @@ export type Player = {
   name: string;
   nickname: string | null;
   phone: string | null;
+  /** Casa a conta de login com o jogador do elenco. */
+  email: string | null;
   positions: Position[];
   shirt_number: number | null;
   birth_date: string | null;
@@ -192,6 +243,11 @@ export type Match = {
   notes: string | null;
   goals_for: number | null;
   goals_against: number | null;
+  /** Vagas de jogadores de linha (goleiro não ocupa vaga). */
+  line_slots: number | null;
+  court_fee: number | null;
+  referee_fee: number | null;
+  keeper_fee: number | null;
 };
 
 export type MatchInput = Omit<Match, "id">;
@@ -222,6 +278,7 @@ type JogadorApi = {
   nome: string;
   apelido: string | null;
   telefone: string | null;
+  email: string | null;
   posicoes: Position[];
   numero_camisa: number | null;
   data_nascimento: string | null;
@@ -240,6 +297,20 @@ type PartidaApi = {
   placar_adversario: number;
   campeonato_ou_amistoso: string | null;
   observacoes: string | null;
+  vagas_linha: number | null;
+  valor_quadra: number | string | null;
+  valor_arbitragem: number | string | null;
+  valor_goleiro: number | string | null;
+};
+
+type PresencaApi = {
+  id: string;
+  partida_id: string;
+  jogador_id: string;
+  status: PresenceStatus;
+  posicao: Position | null;
+  termos_aceitos: boolean;
+  status_pagamento: PaymentStatus;
 };
 
 type EstatisticaApi = {
@@ -266,6 +337,7 @@ function toPlayer(j: JogadorApi): Player {
     name: j.nome,
     nickname: j.apelido,
     phone: j.telefone,
+    email: j.email,
     positions: j.posicoes,
     shirt_number: j.numero_camisa,
     birth_date: j.data_nascimento,
@@ -278,6 +350,7 @@ function toJogadorPayload(input: PlayerInput) {
     nome: input.name,
     apelido: input.nickname,
     telefone: input.phone,
+    email: input.email,
     posicoes: input.positions,
     numero_camisa: input.shirt_number,
     data_nascimento: input.birth_date,
@@ -299,7 +372,18 @@ function toMatch(p: PartidaApi): Match {
     notes: p.observacoes,
     goals_for: p.status === "realizada" ? p.placar_suprema : null,
     goals_against: p.status === "realizada" ? p.placar_adversario : null,
+    line_slots: p.vagas_linha,
+    // numeric do Postgres chega como string ("300.00"); normaliza pra número
+    court_fee: toNumber(p.valor_quadra),
+    referee_fee: toNumber(p.valor_arbitragem),
+    keeper_fee: toNumber(p.valor_goleiro),
   };
+}
+
+function toNumber(valor: number | string | null): number | null {
+  if (valor === null || valor === "") return null;
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : null;
 }
 
 function toPartidaPayload(input: MatchInput) {
@@ -314,6 +398,10 @@ function toPartidaPayload(input: MatchInput) {
     observacoes: input.notes,
     placar_suprema: input.goals_for ?? 0,
     placar_adversario: input.goals_against ?? 0,
+    vagas_linha: input.line_slots,
+    valor_quadra: input.court_fee,
+    valor_arbitragem: input.referee_fee,
+    valor_goleiro: input.keeper_fee,
   };
 }
 
@@ -444,6 +532,65 @@ export async function upsertMatchStats(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Presença
+// ---------------------------------------------------------------------------
+function toPresence(p: PresencaApi): Presence {
+  return {
+    id: p.id,
+    match_id: p.partida_id,
+    player_id: p.jogador_id,
+    status: p.status,
+    position: p.posicao,
+    terms_accepted: p.termos_aceitos,
+    payment_status: p.status_pagamento,
+  };
+}
+
+export async function fetchPresences(matchId: string): Promise<Presence[]> {
+  const data = await api.get<PresencaApi[]>(`/partidas/${matchId}/presenca`);
+  return data.map(toPresence);
+}
+
+/**
+ * Salva a presença de quem está logado. O jogador não vai no corpo: o backend
+ * resolve pela sessão, então ninguém confirma no lugar de outro.
+ */
+export async function savePresence(
+  matchId: string,
+  input: { status: PresenceStatus; position: Position | null; termsAccepted: boolean },
+): Promise<Presence> {
+  const data = await api.post<PresencaApi>(`/partidas/${matchId}/presenca`, {
+    status: input.status,
+    posicao: input.position,
+    termos_aceitos: input.termsAccepted,
+  });
+  return toPresence(data);
+}
+
+export async function updatePaymentStatus(
+  matchId: string,
+  playerId: string,
+  status: PaymentStatus,
+): Promise<Presence> {
+  const data = await api.patch<PresencaApi>(
+    `/partidas/${matchId}/presenca/${playerId}/pagamento`,
+    { status_pagamento: status },
+  );
+  return toPresence(data);
+}
+
+export async function updatePresenceStatus(
+  matchId: string,
+  playerId: string,
+  status: PresenceStatus,
+): Promise<Presence> {
+  const data = await api.patch<PresencaApi>(`/partidas/${matchId}/presenca/${playerId}/status`, {
+    status,
+  });
+  return toPresence(data);
+}
+
 export function formatDate(value: string | null) {
   if (!value) return "—";
   const [y, m, d] = value.split("-");
@@ -454,6 +601,9 @@ export function formatDate(value: string | null) {
 // Telefone
 // ---------------------------------------------------------------------------
 export const PHONE_REGEX = /^\(\d{2}\) \d{5}-\d{4}$/;
+
+/** Mesma validação simples do backend (EMAIL_REGEX em models.py). */
+export const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /** Formata dígitos digitados progressivamente como "(DDD) 91234-1234". */
 export function formatPhone(value: string): string {

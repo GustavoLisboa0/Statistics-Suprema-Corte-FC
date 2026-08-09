@@ -14,6 +14,7 @@ import {
   CATEGORY_LABELS,
   POSITION_CATEGORY,
   PHONE_REGEX,
+  EMAIL_REGEX,
   MAX_POSITIONS,
   MAX_NAME_LENGTH,
   MAX_NICKNAME_LENGTH,
@@ -88,6 +89,7 @@ type FormState = {
   name: string;
   nickname: string;
   phone: string;
+  email: string;
   positions: Position[];
   shirt_number: string;
   birth_date: string;
@@ -98,6 +100,7 @@ const emptyForm: FormState = {
   name: "",
   nickname: "",
   phone: "",
+  email: "",
   positions: [],
   shirt_number: "",
   birth_date: "",
@@ -185,6 +188,7 @@ function PlayersPage() {
         name: form.name.trim(),
         nickname: form.nickname.trim() || null,
         phone: form.phone.trim(),
+        email: form.email.trim() || null,
         positions: form.positions,
         shirt_number: form.shirt_number ? Number(form.shirt_number) : null,
         birth_date: form.birth_date || null,
@@ -229,6 +233,7 @@ function PlayersPage() {
       name: p.name,
       nickname: p.nickname ?? "",
       phone: p.phone ?? "",
+      email: p.email ?? "",
       positions: p.positions,
       shirt_number: p.shirt_number?.toString() ?? "",
       birth_date: p.birth_date ?? "",
@@ -260,6 +265,8 @@ function PlayersPage() {
     if (form.nickname.trim().length > MAX_NICKNAME_LENGTH)
       return toast.error(`O apelido deve ter no máximo ${MAX_NICKNAME_LENGTH} caracteres`);
     if (!PHONE_REGEX.test(form.phone)) return toast.error("Informe um telefone válido: (DDD) 91234-1234");
+    if (form.email.trim() && !EMAIL_REGEX.test(form.email.trim()))
+      return toast.error("Informe um email válido");
     if (form.positions.length === 0) return toast.error("Selecione ao menos uma posição");
     if (form.positions.length > MAX_POSITIONS)
       return toast.error(`Selecione no máximo ${MAX_POSITIONS} posições`);
@@ -379,6 +386,22 @@ function PlayersPage() {
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: formatPhone(e.target.value) })}
               />
+            </div>
+            <div className="sm:col-span-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                inputMode="email"
+                placeholder="usado para o jogador acessar o sistema"
+                maxLength={150}
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                É por aqui que a conta de login vira este jogador. Sem email, ele não confirma
+                presença sozinho.
+              </p>
             </div>
             <div>
               <Label htmlFor="shirt">Número da camisa</Label>

@@ -209,9 +209,10 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const isLoginPage = pathname === "/login";
+  // Telas públicas (fora do app): sem sidebar nem header.
+  const semShell = pathname === "/login" || pathname === "/cadastro";
 
-  if (isLoginPage) {
+  if (semShell) {
     return (
       <QueryClientProvider client={queryClient}>
         <Outlet />

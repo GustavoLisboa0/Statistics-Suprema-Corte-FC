@@ -30,6 +30,30 @@ def login(email: str, password: str) -> dict:
     return resposta.json()
 
 
+def criar_conta(email: str, password: str) -> dict:
+    """
+    Cria a conta no Supabase Auth.
+
+    Devolve o corpo do Supabase como veio: dependendo de o projeto exigir
+    confirmação de email, pode ou não vir uma sessão junto.
+    """
+    resposta = httpx.post(
+        f"{SUPABASE_URL}/auth/v1/signup",
+        headers=_auth_headers(),
+        json={"email": email, "password": password},
+        timeout=10,
+    )
+    if resposta.status_code not in (200, 201):
+        detalhe = "Não foi possível criar a conta"
+        try:
+            corpo = resposta.json()
+            detalhe = corpo.get("msg") or corpo.get("error_description") or detalhe
+        except Exception:  # noqa: BLE001 - resposta sem JSON
+            pass
+        raise HTTPException(status_code=400, detail=detalhe)
+    return resposta.json()
+
+
 def refresh(refresh_token: str) -> dict:
     """Troca um refresh_token por um novo access_token."""
     resposta = httpx.post(
@@ -71,7 +95,13 @@ async def usuario_atual(authorization: str | None = Header(default=None)) -> dic
     token = authorization.split(" ", 1)[1]
     usuario = _validar_token(token)
     papel = papel_do_usuario(usuario["id"])
-    return {"id": usuario["id"], "email": usuario.get("email"), "papel": papel}
+    return {
+        "id": usuario["id"],
+        "email": usuario.get("email"),
+        # usado para casar a conta com o jogador do elenco (ver routers/presenca.py)
+        "telefone": usuario.get("phone"),
+        "papel": papel,
+    }
 
 
 async def exige_editor(usuario: dict = Depends(usuario_atual)) -> dict:
