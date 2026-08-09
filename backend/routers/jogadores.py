@@ -1,11 +1,17 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from auth import exige_editor, usuario_atual
 from database import supabase
 from models import Jogador, JogadorCreate, JogadorUpdate
 
-router = APIRouter(prefix="/jogadores", tags=["Jogadores"])
+# Toda rota daqui exige login; escrita exige papel de editor.
+router = APIRouter(
+    prefix="/jogadores",
+    tags=["Jogadores"],
+    dependencies=[Depends(usuario_atual)],
+)
 
 TABLE = "jogadores"
 
@@ -28,14 +34,16 @@ def obter_jogador(jogador_id: UUID):
 
 
 @router.post("/", response_model=Jogador, status_code=201)
-def criar_jogador(jogador: JogadorCreate):
+def criar_jogador(jogador: JogadorCreate, usuario: dict = Depends(exige_editor)):
     payload = jogador.model_dump(mode="json")
     resposta = supabase.table(TABLE).insert(payload).execute()
     return resposta.data[0]
 
 
 @router.patch("/{jogador_id}", response_model=Jogador)
-def atualizar_jogador(jogador_id: UUID, jogador: JogadorUpdate):
+def atualizar_jogador(
+    jogador_id: UUID, jogador: JogadorUpdate, usuario: dict = Depends(exige_editor)
+):
     payload = {k: v for k, v in jogador.model_dump(mode="json").items() if v is not None}
     if not payload:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
@@ -47,7 +55,7 @@ def atualizar_jogador(jogador_id: UUID, jogador: JogadorUpdate):
 
 
 @router.delete("/{jogador_id}", status_code=204)
-def remover_jogador(jogador_id: UUID):
+def remover_jogador(jogador_id: UUID, usuario: dict = Depends(exige_editor)):
     resposta = supabase.table(TABLE).delete().eq("id", str(jogador_id)).execute()
     if not resposta.data:
         raise HTTPException(status_code=404, detail="Jogador não encontrado")

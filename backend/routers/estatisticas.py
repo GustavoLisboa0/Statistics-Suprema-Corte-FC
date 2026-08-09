@@ -1,11 +1,17 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from auth import exige_editor, usuario_atual
 from database import supabase
 from models import Estatistica, EstatisticaCreate, EstatisticaUpdate
 
-router = APIRouter(prefix="/estatisticas", tags=["Estatísticas"])
+# Toda rota daqui exige login; escrita exige papel de editor.
+router = APIRouter(
+    prefix="/estatisticas",
+    tags=["Estatísticas"],
+    dependencies=[Depends(usuario_atual)],
+)
 
 TABLE = "estatisticas_partida"
 
@@ -25,14 +31,18 @@ def listar_estatisticas(partida_id: UUID | None = None, jogador_id: UUID | None 
 
 
 @router.post("/", response_model=Estatistica, status_code=201)
-def criar_estatistica(estatistica: EstatisticaCreate):
+def criar_estatistica(estatistica: EstatisticaCreate, usuario: dict = Depends(exige_editor)):
     payload = estatistica.model_dump(mode="json")
     resposta = supabase.table(TABLE).insert(payload).execute()
     return resposta.data[0]
 
 
 @router.patch("/{estatistica_id}", response_model=Estatistica)
-def atualizar_estatistica(estatistica_id: UUID, estatistica: EstatisticaUpdate):
+def atualizar_estatistica(
+    estatistica_id: UUID,
+    estatistica: EstatisticaUpdate,
+    usuario: dict = Depends(exige_editor),
+):
     payload = {k: v for k, v in estatistica.model_dump(mode="json").items() if v is not None}
     if not payload:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
@@ -44,7 +54,7 @@ def atualizar_estatistica(estatistica_id: UUID, estatistica: EstatisticaUpdate):
 
 
 @router.delete("/{estatistica_id}", status_code=204)
-def remover_estatistica(estatistica_id: UUID):
+def remover_estatistica(estatistica_id: UUID, usuario: dict = Depends(exige_editor)):
     resposta = supabase.table(TABLE).delete().eq("id", str(estatistica_id)).execute()
     if not resposta.data:
         raise HTTPException(status_code=404, detail="Estatística não encontrada")

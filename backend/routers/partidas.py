@@ -1,11 +1,17 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from auth import exige_editor, usuario_atual
 from database import supabase
 from models import Partida, PartidaCreate, PartidaUpdate
 
-router = APIRouter(prefix="/partidas", tags=["Partidas"])
+# Toda rota daqui exige login; escrita exige papel de editor.
+router = APIRouter(
+    prefix="/partidas",
+    tags=["Partidas"],
+    dependencies=[Depends(usuario_atual)],
+)
 
 TABLE = "partidas"
 
@@ -54,14 +60,16 @@ def obter_partida(partida_id: UUID):
 
 
 @router.post("/", response_model=Partida, status_code=201)
-def criar_partida(partida: PartidaCreate):
+def criar_partida(partida: PartidaCreate, usuario: dict = Depends(exige_editor)):
     payload = partida.model_dump(mode="json")
     resposta = supabase.table(TABLE).insert(payload).execute()
     return resposta.data[0]
 
 
 @router.patch("/{partida_id}", response_model=Partida)
-def atualizar_partida(partida_id: UUID, partida: PartidaUpdate):
+def atualizar_partida(
+    partida_id: UUID, partida: PartidaUpdate, usuario: dict = Depends(exige_editor)
+):
     payload = {k: v for k, v in partida.model_dump(mode="json").items() if v is not None}
     if not payload:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
@@ -73,7 +81,7 @@ def atualizar_partida(partida_id: UUID, partida: PartidaUpdate):
 
 
 @router.delete("/{partida_id}", status_code=204)
-def remover_partida(partida_id: UUID):
+def remover_partida(partida_id: UUID, usuario: dict = Depends(exige_editor)):
     resposta = supabase.table(TABLE).delete().eq("id", str(partida_id)).execute()
     if not resposta.data:
         raise HTTPException(status_code=404, detail="Partida não encontrada")
