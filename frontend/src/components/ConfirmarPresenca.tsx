@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { QRCodeSVG } from "qrcode.react";
 import { Check, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,6 +16,7 @@ import {
   type Presence,
   type PresenceStatus,
 } from "@/lib/football";
+import { gerarPixCopiaECola } from "@/lib/pix";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -38,6 +40,7 @@ import {
 const PIX_CHAVE = import.meta.env.VITE_PIX_CHAVE ?? "";
 const PIX_BANCO = import.meta.env.VITE_PIX_BANCO ?? "";
 const PIX_TITULAR = import.meta.env.VITE_PIX_TITULAR ?? "";
+const PIX_CIDADE = import.meta.env.VITE_PIX_CIDADE ?? "";
 
 /** Regras do time, aceitas junto com a confirmação. */
 const TERMOS = [
@@ -80,6 +83,18 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
 
   const valor = feePerPlayer(match);
 
+  // Gerado na hora: o QR do banco não carrega valor, e o valor muda por
+  // partida. `useMemo` evita recalcular o CRC a cada digitação de outro campo.
+  const pixCode = useMemo(() => {
+    if (!PIX_CHAVE) return "";
+    return gerarPixCopiaECola({
+      chave: PIX_CHAVE,
+      nome: PIX_TITULAR,
+      cidade: PIX_CIDADE,
+      valor,
+    });
+  }, [valor]);
+
   const salvar = useMutation({
     mutationFn: async () => {
       const status: PresenceStatus = intencao === "sim" ? "confirmado" : "ausente";
@@ -101,13 +116,13 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const copiarChave = async () => {
+  const copiarCodigo = async () => {
     try {
-      await navigator.clipboard.writeText(PIX_CHAVE);
+      await navigator.clipboard.writeText(pixCode);
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
     } catch {
-      toast.error("Não consegui copiar. Selecione a chave e copie manualmente.");
+      toast.error("Não consegui copiar. Selecione o código e copie manualmente.");
     }
   };
 
@@ -128,7 +143,11 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
           </p>
         ) : salvo ? (
           // ----- Passo 3: sucesso + PIX -----
-          <div className="space-y-4">
+          // min-w-0: DialogContent é `display: grid`, e sem isso este item de
+          // grid nunca encolhe abaixo da largura do código PIX (que não quebra
+          // linha), o que empurra o diálogo inteiro e gera a barra horizontal —
+          // mesmo com truncate na caixinha lá embaixo.
+          <div className="min-w-0 space-y-4">
             <div className="rounded-lg border p-3 text-sm">
               <div className="font-semibold">{matchTitle(match)}</div>
               {salvo.status === "espera" ? (
@@ -149,32 +168,45 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
             </div>
 
             {PIX_CHAVE ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <Label>Pagamento via PIX</Label>
                   {valor !== null && (
                     <span className="font-display text-xl text-accent">{formatMoney(valor)}</span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 rounded-lg border p-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-mono text-sm">{PIX_CHAVE}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {[PIX_TITULAR, PIX_BANCO].filter(Boolean).join(" · ")}
-                    </div>
+
+                <div className="flex flex-col items-center gap-3 rounded-lg border p-4">
+                  <div className="rounded-md bg-white p-2">
+                    <QRCodeSVG value={pixCode} size={176} marginSize={0} />
                   </div>
-                  <Button variant="outline" size="sm" onClick={copiarChave} className="shrink-0">
-                    {copiado ? (
-                      <>
-                        <Check className="mr-1 h-3.5 w-3.5" /> Copiado
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="mr-1 h-3.5 w-3.5" /> Copiar
-                      </>
-                    )}
-                  </Button>
+                  <div className="text-center text-xs text-muted-foreground">
+                    {[PIX_TITULAR, PIX_BANCO].filter(Boolean).join(" · ")}
+                  </div>
                 </div>
+
+                <div>
+                  <Label className="mb-1.5 block text-xs text-muted-foreground">
+                    Pix copia e cola
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1 truncate rounded-md border bg-muted/40 px-2.5 py-2 font-mono text-xs">
+                      {pixCode}
+                    </div>
+                    <Button variant="outline" size="sm" onClick={copiarCodigo} className="shrink-0">
+                      {copiado ? (
+                        <>
+                          <Check className="mr-1 h-3.5 w-3.5" /> Copiado
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="mr-1 h-3.5 w-3.5" /> Copiar
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
                 <p className="text-xs text-muted-foreground">
                   Depois de pagar, o organizador dá baixa e o status muda para pago.
                 </p>
