@@ -8,8 +8,10 @@ from database import supabase
 from models import (
     Estatistica,
     Presenca,
+    PresencaConfirmarEditor,
     PresencaCreate,
     PresencaUpdatePagamento,
+    PresencaUpdatePosicao,
     PresencaUpdateStatus,
 )
 
@@ -74,6 +76,13 @@ def _partida_ou_404(partida_id: UUID) -> dict:
     resposta = supabase.table(TABLE_PARTIDAS).select("*").eq("id", str(partida_id)).execute()
     if not resposta.data:
         raise HTTPException(status_code=404, detail="Partida não encontrada")
+    return resposta.data[0]
+
+
+def _jogador_ou_404(jogador_id: UUID) -> dict:
+    resposta = supabase.table(TABLE_JOGADORES).select("*").eq("id", str(jogador_id)).execute()
+    if not resposta.data:
+        raise HTTPException(status_code=404, detail="Jogador não encontrado")
     return resposta.data[0]
 
 
@@ -164,6 +173,44 @@ def confirmar_presenca(
 # ---------------------------------------------------------------------------
 # Ações do editor
 # ---------------------------------------------------------------------------
+@router.post("/{partida_id}/presenca/{jogador_id}", response_model=Presenca, status_code=201)
+def confirmar_presenca_editor(
+    partida_id: UUID,
+    jogador_id: UUID,
+    dados: PresencaConfirmarEditor,
+    usuario: dict = Depends(exige_editor),
+):
+    """
+    Confirma presença em nome de um jogador — pra quem avisou por fora e não
+    teve como (ou não quis) usar o app. Mesma regra de fila de espera do
+    autoatendimento; termos_aceitos vai automaticamente como True.
+    """
+    partida = _partida_ou_404(partida_id)
+    jogador = _jogador_ou_404(jogador_id)
+
+    if dados.posicao not in (jogador.get("posicoes") or []):
+        raise HTTPException(
+            status_code=400,
+            detail="Essa posição não está cadastrada no perfil do jogador",
+        )
+
+    status = "confirmado"
+    vagas = partida.get("vagas_linha")
+    if dados.posicao != "goleiro" and vagas:
+        if _confirmados_de_linha(partida_id, ignorar_jogador=str(jogador_id)) >= vagas:
+            status = "espera"
+
+    payload = {
+        "partida_id": str(partida_id),
+        "jogador_id": str(jogador_id),
+        "status": status,
+        "posicao": dados.posicao,
+        "termos_aceitos": True,
+    }
+    resposta = supabase.table(TABLE).upsert(payload, on_conflict="partida_id,jogador_id").execute()
+    return resposta.data[0]
+
+
 @router.patch("/{partida_id}/presenca/{jogador_id}/pagamento", response_model=Presenca)
 def atualizar_pagamento(
     partida_id: UUID,
@@ -190,10 +237,19 @@ def atualizar_status(
     dados: PresencaUpdateStatus,
     usuario: dict = Depends(exige_editor),
 ):
-    """Promove alguém da lista de espera (ou devolve para a fila)."""
+    """
+    Promove alguém da lista de espera, ou cancela a presença de alguém
+    (status "ausente") em nome do jogador — mesmo efeito de o próprio
+    jogador reabrir a confirmação e marcar "Não vou".
+    """
+    payload = {"status": dados.status}
+    if dados.status == "ausente":
+        # Mesma regra do autoatendimento: quem não vai não carrega posição.
+        payload["posicao"] = None
+
     resposta = (
         supabase.table(TABLE)
-        .update({"status": dados.status})
+        .update(payload)
         .eq("partida_id", str(partida_id))
         .eq("jogador_id", str(jogador_id))
         .execute()
@@ -201,6 +257,51 @@ def atualizar_status(
     if not resposta.data:
         raise HTTPException(status_code=404, detail="Presença não encontrada")
     return resposta.data[0]
+
+
+@router.patch("/{partida_id}/presenca/{jogador_id}/posicao", response_model=Presenca)
+def atualizar_posicao(
+    partida_id: UUID,
+    jogador_id: UUID,
+    dados: PresencaUpdatePosicao,
+    usuario: dict = Depends(exige_editor),
+):
+    """Corrige a posição em que o jogador vai atuar, dentro das que ele tem cadastradas."""
+    jogador = _jogador_ou_404(jogador_id)
+    if dados.posicao not in (jogador.get("posicoes") or []):
+        raise HTTPException(
+            status_code=400,
+            detail="Essa posição não está cadastrada no perfil do jogador",
+        )
+
+    resposta = (
+        supabase.table(TABLE)
+        .update({"posicao": dados.posicao})
+        .eq("partida_id", str(partida_id))
+        .eq("jogador_id", str(jogador_id))
+        .execute()
+    )
+    if not resposta.data:
+        raise HTTPException(status_code=404, detail="Presença não encontrada")
+    return resposta.data[0]
+
+
+@router.delete("/{partida_id}/presenca/{jogador_id}", status_code=204)
+def remover_presenca(
+    partida_id: UUID,
+    jogador_id: UUID,
+    usuario: dict = Depends(exige_editor),
+):
+    """Retira o jogador da lista por completo — como se nunca tivesse respondido."""
+    resposta = (
+        supabase.table(TABLE)
+        .delete()
+        .eq("partida_id", str(partida_id))
+        .eq("jogador_id", str(jogador_id))
+        .execute()
+    )
+    if not resposta.data:
+        raise HTTPException(status_code=404, detail="Presença não encontrada")
 
 
 # ---------------------------------------------------------------------------

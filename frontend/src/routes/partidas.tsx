@@ -3,7 +3,7 @@ import { isAutenticado } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2, Eye, UserCheck, Loader2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Eye, UserCheck, UserPlus, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -26,8 +26,11 @@ import {
   fetchMatches,
   fetchPlayers,
   fetchPresences,
+  confirmPresenceAsEditor,
   updatePaymentStatus,
   updatePresenceStatus,
+  updatePresencePosition,
+  deletePresence,
   formatDate,
   formatMoney,
   teamCost,
@@ -175,6 +178,13 @@ function MatchesPage() {
   const [toDelete, setToDelete] = useState<Match | null>(null);
   const [rows, setRows] = useState<Record<string, StatRow>>({});
   const [confirmando, setConfirmando] = useState<Match | null>(null);
+  const [toRemoverPresenca, setToRemoverPresenca] = useState<Presence | null>(null);
+  // Formulário do editor pra confirmar presença de quem avisou por fora.
+  const [jogadorParaAdicionar, setJogadorParaAdicionar] = useState("");
+  const [posicaoParaAdicionar, setPosicaoParaAdicionar] = useState<Position | "">("");
+  // Posição escolhida ao reverter um "não vai" de volta pra confirmado,
+  // por jogador (cada linha "ausente" tem seu próprio seletor).
+  const [posicaoReversao, setPosicaoReversao] = useState<Record<string, Position>>({});
 
   const { data: existingStats } = useQuery({
     queryKey: ["match-stats", editing?.id],
@@ -201,20 +211,36 @@ function MatchesPage() {
   const minhaPresenca =
     (meuJogador && (presences ?? []).find((p) => p.player_id === meuJogador.id)) || null;
 
-  // Partidas anteriores a esta feature não têm presença; nesse caso a tabela
-  // de estatísticas segue mostrando o elenco inteiro, senão sumiria tudo.
+  const jogadorParaRemover = (players ?? []).find((p) => p.id === toRemoverPresenca?.player_id);
+  const nomeParaRemover = jogadorParaRemover
+    ? jogadorParaRemover.nickname || jogadorParaRemover.name
+    : "este jogador";
+
+  // Partidas anteriores a esta feature não têm presença; nesse caso a lista
+  // segue mostrando o elenco inteiro, senão sumiria tudo.
   const temPresenca = (presences ?? []).length > 0;
+  const presencaPorJogador = new Map((presences ?? []).map((pr) => [pr.player_id, pr]));
   const confirmados = (presences ?? []).filter((p) => p.status === "confirmado");
+
+  // Lista unificada: todo mundo com presença registrada (confirmado, espera
+  // ou ausente) — o editor gerencia tudo num só lugar (posição, pagamento,
+  // cancelar, retirar). Sem nenhuma presença, cai no elenco inteiro.
   const jogadoresDaPartida = temPresenca
-    ? confirmados
+    ? (presences ?? [])
         .map((pr) => activePlayers.find((p) => p.id === pr.player_id))
         .filter((p): p is (typeof activePlayers)[number] => !!p)
     : activePlayers;
 
+  // Só entra na tabela de estatísticas quem realmente confirmou (ou, no modo
+  // legado sem presença, todo mundo — igual já era antes desta feature).
+  const jogadoresComEstatisticas = temPresenca
+    ? jogadoresDaPartida.filter((p) => presencaPorJogador.get(p.id)?.status === "confirmado")
+    : jogadoresDaPartida;
+
   useEffect(() => {
     if (!editing) return;
     const next: Record<string, StatRow> = {};
-    for (const p of jogadoresDaPartida) {
+    for (const p of jogadoresComEstatisticas) {
       const found = existingStats?.find((s) => s.player_id === p.id);
       // Prioridade: posição já lançada > posição declarada na presença > principal.
       const daPresenca = (presences ?? []).find((pr) => pr.player_id === p.id)?.position ?? null;
@@ -351,6 +377,13 @@ function MatchesPage() {
   // Só jogadores de linha ocupam vaga; o goleiro entra por fora.
   const confirmadosDeLinha = confirmados.filter((p) => p.position !== "goleiro").length;
 
+  // Quem ainda não tem nenhuma linha de presença nesta partida — candidatos
+  // pro editor confirmar em nome de alguém que avisou por fora do app.
+  const jogadoresSemPresenca = activePlayers.filter(
+    (p) => !(presences ?? []).some((pr) => pr.player_id === p.id),
+  );
+  const jogadorSelecionado = jogadoresSemPresenca.find((p) => p.id === jogadorParaAdicionar);
+
   const pagamento = useMutation({
     mutationFn: ({ playerId, pago }: { playerId: string; pago: boolean }) =>
       updatePaymentStatus(editing!.id, playerId, pago ? "pago" : "pendente"),
@@ -358,10 +391,42 @@ function MatchesPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const promover = useMutation({
+  // Usada tanto pra "Promover" (espera -> confirmado) quanto pra "Cancelar"
+  // (marca ausente em nome do jogador — a API já zera a posição nesse caso).
+  const mudarStatus = useMutation({
     mutationFn: ({ playerId, status }: { playerId: string; status: Presence["status"] }) =>
       updatePresenceStatus(editing!.id, playerId, status),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["presences", editing?.id] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const mudarPosicaoPresenca = useMutation({
+    mutationFn: ({ playerId, position }: { playerId: string; position: Position }) =>
+      updatePresencePosition(editing!.id, playerId, position),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["presences", editing?.id] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const removerPresenca = useMutation({
+    mutationFn: (playerId: string) => deletePresence(editing!.id, playerId),
+    onSuccess: () => {
+      toast.success("Presença removida da lista");
+      qc.invalidateQueries({ queryKey: ["presences", editing?.id] });
+      setToRemoverPresenca(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Confirmar em nome de quem avisou por fora do app.
+  const adicionarPresenca = useMutation({
+    mutationFn: ({ playerId, position }: { playerId: string; position: Position }) =>
+      confirmPresenceAsEditor(editing!.id, playerId, position),
+    onSuccess: () => {
+      toast.success("Presença confirmada");
+      qc.invalidateQueries({ queryKey: ["presences", editing?.id] });
+      setJogadorParaAdicionar("");
+      setPosicaoParaAdicionar("");
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -459,7 +524,11 @@ function MatchesPage() {
                       )}
                       <div className="flex gap-1">
                         <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
-                          {podeEditar ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          {podeEditar ? (
+                            <Pencil className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
                         </Button>
                         {podeEditar && (
                           <Button size="icon" variant="ghost" onClick={() => setToDelete(m)}>
@@ -485,425 +554,645 @@ function MatchesPage() {
           </DialogHeader>
 
           <fieldset disabled={!podeEditar} className="contents">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="date">Data *</Label>
-              <DatePicker
-                id="date"
-                value={form.match_date}
-                onChange={(v) => setForm({ ...form, match_date: v })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="opponent">Adversário *</Label>
-              <Input
-                id="opponent"
-                maxLength={100}
-                value={form.opponent}
-                onChange={(e) => setForm({ ...form, opponent: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Local</Label>
-              <Select value={form.venue} onValueChange={(v) => setForm({ ...form, venue: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {VENUES.map((v) => (
-                    <SelectItem key={v} value={v}>
-                      {VENUE_LABELS[v]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {form.venue === "outro" && (
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label htmlFor="venue_detail">Nome do campo</Label>
-                <Input
-                  id="venue_detail"
-                  maxLength={100}
-                  placeholder="Ex: Campo do Bairro Tal"
-                  value={form.venue_detail}
-                  onChange={(e) => setForm({ ...form, venue_detail: e.target.value })}
+                <Label htmlFor="date">Data *</Label>
+                <DatePicker
+                  id="date"
+                  value={form.match_date}
+                  onChange={(v) => setForm({ ...form, match_date: v })}
                 />
               </div>
-            )}
-            <div>
-              <Label>Mando</Label>
-              <Select value={form.mando} onValueChange={(v) => setForm({ ...form, mando: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MANDOS.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {MANDO_LABELS[m]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {STATUS_LABELS[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Tipo</Label>
-              <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="campeonato">Campeonato</SelectItem>
-                  <SelectItem value="amistoso">Amistoso</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="sm:col-span-2">
-              <Label className="mb-2 block">Vagas e rateio</Label>
-              <div className="space-y-3 rounded-lg border p-3">
-                <div className="grid gap-3 sm:grid-cols-4">
-                  <div>
-                    <Label htmlFor="slots" className="text-xs">
-                      Jogadores de linha
-                    </Label>
-                    <NumberInput
-                      id="slots"
-                      value={form.line_slots}
-                      onChange={(v) => setForm({ ...form, line_slots: v })}
-                      min={MIN_LINE_SLOTS}
-                      max={MAX_LINE_SLOTS}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="court" className="text-xs">
-                      Quadra (R$)
-                    </Label>
-                    <NumberInput
-                      id="court"
-                      value={form.court_fee}
-                      onChange={(v) => setForm({ ...form, court_fee: v })}
-                      max={9999}
-                      maxDigits={4}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="ref" className="text-xs">
-                      Arbitragem (R$)
-                    </Label>
-                    <NumberInput
-                      id="ref"
-                      value={form.referee_fee}
-                      onChange={(v) => setForm({ ...form, referee_fee: v })}
-                      max={9999}
-                      maxDigits={4}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="keeper" className="text-xs">
-                      Goleiro (R$)
-                    </Label>
-                    <NumberInput
-                      id="keeper"
-                      value={form.keeper_fee}
-                      onChange={(v) => setForm({ ...form, keeper_fee: v })}
-                      max={9999}
-                      maxDigits={4}
-                    />
-                  </div>
-                </div>
-                {/* Quadra e arbitragem são rachadas com o adversário; o goleiro é só nosso. */}
-                <p className="text-xs text-muted-foreground">
-                  Quadra e arbitragem entram pela metade (rachadas com o adversário); o goleiro
-                  entra cheio.
-                  {previaRateio !== null && (
-                    <>
-                      {" "}
-                      Total do time:{" "}
-                      <span className="font-medium text-foreground">
-                        {formatMoney(previaCusto)}
-                      </span>{" "}
-                      ·{" "}
-                      <span className="font-medium text-accent">
-                        {formatMoney(previaRateio)} por jogador
-                      </span>
-                    </>
-                  )}
-                </p>
+              <div>
+                <Label htmlFor="opponent">Adversário *</Label>
+                <Input
+                  id="opponent"
+                  maxLength={100}
+                  value={form.opponent}
+                  onChange={(e) => setForm({ ...form, opponent: e.target.value })}
+                />
               </div>
-            </div>
-
-            {form.status === "realizada" && (
-              <div className="sm:col-span-2">
-                <Label className="mb-2 block">Placar Final</Label>
-                <div className="grid grid-cols-2 gap-2 rounded-lg border p-3">
-                  <div>
-                    <Label htmlFor="gf">Suprema Corte</Label>
-                    <NumberInput
-                      id="gf"
-                      value={form.goals_for}
-                      onChange={(v) => setForm({ ...form, goals_for: v })}
-                      max={99}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="ga">Adversário</Label>
-                    <NumberInput
-                      id="ga"
-                      value={form.goals_against}
-                      onChange={(v) => setForm({ ...form, goals_against: v })}
-                      max={99}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-            <div className="sm:col-span-2">
-              <Label htmlFor="notes">Observações</Label>
-              <Textarea
-                id="notes"
-                maxLength={1000}
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              />
-            </div>
-          </div>
-
-          {editing && (
-            <>
-              <Separator className="my-2" />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-xl">Lista de presença</h3>
-                <div className="flex items-center gap-3 text-sm">
-                  <span className="text-muted-foreground">
-                    Confirmados:{" "}
-                    <span className="font-semibold text-foreground">{confirmadosDeLinha}</span>
-                    {editing.line_slots ? ` / ${editing.line_slots}` : ""}
-                  </span>
-                  {feePerPlayer(editing) !== null && (
-                    <span className="font-display text-lg text-accent">
-                      {formatMoney(feePerPlayer(editing)!)}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {(presences ?? []).length === 0 ? (
-                <p className="py-3 text-sm text-muted-foreground">
-                  Ninguém respondeu ainda.
-                </p>
-              ) : (
-                <div className="space-y-1.5">
-                  {(presences ?? []).map((pr) => {
-                    const jogador = (players ?? []).find((p) => p.id === pr.player_id);
-                    const pago = pr.payment_status === "pago";
-                    const salvando =
-                      (pagamento.isPending && pagamento.variables?.playerId === pr.player_id) ||
-                      (promover.isPending && promover.variables?.playerId === pr.player_id);
-                    return (
-                      <div
-                        key={pr.id}
-                        className="flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                      >
-                        <span className="min-w-0 flex-1 truncate font-medium">
-                          {jogador ? jogador.nickname || jogador.name : "Jogador removido"}
-                        </span>
-                        {pr.position && (
-                          <Badge variant="secondary" className="font-normal">
-                            {POSITION_ABBR[pr.position]}
-                          </Badge>
-                        )}
-                        <PresenceBadge status={pr.status} />
-
-                        {pr.status !== "ausente" &&
-                          (podeEditar ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={salvando}
-                              onClick={() =>
-                                pagamento.mutate({ playerId: pr.player_id, pago: !pago })
-                              }
-                              className={cn(
-                                "h-7 gap-1",
-                                pago
-                                  ? "border-emerald-600/50 text-emerald-700 dark:text-emerald-400"
-                                  : "border-amber-500/50 text-amber-700 dark:text-amber-400",
-                              )}
-                            >
-                              {salvando && <Loader2 className="h-3 w-3 animate-spin" />}
-                              {pago ? "Pago" : "Pendente"}
-                            </Button>
-                          ) : (
-                            <Badge
-                              className={cn(
-                                "border-transparent",
-                                pago
-                                  ? "bg-emerald-600 text-white hover:bg-emerald-600 dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-500"
-                                  : "bg-amber-500 text-amber-950 hover:bg-amber-500",
-                              )}
-                            >
-                              {pago ? "Pago" : "Pendente"}
-                            </Badge>
-                          ))}
-
-                        {podeEditar && pr.status === "espera" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7"
-                            disabled={salvando}
-                            onClick={() =>
-                              promover.mutate({ playerId: pr.player_id, status: "confirmado" })
-                            }
-                          >
-                            Promover
-                          </Button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <Separator className="my-2" />
-              <h3 className="text-xl">Estatísticas dos jogadores</h3>
-              {jogadoresDaPartida.length === 0 ? (
-                <p className="py-4 text-sm text-muted-foreground">
-                  {temPresenca
-                    ? "Ninguém confirmado ainda — a lista aparece conforme o pessoal confirmar."
-                    : "Nenhum jogador ativo cadastrado."}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-center text-xs uppercase text-muted-foreground">
-                        <th className="px-1.5 py-2 text-left">Jogador</th>
-                        <th className="px-1.5 py-2 text-left">Posição</th>
-                        <th className="px-1.5 py-2">Tit.</th>
-                        <th className="px-1.5 py-2">Min</th>
-                        <th className="px-1.5 py-2">Gols</th>
-                        <th className="px-1.5 py-2">Assist.</th>
-                        <th className="px-1.5 py-2">CA</th>
-                        <th className="px-1.5 py-2">CV</th>
-                        <th className="px-1.5 py-2">Def.</th>
-                        <th className="px-1.5 py-2">GS</th>
-                      </tr>
-                    </thead>
-                    {playersByCategory.map((g) => (
-                      <tbody key={g.category}>
-                        <tr className="border-b bg-muted/40">
-                          <td
-                            colSpan={10}
-                            className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                          >
-                            {CATEGORY_LABELS[g.category]}
-                          </td>
-                        </tr>
-                        {g.players.map((p) => {
-                          const r = rows[p.id] ?? emptyStat;
-                          const gk = p.positions.includes("goleiro");
-                          const num = (key: keyof StatRow) => (
-                            <NumberInput
-                              className="mx-auto w-16"
-                              inputClassName="h-8 text-center"
-                              max={999}
-                              value={String(r[key] ?? 0)}
-                              onChange={(v) => setCell(p.id, key, Number(v) || 0)}
-                            />
-                          );
-                          const posicao = r.position ?? p.positions[0];
-                          const tagPosicao = (
-                            <Badge
-                              variant="secondary"
-                              className="font-normal"
-                              title={POSITION_LABELS[posicao]}
-                            >
-                              {POSITION_ABBR[posicao]}
-                            </Badge>
-                          );
-                          return (
-                            <tr key={p.id} className="border-b last:border-0">
-                              <td className="whitespace-nowrap px-1.5 py-1.5 text-left font-medium">
-                                {p.nickname || p.name}
-                              </td>
-                              <td className="px-1.5 py-1.5">
-                                {/* Só a tag da posição. Quem edita e tem mais de uma
-                                    posição ganha uma setinha para trocar; quem só
-                                    visualiza vê a tag pura, sem sugerir interação. */}
-                                {podeEditar && p.positions.length > 1 ? (
-                                  <Select
-                                    value={posicao}
-                                    onValueChange={(v) => setCell(p.id, "position", v as Position)}
-                                  >
-                                    <SelectTrigger className="h-auto w-auto gap-1 border-0 bg-transparent p-0 shadow-none focus:ring-0 [&>svg]:h-3 [&>svg]:w-3">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {p.positions.map((pos) => (
-                                        <SelectItem key={pos} value={pos}>
-                                          <Badge
-                                            variant="secondary"
-                                            className="font-normal"
-                                            title={POSITION_LABELS[pos]}
-                                          >
-                                            {POSITION_ABBR[pos]}
-                                          </Badge>
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <div className="flex justify-start">{tagPosicao}</div>
-                                )}
-                              </td>
-                              <td className="px-1.5 py-1.5">
-                                <div className="flex justify-center">
-                                  <Checkbox
-                                    checked={r.starter}
-                                    onCheckedChange={(v) => setCell(p.id, "starter", v === true)}
-                                  />
-                                </div>
-                              </td>
-                              <td className="px-1.5 py-1.5">{num("minutes")}</td>
-                              <td className="px-1.5 py-1.5">{num("goals")}</td>
-                              <td className="px-1.5 py-1.5">{num("assists")}</td>
-                              <td className="px-1.5 py-1.5">{num("yellow_cards")}</td>
-                              <td className="px-1.5 py-1.5">{num("red_cards")}</td>
-                              <td className="px-1.5 py-1.5 text-center">
-                                {gk ? num("saves") : <span className="text-muted-foreground">—</span>}
-                              </td>
-                              <td className="px-1.5 py-1.5 text-center">
-                                {gk ? (
-                                  num("goals_conceded")
-                                ) : (
-                                  <span className="text-muted-foreground">—</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
+              <div>
+                <Label>Local</Label>
+                <Select value={form.venue} onValueChange={(v) => setForm({ ...form, venue: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VENUES.map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {VENUE_LABELS[v]}
+                      </SelectItem>
                     ))}
-                  </table>
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.venue === "outro" && (
+                <div>
+                  <Label htmlFor="venue_detail">Nome do campo</Label>
+                  <Input
+                    id="venue_detail"
+                    maxLength={100}
+                    placeholder="Ex: Campo do Bairro Tal"
+                    value={form.venue_detail}
+                    onChange={(e) => setForm({ ...form, venue_detail: e.target.value })}
+                  />
                 </div>
               )}
-            </>
-          )}
+              <div>
+                <Label>Mando</Label>
+                <Select value={form.mando} onValueChange={(v) => setForm({ ...form, mando: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MANDOS.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {MANDO_LABELS[m]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Status</Label>
+                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {STATUS_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Tipo</Label>
+                <Select value={form.kind} onValueChange={(v) => setForm({ ...form, kind: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="campeonato">Campeonato</SelectItem>
+                    <SelectItem value="amistoso">Amistoso</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="sm:col-span-2">
+                <Label className="mb-2 block">Vagas e rateio</Label>
+                <div className="space-y-3 rounded-lg border p-3">
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <div>
+                      <Label htmlFor="slots" className="text-xs">
+                        Jogadores de linha
+                      </Label>
+                      <NumberInput
+                        id="slots"
+                        value={form.line_slots}
+                        onChange={(v) => setForm({ ...form, line_slots: v })}
+                        min={MIN_LINE_SLOTS}
+                        max={MAX_LINE_SLOTS}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="court" className="text-xs">
+                        Quadra (R$)
+                      </Label>
+                      <NumberInput
+                        id="court"
+                        value={form.court_fee}
+                        onChange={(v) => setForm({ ...form, court_fee: v })}
+                        max={9999}
+                        maxDigits={4}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="ref" className="text-xs">
+                        Arbitragem (R$)
+                      </Label>
+                      <NumberInput
+                        id="ref"
+                        value={form.referee_fee}
+                        onChange={(v) => setForm({ ...form, referee_fee: v })}
+                        max={9999}
+                        maxDigits={4}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="keeper" className="text-xs">
+                        Goleiro (R$)
+                      </Label>
+                      <NumberInput
+                        id="keeper"
+                        value={form.keeper_fee}
+                        onChange={(v) => setForm({ ...form, keeper_fee: v })}
+                        max={9999}
+                        maxDigits={4}
+                      />
+                    </div>
+                  </div>
+                  {/* Quadra e arbitragem são rachadas com o adversário; o goleiro é só nosso. */}
+                  <p className="text-xs text-muted-foreground">
+                    Quadra e arbitragem entram pela metade (rachadas com o adversário); o goleiro
+                    entra cheio.
+                    {previaRateio !== null && (
+                      <>
+                        {" "}
+                        Total do time:{" "}
+                        <span className="font-medium text-foreground">
+                          {formatMoney(previaCusto)}
+                        </span>{" "}
+                        ·{" "}
+                        <span className="font-medium text-accent">
+                          {formatMoney(previaRateio)} por jogador
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {form.status === "realizada" && (
+                <div className="sm:col-span-2">
+                  <Label className="mb-2 block">Placar Final</Label>
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border p-3">
+                    <div>
+                      <Label htmlFor="gf">Suprema Corte</Label>
+                      <NumberInput
+                        id="gf"
+                        value={form.goals_for}
+                        onChange={(v) => setForm({ ...form, goals_for: v })}
+                        max={99}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="ga">Adversário</Label>
+                      <NumberInput
+                        id="ga"
+                        value={form.goals_against}
+                        onChange={(v) => setForm({ ...form, goals_against: v })}
+                        max={99}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="sm:col-span-2">
+                <Label htmlFor="notes">Observações</Label>
+                <Textarea
+                  id="notes"
+                  maxLength={1000}
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {editing && (
+              <>
+                <Separator className="my-2" />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xl">Jogadores</h3>
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="text-muted-foreground">
+                      Confirmados:{" "}
+                      <span className="font-semibold text-foreground">{confirmadosDeLinha}</span>
+                      {editing.line_slots ? ` / ${editing.line_slots}` : ""}
+                    </span>
+                    {feePerPlayer(editing) !== null && (
+                      <span className="font-display text-lg text-accent">
+                        {formatMoney(feePerPlayer(editing)!)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Pra quem avisou por fora do app (ligação, WhatsApp) ou ainda
+                  não tem conta — o editor confirma em nome dele. */}
+                {podeEditar && jogadoresSemPresenca.length > 0 && (
+                  <div className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-2.5">
+                    <div className="min-w-40 flex-1">
+                      <Label htmlFor="add-jogador" className="text-xs text-muted-foreground">
+                        Confirmar em nome de
+                      </Label>
+                      <Select
+                        value={jogadorParaAdicionar}
+                        onValueChange={(v) => {
+                          setJogadorParaAdicionar(v);
+                          const jog = jogadoresSemPresenca.find((p) => p.id === v);
+                          setPosicaoParaAdicionar(jog?.positions[0] ?? "");
+                        }}
+                      >
+                        <SelectTrigger id="add-jogador" className="h-8">
+                          <SelectValue placeholder="Escolher jogador..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {jogadoresSemPresenca.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.nickname || p.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {jogadorSelecionado && (
+                      <div className="w-32">
+                        <Label className="text-xs text-muted-foreground">Posição</Label>
+                        <Select
+                          value={posicaoParaAdicionar}
+                          onValueChange={(v) => setPosicaoParaAdicionar(v as Position)}
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {jogadorSelecionado.positions.map((pos) => (
+                              <SelectItem key={pos} value={pos}>
+                                {POSITION_LABELS[pos]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    <Button
+                      size="sm"
+                      className="h-8 gap-1"
+                      disabled={
+                        !jogadorParaAdicionar ||
+                        !posicaoParaAdicionar ||
+                        adicionarPresenca.isPending
+                      }
+                      onClick={() =>
+                        jogadorParaAdicionar &&
+                        posicaoParaAdicionar &&
+                        adicionarPresenca.mutate({
+                          playerId: jogadorParaAdicionar,
+                          position: posicaoParaAdicionar,
+                        })
+                      }
+                    >
+                      {adicionarPresenca.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <UserPlus className="h-3.5 w-3.5" />
+                      )}
+                      Confirmar
+                    </Button>
+                  </div>
+                )}
+
+                {jogadoresDaPartida.length === 0 ? (
+                  <p className="py-4 text-sm text-muted-foreground">
+                    {temPresenca
+                      ? "Ninguém confirmado ainda — a lista aparece conforme o pessoal confirmar."
+                      : "Nenhum jogador ativo cadastrado."}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-center text-xs uppercase text-muted-foreground">
+                          <th className="px-1.5 py-2 text-left">Jogador</th>
+                          <th className="px-1.5 py-2 text-left">Posição</th>
+                          <th className="px-1.5 py-2">Confirmação</th>
+                          <th className="px-1.5 py-2">Pagamento</th>
+                          {editing.status === "realizada" && (
+                            <>
+                              <th className="px-1.5 py-2">Tit.</th>
+                              <th className="px-1.5 py-2">Min</th>
+                              <th className="px-1.5 py-2">Gols</th>
+                              <th className="px-1.5 py-2">Assist.</th>
+                              <th className="px-1.5 py-2">CA</th>
+                              <th className="px-1.5 py-2">CV</th>
+                              <th className="px-1.5 py-2">Def.</th>
+                              <th className="px-1.5 py-2">GS</th>
+                            </>
+                          )}
+                          <th className="px-1.5 py-2">Ações</th>
+                        </tr>
+                      </thead>
+                      {playersByCategory.map((g) => (
+                        <tbody key={g.category}>
+                          <tr className="border-b bg-muted/40">
+                            <td
+                              colSpan={4 + (editing.status === "realizada" ? 8 : 0) + 1}
+                              className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                            >
+                              {CATEGORY_LABELS[g.category]}
+                            </td>
+                          </tr>
+                          {g.players.map((p) => {
+                            const pr = presencaPorJogador.get(p.id);
+                            const r = rows[p.id] ?? emptyStat;
+                            const gk = p.positions.includes("goleiro");
+                            const pago = pr?.payment_status === "pago";
+                            const mostrarStats =
+                              editing.status === "realizada" &&
+                              (!temPresenca || pr?.status === "confirmado");
+                            const salvandoLinha =
+                              (pagamento.isPending && pagamento.variables?.playerId === p.id) ||
+                              (mudarStatus.isPending && mudarStatus.variables?.playerId === p.id) ||
+                              (mudarPosicaoPresenca.isPending &&
+                                mudarPosicaoPresenca.variables?.playerId === p.id) ||
+                              (removerPresenca.isPending && removerPresenca.variables === p.id) ||
+                              (adicionarPresenca.isPending &&
+                                adicionarPresenca.variables?.playerId === p.id);
+                            const num = (key: keyof StatRow) => (
+                              <NumberInput
+                                className="mx-auto w-16"
+                                inputClassName="h-8 text-center"
+                                max={999}
+                                value={String(r[key] ?? 0)}
+                                onChange={(v) => setCell(p.id, key, Number(v) || 0)}
+                              />
+                            );
+
+                            return (
+                              <tr key={p.id} className="border-b last:border-0">
+                                <td className="whitespace-nowrap px-1.5 py-1.5 text-left font-medium">
+                                  {p.nickname || p.name}
+                                </td>
+
+                                <td className="px-1.5 py-1.5">
+                                  {pr?.position ? (
+                                    podeEditar && p.positions.length > 1 ? (
+                                      <Select
+                                        value={pr.position}
+                                        onValueChange={(v) =>
+                                          mudarPosicaoPresenca.mutate({
+                                            playerId: p.id,
+                                            position: v as Position,
+                                          })
+                                        }
+                                      >
+                                        <SelectTrigger className="h-auto w-auto gap-1 border-0 bg-transparent p-0 shadow-none focus:ring-0 [&>svg]:h-3 [&>svg]:w-3">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {p.positions.map((pos) => (
+                                            <SelectItem key={pos} value={pos}>
+                                              <Badge
+                                                variant="secondary"
+                                                className="font-normal"
+                                                title={POSITION_LABELS[pos]}
+                                              >
+                                                {POSITION_ABBR[pos]}
+                                              </Badge>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <div className="flex justify-start">
+                                        <Badge
+                                          variant="secondary"
+                                          className="font-normal"
+                                          title={POSITION_LABELS[pr.position]}
+                                        >
+                                          {POSITION_ABBR[pr.position]}
+                                        </Badge>
+                                      </div>
+                                    )
+                                  ) : !temPresenca ? (
+                                    // Partida sem presença registrada (anterior a esta
+                                    // feature): posição vem do lançamento de estatística.
+                                    podeEditar && p.positions.length > 1 ? (
+                                      <Select
+                                        value={r.position ?? p.positions[0]}
+                                        onValueChange={(v) =>
+                                          setCell(p.id, "position", v as Position)
+                                        }
+                                      >
+                                        <SelectTrigger className="h-auto w-auto gap-1 border-0 bg-transparent p-0 shadow-none focus:ring-0 [&>svg]:h-3 [&>svg]:w-3">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {p.positions.map((pos) => (
+                                            <SelectItem key={pos} value={pos}>
+                                              <Badge
+                                                variant="secondary"
+                                                className="font-normal"
+                                                title={POSITION_LABELS[pos]}
+                                              >
+                                                {POSITION_ABBR[pos]}
+                                              </Badge>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <div className="flex justify-start">
+                                        <Badge
+                                          variant="secondary"
+                                          className="font-normal"
+                                          title={POSITION_LABELS[r.position ?? p.positions[0]]}
+                                        >
+                                          {POSITION_ABBR[r.position ?? p.positions[0]]}
+                                        </Badge>
+                                      </div>
+                                    )
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </td>
+
+                                <td className="px-1.5 py-1.5 text-center">
+                                  {pr ? (
+                                    <PresenceBadge status={pr.status} />
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </td>
+
+                                <td className="px-1.5 py-1.5 text-center">
+                                  {pr && pr.status !== "ausente" ? (
+                                    podeEditar ? (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={salvandoLinha}
+                                        onClick={() =>
+                                          pagamento.mutate({ playerId: p.id, pago: !pago })
+                                        }
+                                        className={cn(
+                                          "h-7 gap-1",
+                                          pago
+                                            ? "border-emerald-600/50 text-emerald-700 dark:text-emerald-400"
+                                            : "border-amber-500/50 text-amber-700 dark:text-amber-400",
+                                        )}
+                                      >
+                                        {salvandoLinha && (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        )}
+                                        {pago ? "Pago" : "Pendente"}
+                                      </Button>
+                                    ) : (
+                                      <Badge
+                                        className={cn(
+                                          "border-transparent",
+                                          pago
+                                            ? "bg-emerald-600 text-white hover:bg-emerald-600 dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-500"
+                                            : "bg-amber-500 text-amber-950 hover:bg-amber-500",
+                                        )}
+                                      >
+                                        {pago ? "Pago" : "Pendente"}
+                                      </Badge>
+                                    )
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </td>
+
+                                {editing.status === "realizada" &&
+                                  (mostrarStats ? (
+                                    <>
+                                      <td className="px-1.5 py-1.5">
+                                        <div className="flex justify-center">
+                                          <Checkbox
+                                            checked={r.starter}
+                                            onCheckedChange={(v) =>
+                                              setCell(p.id, "starter", v === true)
+                                            }
+                                          />
+                                        </div>
+                                      </td>
+                                      <td className="px-1.5 py-1.5">{num("minutes")}</td>
+                                      <td className="px-1.5 py-1.5">{num("goals")}</td>
+                                      <td className="px-1.5 py-1.5">{num("assists")}</td>
+                                      <td className="px-1.5 py-1.5">{num("yellow_cards")}</td>
+                                      <td className="px-1.5 py-1.5">{num("red_cards")}</td>
+                                      <td className="px-1.5 py-1.5 text-center">
+                                        {gk ? (
+                                          num("saves")
+                                        ) : (
+                                          <span className="text-muted-foreground">—</span>
+                                        )}
+                                      </td>
+                                      <td className="px-1.5 py-1.5 text-center">
+                                        {gk ? (
+                                          num("goals_conceded")
+                                        ) : (
+                                          <span className="text-muted-foreground">—</span>
+                                        )}
+                                      </td>
+                                    </>
+                                  ) : (
+                                    <td
+                                      colSpan={8}
+                                      className="px-1.5 py-1.5 text-center text-xs text-muted-foreground"
+                                    >
+                                      {pr?.status === "espera"
+                                        ? "Na lista de espera"
+                                        : pr?.status === "ausente"
+                                          ? "Não vai"
+                                          : "Não jogou"}
+                                    </td>
+                                  ))}
+
+                                <td className="px-1.5 py-1.5">
+                                  <div className="flex flex-wrap items-center justify-center gap-1">
+                                    {podeEditar && pr?.status === "espera" && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7"
+                                        disabled={salvandoLinha}
+                                        onClick={() =>
+                                          mudarStatus.mutate({
+                                            playerId: p.id,
+                                            status: "confirmado",
+                                          })
+                                        }
+                                      >
+                                        Promover
+                                      </Button>
+                                    )}
+
+                                    {podeEditar && pr && pr.status !== "ausente" && (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        title="Cancelar presença (marca como não vai)"
+                                        disabled={salvandoLinha}
+                                        onClick={() =>
+                                          mudarStatus.mutate({ playerId: p.id, status: "ausente" })
+                                        }
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
+
+                                    {podeEditar && pr?.status === "ausente" && (
+                                      <div className="flex items-center gap-1">
+                                        <Select
+                                          value={posicaoReversao[p.id] ?? p.positions[0]}
+                                          onValueChange={(v) =>
+                                            setPosicaoReversao((prev) => ({
+                                              ...prev,
+                                              [p.id]: v as Position,
+                                            }))
+                                          }
+                                        >
+                                          <SelectTrigger className="h-7 w-[4.5rem] text-xs">
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {p.positions.map((pos) => (
+                                              <SelectItem key={pos} value={pos}>
+                                                {POSITION_ABBR[pos]}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-7 w-7"
+                                          title="Reverter — confirmar de novo"
+                                          disabled={salvandoLinha}
+                                          onClick={() =>
+                                            adicionarPresenca.mutate({
+                                              playerId: p.id,
+                                              position: posicaoReversao[p.id] ?? p.positions[0],
+                                            })
+                                          }
+                                        >
+                                          <UserCheck className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
+                                    )}
+
+                                    {podeEditar && pr && (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        title="Retirar da lista"
+                                        disabled={salvandoLinha}
+                                        onClick={() => setToRemoverPresenca(pr)}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      ))}
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
           </fieldset>
 
           <DialogFooter>
@@ -942,6 +1231,31 @@ function MatchesPage() {
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => toDelete && remove.mutate(toDelete.id)}>
               Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!toRemoverPresenca}
+        onOpenChange={(o) => !o && setToRemoverPresenca(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Retirar {nomeParaRemover} da lista?</AlertDialogTitle>
+            <AlertDialogDescription>
+              A presença é apagada por completo, como se ele nunca tivesse respondido. Se ele quiser
+              voltar, precisa confirmar de novo pelo próprio card da partida.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                toRemoverPresenca && removerPresenca.mutate(toRemoverPresenca.player_id)
+              }
+            >
+              Retirar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

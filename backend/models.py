@@ -193,14 +193,37 @@ class PresencaCreate(BaseModel):
     termos_aceitos: bool = False
 
 
+class PresencaConfirmarEditor(BaseModel):
+    """
+    Usado pelo editor pra confirmar presença em nome de um jogador que avisou
+    por fora (ligação, WhatsApp) e não usa o app, ou não tem conta ainda.
+
+    Sempre confirma (respeitando a fila de espera se lotar); termos_aceitos
+    fica implícito — o editor está assumindo a responsabilidade por essa
+    entrada, não faz sentido pedir pro jogador clicar num checkbox que ele
+    nem vai ver.
+    """
+
+    posicao: Posicao
+
+
 class PresencaUpdatePagamento(BaseModel):
     status_pagamento: StatusPagamento
 
 
 class PresencaUpdateStatus(BaseModel):
-    """Usado pelo editor para promover alguém da espera (ou o contrário)."""
+    """
+    Usado pelo editor pra promover alguém da espera, ou cancelar a presença
+    de alguém (status "ausente") em nome do jogador.
+    """
 
     status: StatusPresenca
+
+
+class PresencaUpdatePosicao(BaseModel):
+    """Usado pelo editor pra corrigir a posição que o jogador escolheu."""
+
+    posicao: Posicao
 
 
 class Presenca(BaseModel):

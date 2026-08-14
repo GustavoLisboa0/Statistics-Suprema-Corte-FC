@@ -568,6 +568,22 @@ export async function savePresence(
   return toPresence(data);
 }
 
+/**
+ * Confirma presença em nome de um jogador que avisou por fora (não usa o
+ * app, ou ainda não tem conta). Só editor; a API sempre confirma (respeitando
+ * a fila de espera se lotar) e já marca os termos como aceitos.
+ */
+export async function confirmPresenceAsEditor(
+  matchId: string,
+  playerId: string,
+  position: Position,
+): Promise<Presence> {
+  const data = await api.post<PresencaApi>(`/partidas/${matchId}/presenca/${playerId}`, {
+    posicao: position,
+  });
+  return toPresence(data);
+}
+
 export async function updatePaymentStatus(
   matchId: string,
   playerId: string,
@@ -589,6 +605,23 @@ export async function updatePresenceStatus(
     status,
   });
   return toPresence(data);
+}
+
+/** Corrige a posição de um confirmado. Só editor; a API valida. */
+export async function updatePresencePosition(
+  matchId: string,
+  playerId: string,
+  position: Position,
+): Promise<Presence> {
+  const data = await api.patch<PresencaApi>(`/partidas/${matchId}/presenca/${playerId}/posicao`, {
+    posicao: position,
+  });
+  return toPresence(data);
+}
+
+/** Retira o jogador da lista por completo — como se nunca tivesse respondido. */
+export async function deletePresence(matchId: string, playerId: string): Promise<void> {
+  await api.del(`/partidas/${matchId}/presenca/${playerId}`);
 }
 
 export function formatDate(value: string | null) {
