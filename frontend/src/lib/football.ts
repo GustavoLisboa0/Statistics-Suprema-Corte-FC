@@ -508,28 +508,32 @@ export async function upsertMatchStats(
 ): Promise<void> {
   const byPlayer = new Map(existing.map((s) => [s.player_id, s]));
 
-  for (const [playerId, r] of Object.entries(rows)) {
-    const payload = {
-      jogador_id: playerId,
-      partida_id: matchId,
-      posicao: r.position,
-      titular: r.starter,
-      minutos_jogados: r.minutes,
-      gols: r.goals,
-      assistencias: r.assists,
-      cartoes_amarelos: r.yellow_cards,
-      cartoes_vermelhos: r.red_cards,
-      defesas: r.saves,
-      gols_sofridos: r.goals_conceded,
-    };
+  // Em paralelo: cada linha é independente, e toda chamada autenticada paga
+  // sozinha o round-trip de validar o token no Supabase (~0,5-1s). Rodar uma
+  // de cada vez multiplicava esse custo por jogador — 15 jogadores sequenciais
+  // já passava de 10s. Em paralelo, o tempo total é o da chamada mais lenta.
+  await Promise.all(
+    Object.entries(rows).map(([playerId, r]) => {
+      const payload = {
+        jogador_id: playerId,
+        partida_id: matchId,
+        posicao: r.position,
+        titular: r.starter,
+        minutos_jogados: r.minutes,
+        gols: r.goals,
+        assistencias: r.assists,
+        cartoes_amarelos: r.yellow_cards,
+        cartoes_vermelhos: r.red_cards,
+        defesas: r.saves,
+        gols_sofridos: r.goals_conceded,
+      };
 
-    const found = byPlayer.get(playerId);
-    if (found) {
-      await api.patch(`/estatisticas/${found.id}`, payload);
-    } else {
-      await api.post("/estatisticas/", payload);
-    }
-  }
+      const found = byPlayer.get(playerId);
+      return found
+        ? api.patch(`/estatisticas/${found.id}`, payload)
+        : api.post("/estatisticas/", payload);
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -589,10 +593,9 @@ export async function updatePaymentStatus(
   playerId: string,
   status: PaymentStatus,
 ): Promise<Presence> {
-  const data = await api.patch<PresencaApi>(
-    `/partidas/${matchId}/presenca/${playerId}/pagamento`,
-    { status_pagamento: status },
-  );
+  const data = await api.patch<PresencaApi>(`/partidas/${matchId}/presenca/${playerId}/pagamento`, {
+    status_pagamento: status,
+  });
   return toPresence(data);
 }
 

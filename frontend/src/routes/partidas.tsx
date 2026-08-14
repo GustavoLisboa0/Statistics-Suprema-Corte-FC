@@ -286,7 +286,11 @@ function MatchesPage() {
         return;
       }
       await updateMatch(editing.id, payload);
-      if (Object.keys(rows).length) {
+      // Estatística só existe pra jogo que já rolou — as colunas nem aparecem
+      // na tela antes disso (ver renderização mais abaixo). Sem essa checagem,
+      // qualquer salvamento de uma partida agendada reenviava estatística de
+      // todo mundo à toa.
+      if (payload.status === "realizada" && Object.keys(rows).length) {
         await upsertMatchStats(editing.id, rows, existingStats ?? []);
       }
     },

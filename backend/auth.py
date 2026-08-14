@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 import httpx
@@ -93,8 +94,13 @@ async def usuario_atual(authorization: str | None = Header(default=None)) -> dic
         raise HTTPException(status_code=401, detail="Faça login para continuar")
 
     token = authorization.split(" ", 1)[1]
-    usuario = _validar_token(token)
-    papel = papel_do_usuario(usuario["id"])
+    # _validar_token e papel_do_usuario usam httpx/supabase-py de forma
+    # bloqueante. Chamados direto aqui (função async), cada um trava o único
+    # loop de eventos do Uvicorn por ~0,5-1s — o servidor não processa NENHUMA
+    # outra requisição nesse meio tempo, mesmo que o cliente tenha disparado
+    # várias em paralelo. `to_thread` tira essas chamadas do loop principal.
+    usuario = await asyncio.to_thread(_validar_token, token)
+    papel = await asyncio.to_thread(papel_do_usuario, usuario["id"])
     return {
         "id": usuario["id"],
         "email": usuario.get("email"),
