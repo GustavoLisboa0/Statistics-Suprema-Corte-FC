@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart3, CalendarDays, Instagram, LogOut, User, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { logout } from "@/lib/auth";
+import { logout, PAPEL_LABELS } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
 import { fetchMeuJogador } from "@/lib/football";
 import { Button } from "@/components/ui/button";
@@ -117,8 +117,8 @@ export function AppSidebar() {
               {!collapsed && (
                 <div className="min-w-0">
                   <div className="truncate text-xs font-medium">{nomeExibido}</div>
-                  <div className="text-[11px] capitalize text-muted-foreground">
-                    {usuario.papel}
+                  <div className="text-[11px] text-muted-foreground">
+                    {PAPEL_LABELS[usuario.papel]}
                   </div>
                 </div>
               )}

@@ -3,6 +3,12 @@ const STORAGE_KEY = "sc_fc_sessao";
 
 export type Papel = "editor" | "visualizador";
 
+/** Rótulo exibido pro usuário — o valor interno (`Papel`) continua igual, isso é só texto de tela. */
+export const PAPEL_LABELS: Record<Papel, string> = {
+  editor: "Administrador",
+  visualizador: "Usuário",
+};
+
 export type Usuario = {
   id: string;
   email: string;
