@@ -3,6 +3,7 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { login } from "@/lib/auth";
+import { fetchMeuJogador } from "@/lib/football";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +27,10 @@ function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate({ to: "/" });
+      // Conta sem jogador vinculado (ex.: fechou a aba no meio do cadastro)
+      // cai direto na tela de completar o cadastro, em vez do dashboard.
+      const meuJogador = await fetchMeuJogador();
+      navigate({ to: meuJogador ? "/" : "/meu-jogador" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Não foi possível entrar");
     } finally {

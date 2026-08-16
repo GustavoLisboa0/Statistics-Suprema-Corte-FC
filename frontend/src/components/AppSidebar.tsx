@@ -1,9 +1,11 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { BarChart3, CalendarDays, Instagram, LogOut, Users } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { BarChart3, CalendarDays, Instagram, LogOut, User, Users } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { logout } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
+import { fetchMeuJogador } from "@/lib/football";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -18,7 +20,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-
 
 const items = [
   { title: "Estatísticas", url: "/", icon: BarChart3 },
@@ -41,6 +42,15 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
 
   const usuario = useUsuario();
+  // Nome escolhido de verdade é o do cadastro de jogador (editável em
+  // /meu-jogador); o metadata da conta é só o que foi digitado uma vez no
+  // cadastro, e fica desatualizado se a pessoa mudar o nome depois.
+  const { data: meuJogador } = useQuery({
+    queryKey: ["meu-jogador"],
+    queryFn: fetchMeuJogador,
+    enabled: !!usuario,
+  });
+  const nomeExibido = meuJogador?.name ?? usuario?.nome ?? usuario?.email;
 
   const sair = () => {
     logout();
@@ -49,15 +59,8 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader
-        className={cn(
-          "flex flex-row px-4 py-4",
-          collapsed && "justify-center px-2",
-        )}
-      >
-        <span className="font-display text-2xl leading-none text-sidebar-primary">
-          SCFC
-        </span>
+      <SidebarHeader className={cn("flex flex-row px-4 py-4", collapsed && "justify-center px-2")}>
+        <span className="font-display text-2xl leading-none text-sidebar-primary">SCFC</span>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -96,15 +99,30 @@ export function AppSidebar() {
           </a>
         </div>
         {usuario && (
-          <div className={cn("mt-2 border-t pt-2", collapsed ? "flex flex-col items-center gap-1" : "px-2")}>
-            {!collapsed && (
-              <div className="mb-1 min-w-0">
-                <div className="truncate text-xs font-medium text-sidebar-foreground">
-                  {usuario.email}
-                </div>
-                <div className="text-[11px] capitalize text-muted-foreground">{usuario.papel}</div>
-              </div>
+          <div
+            className={cn(
+              "mt-2 border-t pt-2",
+              collapsed ? "flex flex-col items-center gap-1" : "px-2",
             )}
+          >
+            <Link
+              to="/meu-jogador"
+              title="Meu cadastro"
+              className={cn(
+                "mb-1 flex items-center gap-2 rounded-md text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                collapsed ? "h-8 w-8 justify-center" : "px-2 py-1.5",
+              )}
+            >
+              <User className="h-4 w-4 shrink-0" />
+              {!collapsed && (
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-medium">{nomeExibido}</div>
+                  <div className="text-[11px] capitalize text-muted-foreground">
+                    {usuario.papel}
+                  </div>
+                </div>
+              )}
+            </Link>
             <Button
               variant="ghost"
               size={collapsed ? "icon" : "sm"}

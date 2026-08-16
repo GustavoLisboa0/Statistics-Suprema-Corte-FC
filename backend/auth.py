@@ -31,17 +31,30 @@ def login(email: str, password: str) -> dict:
     return resposta.json()
 
 
-def criar_conta(email: str, password: str) -> dict:
+def criar_conta(
+    email: str, password: str, nome: str | None = None, telefone: str | None = None
+) -> dict:
     """
     Cria a conta no Supabase Auth.
+
+    `nome`/`telefone` vão como `user_metadata` — não existe jogador ainda pra
+    guardar esses dados, mas assim eles sobrevivem até a tela de criação do
+    próprio jogador (`/meu-jogador`), inclusive no caso de o projeto exigir
+    confirmação de email (a pessoa fecha a aba, confirma, loga depois — o
+    metadata volta junto no login, do mesmo jeito que o email já volta).
 
     Devolve o corpo do Supabase como veio: dependendo de o projeto exigir
     confirmação de email, pode ou não vir uma sessão junto.
     """
+    corpo: dict = {"email": email, "password": password}
+    metadata = {k: v for k, v in {"nome": nome, "telefone": telefone}.items() if v}
+    if metadata:
+        corpo["data"] = metadata
+
     resposta = httpx.post(
         f"{SUPABASE_URL}/auth/v1/signup",
         headers=_auth_headers(),
-        json={"email": email, "password": password},
+        json=corpo,
         timeout=10,
     )
     if resposta.status_code not in (200, 201):
@@ -101,11 +114,15 @@ async def usuario_atual(authorization: str | None = Header(default=None)) -> dic
     # várias em paralelo. `to_thread` tira essas chamadas do loop principal.
     usuario = await asyncio.to_thread(_validar_token, token)
     papel = await asyncio.to_thread(papel_do_usuario, usuario["id"])
+    metadata = usuario.get("user_metadata") or {}
     return {
         "id": usuario["id"],
         "email": usuario.get("email"),
-        # usado para casar a conta com o jogador do elenco (ver routers/presenca.py)
-        "telefone": usuario.get("phone"),
+        "nome": metadata.get("nome"),
+        # `phone` é o campo nativo do Supabase Auth (login por SMS, que não
+        # usamos); metadata.telefone é o que a pessoa digitou no cadastro.
+        # Usado para casar a conta com o jogador do elenco (ver routers/presenca.py).
+        "telefone": usuario.get("phone") or metadata.get("telefone"),
         "papel": papel,
     }
 

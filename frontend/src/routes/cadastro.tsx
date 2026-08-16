@@ -3,7 +3,13 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { cadastrar } from "@/lib/auth";
-import { EMAIL_REGEX } from "@/lib/football";
+import {
+  EMAIL_REGEX,
+  MAX_NAME_LENGTH,
+  PHONE_REGEX,
+  formatPhone,
+  nameHasDigits,
+} from "@/lib/football";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +26,8 @@ const MIN_SENHA = 6;
 
 function CadastroPage() {
   const navigate = useNavigate();
+  const [nome, setNome] = useState("");
+  const [telefone, setTelefone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmacao, setConfirmacao] = useState("");
@@ -29,6 +37,13 @@ function CadastroPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
 
+    const nomeAparado = nome.trim();
+    if (!nomeAparado) return toast.error("Informe seu nome");
+    if (nameHasDigits(nomeAparado)) return toast.error("O nome não pode conter números");
+    if (nomeAparado.length > MAX_NAME_LENGTH)
+      return toast.error(`O nome deve ter no máximo ${MAX_NAME_LENGTH} caracteres`);
+    if (!PHONE_REGEX.test(telefone))
+      return toast.error("Informe um telefone válido: (DDD) 91234-1234");
     if (!EMAIL_REGEX.test(email.trim())) return toast.error("Informe um email válido");
     if (password.length < MIN_SENHA)
       return toast.error(`A senha precisa ter pelo menos ${MIN_SENHA} caracteres`);
@@ -36,10 +51,10 @@ function CadastroPage() {
 
     setLoading(true);
     try {
-      const { sessao } = await cadastrar(email.trim(), password);
+      const { sessao } = await cadastrar(nomeAparado, telefone, email.trim(), password);
       if (sessao) {
-        toast.success("Conta criada! Bem-vindo.");
-        navigate({ to: "/" });
+        toast.success("Conta criada! Vamos completar seu cadastro de jogador.");
+        navigate({ to: "/meu-jogador" });
       } else {
         // Projeto do Supabase com confirmação de email ativada.
         setConfirmeEmail(true);
@@ -57,7 +72,7 @@ function CadastroPage() {
         <CardHeader className="text-center">
           <CardTitle className="font-display text-3xl dark:text-accent">Suprema Corte FC</CardTitle>
           <p className="text-sm text-muted-foreground">
-            {confirmeEmail ? "Confirme seu email" : "Crie sua conta de jogador"}
+            {confirmeEmail ? "Confirme seu email" : "Crie sua conta"}
           </p>
         </CardHeader>
         <CardContent>
@@ -66,7 +81,7 @@ function CadastroPage() {
               <p>
                 Enviamos um link de confirmação para{" "}
                 <span className="font-medium">{email.trim()}</span>. Abra o link e depois entre
-                normalmente.
+                normalmente — vamos te levar direto pra completar seu cadastro de jogador.
               </p>
               <Button className="w-full" onClick={() => navigate({ to: "/login" })}>
                 Ir para o login
@@ -74,12 +89,34 @@ function CadastroPage() {
             </div>
           ) : (
             <form onSubmit={submit} className="space-y-4">
-              {/* O cadastro é fechado: o app é do time, então só quem já foi
-                  cadastrado como jogador consegue criar login. */}
               <p className="rounded-md border border-accent/40 bg-accent/10 p-3 text-xs text-muted-foreground">
-                Use o mesmo email que está no seu cadastro de jogador. Se ele ainda não estiver
-                lá, peça para o responsável cadastrar antes.
+                Depois de criar a conta você vai completar seu cadastro de jogador. Se um editor já
+                cadastrou você antes, a gente identifica pelo email ou telefone e te mostra pra
+                conferir.
               </p>
+              <div>
+                <Label htmlFor="nome">Nome</Label>
+                <Input
+                  id="nome"
+                  maxLength={MAX_NAME_LENGTH}
+                  required
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="telefone">Telefone</Label>
+                <Input
+                  id="telefone"
+                  type="tel"
+                  inputMode="numeric"
+                  placeholder="(11) 91234-5678"
+                  maxLength={15}
+                  required
+                  value={telefone}
+                  onChange={(e) => setTelefone(formatPhone(e.target.value))}
+                />
+              </div>
               <div>
                 <Label htmlFor="email">Email</Label>
                 <Input

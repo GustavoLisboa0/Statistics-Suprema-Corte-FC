@@ -442,6 +442,23 @@ export async function deletePlayer(id: string): Promise<void> {
   await api.del(`/jogadores/${id}`);
 }
 
+/** Jogador vinculado à conta logada, ou `null` se ela ainda não tem um. */
+export async function fetchMeuJogador(): Promise<Player | null> {
+  try {
+    const data = await api.get<JogadorApi>("/jogadores/meu");
+    return toPlayer(data);
+  } catch (e) {
+    if (e instanceof Error && (e as Error & { status?: number }).status === 404) return null;
+    throw e;
+  }
+}
+
+/** Autoatendimento: a própria conta logada cria seu jogador. */
+export async function createMyPlayer(input: PlayerInput): Promise<Player> {
+  const data = await api.post<JogadorApi>("/jogadores/meu", toJogadorPayload(input));
+  return toPlayer(data);
+}
+
 // ---------------------------------------------------------------------------
 // Partidas
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { isAutenticado } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,6 +22,7 @@ import {
   nameHasDigits,
   formatPhone,
   fetchPlayers,
+  fetchMeuJogador,
   createPlayer,
   updatePlayer,
   deletePlayer,
@@ -110,19 +111,24 @@ const emptyForm: FormState = {
 function PlayerCard({
   player,
   podeEditar,
+  isMine,
   onEdit,
   onDelete,
+  onEditMine,
 }: {
   player: Player;
   podeEditar: boolean;
+  isMine: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onEditMine: () => void;
 }) {
   return (
     <Card
       className={cn(
         "w-64 shrink-0",
-        !player.active && "border-purple-300 bg-purple-100 dark:border-purple-400/30 dark:bg-purple-400/15",
+        !player.active &&
+          "border-purple-300 bg-purple-100 dark:border-purple-400/30 dark:bg-purple-400/15",
       )}
     >
       <CardContent className="flex items-center gap-3 p-3">
@@ -154,7 +160,7 @@ function PlayerCard({
             ))}
           </div>
         </div>
-        {podeEditar && (
+        {podeEditar ? (
           <div className="flex shrink-0 flex-col gap-1">
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5" />
@@ -163,7 +169,17 @@ function PlayerCard({
               <Trash2 className="h-3.5 w-3.5 text-destructive" />
             </Button>
           </div>
-        )}
+        ) : isMine ? (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0"
+            onClick={onEditMine}
+            title="Editar meu cadastro"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -171,8 +187,16 @@ function PlayerCard({
 
 function PlayersPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { data, isLoading } = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
   const podeEditar = useUsuario()?.papel === "editor";
+  // Só precisa saber "qual card é meu" pra quem não é editor — usado pra
+  // mostrar a ação de autoedição em vez do lápis/lixeira do admin.
+  const { data: meuJogador } = useQuery({
+    queryKey: ["meu-jogador"],
+    queryFn: fetchMeuJogador,
+    enabled: !podeEditar,
+  });
 
   const [search, setSearch] = useState("");
   const [positionFilter, setPositionFilter] = useState("todas");
@@ -264,7 +288,8 @@ function PlayersPage() {
       return toast.error(`O nome deve ter no máximo ${MAX_NAME_LENGTH} caracteres`);
     if (form.nickname.trim().length > MAX_NICKNAME_LENGTH)
       return toast.error(`O apelido deve ter no máximo ${MAX_NICKNAME_LENGTH} caracteres`);
-    if (!PHONE_REGEX.test(form.phone)) return toast.error("Informe um telefone válido: (DDD) 91234-1234");
+    if (!PHONE_REGEX.test(form.phone))
+      return toast.error("Informe um telefone válido: (DDD) 91234-1234");
     if (form.email.trim() && !EMAIL_REGEX.test(form.email.trim()))
       return toast.error("Informe um email válido");
     if (form.positions.length === 0) return toast.error("Selecione ao menos uma posição");
@@ -341,8 +366,10 @@ function PlayersPage() {
                     key={p.id}
                     player={p}
                     podeEditar={podeEditar}
+                    isMine={p.id === meuJogador?.id}
                     onEdit={() => openEdit(p)}
                     onDelete={() => setToDelete(p)}
+                    onEditMine={() => navigate({ to: "/meu-jogador" })}
                   />
                 ))}
               </div>
@@ -431,7 +458,9 @@ function PlayersPage() {
                 value={form.positions}
                 onValueChange={(v) => {
                   const mantidas = form.positions.filter((p) => v.includes(p));
-                  const novas = v.filter((p) => !form.positions.includes(p as Position)) as Position[];
+                  const novas = v.filter(
+                    (p) => !form.positions.includes(p as Position),
+                  ) as Position[];
                   const todas = [...mantidas, ...novas];
                   if (todas.length > MAX_POSITIONS) {
                     toast.error(`Máximo de ${MAX_POSITIONS} posições por jogador`);
@@ -456,7 +485,10 @@ function PlayersPage() {
               </ToggleGroup>
               {form.positions.length > 0 && (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Principal: <span className="font-medium text-foreground">{POSITION_LABELS[form.positions[0]]}</span>
+                  Principal:{" "}
+                  <span className="font-medium text-foreground">
+                    {POSITION_LABELS[form.positions[0]]}
+                  </span>
                 </p>
               )}
             </div>

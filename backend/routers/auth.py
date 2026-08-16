@@ -9,7 +9,7 @@ from auth import (
     usuario_atual,
 )
 from database import supabase
-from models import EMAIL_REGEX
+from models import EMAIL_REGEX, TELEFONE_REGEX
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
@@ -23,6 +23,8 @@ class LoginPayload(BaseModel):
 
 
 class CadastroPayload(BaseModel):
+    nome: str = Field(min_length=1, max_length=100)
+    telefone: str = Field(pattern=TELEFONE_REGEX)
     email: str = Field(pattern=EMAIL_REGEX)
     password: str = Field(min_length=MIN_SENHA)
 
@@ -33,6 +35,7 @@ class RefreshPayload(BaseModel):
 
 def _formatar_sessao(resultado: dict) -> dict:
     papel = papel_do_usuario(resultado["user"]["id"])
+    metadata = resultado["user"].get("user_metadata") or {}
     return {
         "access_token": resultado["access_token"],
         "refresh_token": resultado["refresh_token"],
@@ -40,6 +43,11 @@ def _formatar_sessao(resultado: dict) -> dict:
         "usuario": {
             "id": resultado["user"]["id"],
             "email": resultado["user"]["email"],
+            # Nome/telefone digitados no cadastro (ver `criar_conta`). Servem
+            # só pra pré-preencher a tela de criação do jogador — o dado que
+            # vale de verdade é o que ficar salvo no cadastro de jogador.
+            "nome": metadata.get("nome"),
+            "telefone": metadata.get("telefone"),
             "papel": papel,
         },
     }
@@ -54,40 +62,37 @@ def login(payload: LoginPayload):
 @router.post("/cadastro", status_code=201)
 def cadastro(payload: CadastroPayload):
     """
-    Cria a conta de um jogador que já está no elenco.
+    Cria a conta do usuário.
 
-    O cadastro é fechado de propósito: o app é do time, então só quem já foi
-    cadastrado como jogador (com este email) consegue criar login. Isso
-    também é o que amarra a conta ao jogador.
+    Cadastro aberto: qualquer pessoa pode criar login (não depende mais de um
+    editor ter pré-cadastrado o jogador). Se o email ou telefone informado
+    bater com um jogador do elenco que ainda não tem conta vinculada, a conta
+    é amarrada a ele na hora — o front leva pra uma tela de revisão pra
+    pessoa conferir os dados antes de seguir, em vez de linkar em silêncio.
+    Sem match, a pessoa cai numa tela em branco pra criar o próprio jogador.
     """
     email = payload.email.strip().lower()
+    telefone = payload.telefone.strip()
 
-    jogadores = supabase.table("jogadores").select("id,nome,email,perfil_id").execute().data or []
+    jogadores = supabase.table("jogadores").select("id,email,telefone,perfil_id").execute().data or []
     jogador = next(
-        (j for j in jogadores if (j.get("email") or "").strip().lower() == email),
+        (
+            j
+            for j in jogadores
+            if not j.get("perfil_id")
+            and (
+                (j.get("email") or "").strip().lower() == email
+                or (j.get("telefone") or "").strip() == telefone
+            )
+        ),
         None,
     )
 
-    if not jogador:
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Este email não está no elenco. Peça para o responsável cadastrar "
-                "você como jogador antes de criar a conta."
-            ),
-        )
-
-    if jogador.get("perfil_id"):
-        raise HTTPException(
-            status_code=409,
-            detail="Este jogador já tem uma conta. Use a tela de login.",
-        )
-
-    resultado = criar_conta(email, payload.password)
+    resultado = criar_conta(email, payload.password, payload.nome.strip(), telefone)
 
     usuario = resultado.get("user") or resultado
     user_id = usuario.get("id")
-    if user_id:
+    if user_id and jogador:
         supabase.table("jogadores").update({"perfil_id": user_id}).eq("id", jogador["id"]).execute()
 
     # Projeto com confirmação de email ativada não devolve sessão na hora.

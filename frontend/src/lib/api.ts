@@ -35,7 +35,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     } catch {
       // corpo não era JSON, mantém a mensagem genérica
     }
-    throw new Error(detail);
+    const erro = new Error(detail) as Error & { status?: number };
+    erro.status = response.status;
+    throw erro;
   }
 
   if (response.status === 204) return undefined as T;

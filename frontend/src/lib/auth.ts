@@ -7,6 +7,9 @@ export type Usuario = {
   id: string;
   email: string;
   papel: Papel;
+  /** Digitados no cadastro; servem só pra pré-preencher a tela de criação do jogador. */
+  nome: string | null;
+  telefone: string | null;
 };
 
 type Sessao = {
@@ -88,13 +91,24 @@ type RespostaCadastro = {
 };
 
 /**
- * Cria a conta de um jogador que já está no elenco.
+ * Cria a conta do usuário (nome/telefone são só do cadastro em si; o
+ * jogador é criado ou revisado na tela seguinte, `/meu-jogador`).
  *
  * Se o projeto do Supabase não exigir confirmação de email, já volta a sessão
  * pronta e o usuário entra direto.
  */
-export async function cadastrar(email: string, password: string): Promise<RespostaCadastro> {
-  const resposta = await chamarAuth<RespostaCadastro>("/auth/cadastro", { email, password });
+export async function cadastrar(
+  nome: string,
+  telefone: string,
+  email: string,
+  password: string,
+): Promise<RespostaCadastro> {
+  const resposta = await chamarAuth<RespostaCadastro>("/auth/cadastro", {
+    nome,
+    telefone,
+    email,
+    password,
+  });
   if (resposta.sessao) writeSession(resposta.sessao);
   return resposta;
 }
