@@ -644,6 +644,173 @@ export async function deletePresence(matchId: string, playerId: string): Promise
   await api.del(`/partidas/${matchId}/presenca/${playerId}`);
 }
 
+// ---------------------------------------------------------------------------
+// Punições (admin-only — o próprio jogador nunca vê isso)
+// ---------------------------------------------------------------------------
+export type PunishmentType = "dias" | "jogos";
+
+export type Punishment = {
+  id: string;
+  player_id: string;
+  reason: string;
+  type: PunishmentType;
+  /** Prazo final (tipo "dias"); null se for por número de jogos. */
+  ends_on: string | null;
+  /** Total de jogos da suspensão (tipo "jogos"); null se for por prazo. */
+  games_total: number | null;
+  games_served: number;
+  created_at: string;
+};
+
+type PunicaoApi = {
+  id: string;
+  jogador_id: string;
+  motivo: string;
+  tipo: PunishmentType;
+  termina_em: string | null;
+  jogos_totais: number | null;
+  jogos_cumpridos: number;
+  criado_em: string;
+};
+
+function toPunishment(p: PunicaoApi): Punishment {
+  return {
+    id: p.id,
+    player_id: p.jogador_id,
+    reason: p.motivo,
+    type: p.tipo,
+    ends_on: p.termina_em,
+    games_total: p.jogos_totais,
+    games_served: p.jogos_cumpridos,
+    created_at: p.criado_em,
+  };
+}
+
+/** Se a punição ainda está valendo. Espelha punicao_ativa() do backend. */
+export function isPunishmentActive(p: Punishment): boolean {
+  if (p.type === "dias") {
+    if (!p.ends_on) return false;
+    const hoje = new Date().toISOString().slice(0, 10);
+    return p.ends_on >= hoje;
+  }
+  return p.games_served < (p.games_total ?? 0);
+}
+
+export async function fetchPunishments(playerId: string): Promise<Punishment[]> {
+  const data = await api.get<PunicaoApi[]>(`/jogadores/${playerId}/punicoes`);
+  return data.map(toPunishment);
+}
+
+export async function createPunishment(
+  playerId: string,
+  input: { reason: string; type: PunishmentType; endsOn: string | null; gamesTotal: number | null },
+): Promise<Punishment> {
+  const data = await api.post<PunicaoApi>(`/jogadores/${playerId}/punicoes`, {
+    motivo: input.reason,
+    tipo: input.type,
+    termina_em: input.endsOn,
+    jogos_totais: input.gamesTotal,
+  });
+  return toPunishment(data);
+}
+
+/** Editor pode corrigir prazo/jogos cumpridos — inclusive "reverter" um desconto automático. */
+export async function updatePunishment(
+  playerId: string,
+  punishmentId: string,
+  input: Partial<{ reason: string; endsOn: string; gamesTotal: number; gamesServed: number }>,
+): Promise<Punishment> {
+  const data = await api.patch<PunicaoApi>(`/jogadores/${playerId}/punicoes/${punishmentId}`, {
+    motivo: input.reason,
+    termina_em: input.endsOn,
+    jogos_totais: input.gamesTotal,
+    jogos_cumpridos: input.gamesServed,
+  });
+  return toPunishment(data);
+}
+
+export async function deletePunishment(playerId: string, punishmentId: string): Promise<void> {
+  await api.del(`/jogadores/${playerId}/punicoes/${punishmentId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Lesões (autoatendimento — visível pra todo mundo logado, ao contrário de punição)
+// ---------------------------------------------------------------------------
+export type InjuryType = "proximo_jogo" | "data";
+
+export type Injury = {
+  id: string;
+  player_id: string;
+  reason: string;
+  type: InjuryType;
+  /** Prazo final (tipo "data"); null se for "até o próximo jogo". */
+  ends_on: string | null;
+  /** Partida travada no registro (tipo "proximo_jogo"); null se for por prazo. */
+  match_id: string | null;
+  created_at: string;
+};
+
+type LesaoApi = {
+  id: string;
+  jogador_id: string;
+  motivo: string;
+  tipo: InjuryType;
+  termina_em: string | null;
+  partida_id: string | null;
+  criado_em: string;
+};
+
+function toInjury(l: LesaoApi): Injury {
+  return {
+    id: l.id,
+    player_id: l.jogador_id,
+    reason: l.motivo,
+    type: l.tipo,
+    ends_on: l.termina_em,
+    match_id: l.partida_id,
+    created_at: l.criado_em,
+  };
+}
+
+/**
+ * Se a lesão ainda está valendo. Só cobre o tipo "data" sem consultar nada
+ * mais — o tipo "próximo jogo" depende do status atual da partida travada,
+ * que quem usa isso já deve ter carregado (ver `fetchActiveInjuries`).
+ */
+export function isInjuryActiveByDate(i: Pick<Injury, "type" | "ends_on">): boolean {
+  if (i.type !== "data") return false;
+  if (!i.ends_on) return false;
+  const hoje = new Date().toISOString().slice(0, 10);
+  return i.ends_on >= hoje;
+}
+
+export async function fetchInjuries(playerId: string): Promise<Injury[]> {
+  const data = await api.get<LesaoApi[]>(`/jogadores/${playerId}/lesoes`);
+  return data.map(toInjury);
+}
+
+/** Todas as lesões ativas do elenco inteiro — usado pra pintar a tag "Lesionado" na lista. */
+export async function fetchActiveInjuries(): Promise<Injury[]> {
+  const data = await api.get<LesaoApi[]>("/lesoes/ativas");
+  return data.map(toInjury);
+}
+
+export async function createInjury(
+  playerId: string,
+  input: { reason: string; type: InjuryType; endsOn: string | null },
+): Promise<Injury> {
+  const data = await api.post<LesaoApi>(`/jogadores/${playerId}/lesoes`, {
+    motivo: input.reason,
+    tipo: input.type,
+    termina_em: input.endsOn,
+  });
+  return toInjury(data);
+}
+
+export async function deleteInjury(playerId: string, injuryId: string): Promise<void> {
+  await api.del(`/jogadores/${playerId}/lesoes/${injuryId}`);
+}
+
 export function formatDate(value: string | null) {
   if (!value) return "—";
   const [y, m, d] = value.split("-");

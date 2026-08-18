@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 from uuid import UUID
@@ -256,3 +256,113 @@ class Presenca(BaseModel):
     posicao: Optional[Posicao] = None
     termos_aceitos: bool = False
     status_pagamento: StatusPagamento = "pendente"
+
+
+# ---------------------------------------------------------------------------
+# Punições — admin-only, ver routers/punicoes.py
+# ---------------------------------------------------------------------------
+TipoPunicao = Literal["dias", "jogos"]
+
+
+class PunicaoCreate(BaseModel):
+    motivo: str = Field(min_length=1, max_length=300)
+    tipo: TipoPunicao
+    # Exatamente um dos dois é obrigatório, dependendo de `tipo` — checado no
+    # router (mesmo padrão de custo_do_time/posição por partida: regra de
+    # negócio fica na rota, não em validador cruzado do Pydantic).
+    termina_em: Optional[date] = None
+    jogos_totais: Optional[int] = Field(default=None, ge=1)
+
+
+class PunicaoUpdate(BaseModel):
+    motivo: Optional[str] = Field(default=None, min_length=1, max_length=300)
+    termina_em: Optional[date] = None
+    jogos_totais: Optional[int] = Field(default=None, ge=1)
+    jogos_cumpridos: Optional[int] = Field(default=None, ge=0)
+
+
+class Punicao(BaseModel):
+    id: UUID
+    jogador_id: UUID
+    motivo: str
+    tipo: TipoPunicao
+    termina_em: Optional[date] = None
+    jogos_totais: Optional[int] = None
+    jogos_cumpridos: int = 0
+    criado_por: Optional[UUID] = None
+    criado_em: datetime
+
+
+def punicao_ativa(punicao: dict) -> bool:
+    """
+    Diz se uma punição ainda está valendo.
+
+    Tipo `dias`: vale até `termina_em` (inclusive — o dia final ainda conta).
+    Tipo `jogos`: vale enquanto `jogos_cumpridos` não alcançar `jogos_totais`.
+    O desconto de jogos é feito em `partidas.py` toda vez que uma partida
+    passa a "realizada" (ver `avancar_punicoes_por_jogos` em
+    routers/punicoes.py); aqui só se lê o estado já gravado.
+    """
+    if punicao.get("tipo") == "dias":
+        termina_em = punicao.get("termina_em")
+        if not termina_em:
+            return False
+        if isinstance(termina_em, str):
+            termina_em = date.fromisoformat(termina_em)
+        return termina_em >= date.today()
+
+    jogos_totais = punicao.get("jogos_totais") or 0
+    jogos_cumpridos = punicao.get("jogos_cumpridos") or 0
+    return jogos_cumpridos < jogos_totais
+
+
+# ---------------------------------------------------------------------------
+# Lesões — autoatendimento, visível pra todo mundo (ver routers/lesoes.py)
+# ---------------------------------------------------------------------------
+TipoLesao = Literal["proximo_jogo", "data"]
+
+
+class LesaoCreate(BaseModel):
+    motivo: str = Field(min_length=1, max_length=300)
+    tipo: TipoLesao
+    # Só usado (e obrigatório) quando tipo = "data" — checado no router. Pro
+    # tipo "proximo_jogo" o backend resolve sozinho qual é a próxima partida
+    # agendada; o cliente não escolhe.
+    termina_em: Optional[date] = None
+
+
+class LesaoUpdate(BaseModel):
+    motivo: Optional[str] = Field(default=None, min_length=1, max_length=300)
+    termina_em: Optional[date] = None
+
+
+class Lesao(BaseModel):
+    id: UUID
+    jogador_id: UUID
+    motivo: str
+    tipo: TipoLesao
+    termina_em: Optional[date] = None
+    # Travada no momento do registro (tipo "proximo_jogo"); null pro tipo "data".
+    partida_id: Optional[UUID] = None
+    criado_em: datetime
+
+
+def lesao_ativa(lesao: dict, status_partida_travada: Optional[str] = None) -> bool:
+    """
+    Diz se uma lesão ainda está valendo.
+
+    Tipo `data`: vale até `termina_em` (inclusive).
+    Tipo `proximo_jogo`: vale enquanto a partida travada no registro ainda
+    não tiver acontecido nem sido cancelada — por isso quem chama precisa
+    passar o status atual dela (`status_partida_travada`); esta função não
+    consulta o banco sozinha, pra continuar pura e fácil de testar.
+    """
+    if lesao.get("tipo") == "data":
+        termina_em = lesao.get("termina_em")
+        if not termina_em:
+            return False
+        if isinstance(termina_em, str):
+            termina_em = date.fromisoformat(termina_em)
+        return termina_em >= date.today()
+
+    return status_partida_travada == "agendada"

@@ -3,7 +3,7 @@ import { isAutenticado } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { HeartPulse, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -23,14 +23,19 @@ import {
   formatPhone,
   fetchPlayers,
   fetchMeuJogador,
+  fetchActiveInjuries,
+  formatDate,
   createPlayer,
   updatePlayer,
   deletePlayer,
+  type Injury,
   type Player,
   type PlayerInput,
   type Position,
 } from "@/lib/football";
 import { cn } from "@/lib/utils";
+import { PunicoesDialog } from "@/components/PunicoesDialog";
+import { LesaoDialog } from "@/components/LesaoDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +53,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -112,16 +118,22 @@ function PlayerCard({
   player,
   podeEditar,
   isMine,
+  injury,
   onEdit,
   onDelete,
   onEditMine,
+  onPunicoes,
+  onLesoes,
 }: {
   player: Player;
   podeEditar: boolean;
   isMine: boolean;
+  injury: Injury | null;
   onEdit: () => void;
   onDelete: () => void;
   onEditMine: () => void;
+  onPunicoes: () => void;
+  onLesoes: () => void;
 }) {
   return (
     <Card
@@ -146,7 +158,31 @@ function PlayerCard({
           {player.nickname ? (
             <div className="truncate text-xs text-muted-foreground">"{player.nickname}"</div>
           ) : null}
-          <div className="mt-1 flex flex-wrap gap-1">
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            {injury && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    title="Lesionado"
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
+                  >
+                    <HeartPulse className="h-3 w-3" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 text-sm" align="start">
+                  <p className="mb-1 flex items-center gap-1.5 font-semibold text-destructive">
+                    <HeartPulse className="h-3.5 w-3.5" /> Lesionado
+                  </p>
+                  <p>{injury.reason}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {injury.type === "data"
+                      ? `Até ${formatDate(injury.ends_on)}`
+                      : "Só o próximo jogo"}
+                  </p>
+                </PopoverContent>
+              </Popover>
+            )}
             {player.positions.map((pos, i) => (
               <Badge
                 key={pos}
@@ -164,6 +200,24 @@ function PlayerCard({
           <div className="flex shrink-0 flex-col gap-1">
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit}>
               <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={onPunicoes}
+              title="Punições"
+            >
+              <ShieldAlert className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              onClick={onLesoes}
+              title="Lesões"
+            >
+              <HeartPulse className="h-3.5 w-3.5" />
             </Button>
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDelete}>
               <Trash2 className="h-3.5 w-3.5 text-destructive" />
@@ -197,6 +251,12 @@ function PlayersPage() {
     queryFn: fetchMeuJogador,
     enabled: !podeEditar,
   });
+  // Visível pra todo mundo logado — diferente de punição, lesão não é segredo.
+  const { data: activeInjuries } = useQuery({
+    queryKey: ["active-injuries"],
+    queryFn: fetchActiveInjuries,
+  });
+  const injuriesByPlayer = new Map((activeInjuries ?? []).map((i) => [i.player_id, i]));
 
   const [search, setSearch] = useState("");
   const [positionFilter, setPositionFilter] = useState("todas");
@@ -205,6 +265,8 @@ function PlayersPage() {
   const [editing, setEditing] = useState<Player | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [toDelete, setToDelete] = useState<Player | null>(null);
+  const [punicoesDe, setPunicoesDe] = useState<Player | null>(null);
+  const [lesoesDe, setLesoesDe] = useState<Player | null>(null);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -367,9 +429,12 @@ function PlayersPage() {
                     player={p}
                     podeEditar={podeEditar}
                     isMine={p.id === meuJogador?.id}
+                    injury={injuriesByPlayer.get(p.id) ?? null}
                     onEdit={() => openEdit(p)}
                     onDelete={() => setToDelete(p)}
                     onEditMine={() => navigate({ to: "/meu-jogador" })}
+                    onPunicoes={() => setPunicoesDe(p)}
+                    onLesoes={() => setLesoesDe(p)}
                   />
                 ))}
               </div>
@@ -529,6 +594,18 @@ function PlayersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PunicoesDialog
+        player={punicoesDe}
+        open={!!punicoesDe}
+        onOpenChange={(o) => !o && setPunicoesDe(null)}
+      />
+
+      <LesaoDialog
+        player={lesoesDe}
+        open={!!lesoesDe}
+        onOpenChange={(o) => !o && setLesoesDe(null)}
+      />
     </div>
   );
 }

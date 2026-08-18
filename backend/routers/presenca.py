@@ -13,6 +13,8 @@ from models import (
     PresencaUpdatePagamento,
     PresencaUpdatePosicao,
     PresencaUpdateStatus,
+    lesao_ativa,
+    punicao_ativa,
 )
 
 router = APIRouter(prefix="/partidas", tags=["Presença"])
@@ -21,10 +23,68 @@ TABLE = "presenca"
 TABLE_JOGADORES = "jogadores"
 TABLE_PARTIDAS = "partidas"
 TABLE_ESTATISTICAS = "estatisticas_partida"
+TABLE_PUNICOES = "punicoes"
+TABLE_LESOES = "lesoes"
 
 
 def _so_digitos(valor: str | None) -> str:
     return re.sub(r"\D", "", valor or "")
+
+
+def _punicao_ativa_do_jogador(jogador_id: str) -> dict | None:
+    punicoes = supabase.table(TABLE_PUNICOES).select("*").eq("jogador_id", jogador_id).execute().data or []
+    return next((p for p in punicoes if punicao_ativa(p)), None)
+
+
+def _mensagem_punicao(punicao: dict) -> str:
+    motivo = punicao.get("motivo") or "sem motivo registrado"
+    if punicao["tipo"] == "dias":
+        ano, mes, dia = punicao["termina_em"].split("-")
+        return (
+            f"Não foi possível confirmar presença: você está cumprindo uma punição até "
+            f"{dia}/{mes}/{ano} ({motivo}). Qualquer dúvida, fale com o responsável do time."
+        )
+    restantes = punicao["jogos_totais"] - punicao["jogos_cumpridos"]
+    jogo_ou_jogos = "jogo" if restantes == 1 else "jogos"
+    return (
+        f"Não foi possível confirmar presença: você está cumprindo uma punição por mais "
+        f"{restantes} {jogo_ou_jogos} ({motivo}). Qualquer dúvida, fale com o responsável do time."
+    )
+
+
+def _lesao_que_bloqueia(jogador_id: str, partida: dict) -> dict | None:
+    """
+    Acha a lesão (se houver) que impede confirmar presença NESTA partida.
+
+    Tipo "proximo_jogo" só bloqueia a partida exata travada no registro,
+    enquanto ela ainda estiver "agendada" — não trava confirmações de jogos
+    futuros além dele. Tipo "data" bloqueia qualquer partida cuja data caia
+    dentro do prazo da lesão, já que "machucado até dia X" vale pra qualquer
+    jogo nesse meio tempo.
+    """
+    lesoes = supabase.table(TABLE_LESOES).select("*").eq("jogador_id", jogador_id).execute().data or []
+    for lesao in lesoes:
+        if lesao["tipo"] == "proximo_jogo":
+            if lesao.get("partida_id") == str(partida["id"]) and lesao_ativa(
+                lesao, partida.get("status")
+            ):
+                return lesao
+        elif lesao_ativa(lesao) and lesao.get("termina_em", "") >= partida.get("data", ""):
+            return lesao
+    return None
+
+
+def _mensagem_lesao(lesao: dict) -> str:
+    # Diferente da punição, aqui não tem problema nenhum contar o motivo: foi
+    # o próprio jogador que registrou a lesão.
+    motivo = lesao.get("motivo") or "sem detalhe registrado"
+    if lesao["tipo"] == "proximo_jogo":
+        return f"Você avisou que está fora desta partida por lesão ({motivo})."
+    ano, mes, dia = lesao["termina_em"].split("-")
+    return (
+        f"Você registrou lesão até {dia}/{mes}/{ano} ({motivo}) e não pode confirmar presença "
+        f"enquanto isso durar."
+    )
 
 
 def jogador_da_conta(usuario: dict) -> dict:
@@ -135,6 +195,15 @@ def confirmar_presenca(
     jogador = jogador_da_conta(usuario)
 
     vai_jogar = presenca.status in ("confirmado", "espera")
+
+    if vai_jogar:
+        punicao = _punicao_ativa_do_jogador(jogador["id"])
+        if punicao:
+            raise HTTPException(status_code=403, detail=_mensagem_punicao(punicao))
+
+        lesao = _lesao_que_bloqueia(jogador["id"], partida)
+        if lesao:
+            raise HTTPException(status_code=403, detail=_mensagem_lesao(lesao))
 
     if vai_jogar and not presenca.termos_aceitos:
         raise HTTPException(status_code=400, detail="É preciso aceitar os termos para confirmar")

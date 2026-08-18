@@ -3,6 +3,7 @@ import { isAutenticado } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { HeartPulse } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -16,20 +17,33 @@ import {
   MAX_SHIRT_DIGITS,
   nameHasDigits,
   formatPhone,
+  formatDate,
   fetchMeuJogador,
+  fetchActiveInjuries,
+  createInjury,
+  deleteInjury,
   createMyPlayer,
   updatePlayer,
+  type InjuryType,
   type PlayerInput,
   type Position,
 } from "@/lib/football";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DatePicker } from "@/components/DatePicker";
 import { NumberInput } from "@/components/NumberInput";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const Route = createFileRoute("/meu-jogador")({
   beforeLoad: () => {
@@ -95,6 +109,62 @@ function MeuJogadorPage() {
 
   // Salvar só faz sentido depois de alguma mudança de verdade.
   const isDirty = JSON.stringify(form) !== JSON.stringify(initialForm);
+
+  // Lesão: visível pra todo mundo, então reaproveita o mesmo endpoint
+  // agregado que a lista de jogadores usa — evita duplicar a lógica de
+  // "essa lesão do tipo próximo jogo ainda tá valendo" (depende do status
+  // da partida travada, que só o backend resolve).
+  const { data: activeInjuries } = useQuery({
+    queryKey: ["active-injuries"],
+    queryFn: fetchActiveInjuries,
+    enabled: !!data,
+  });
+  const minhaLesao = (activeInjuries ?? []).find((i) => i.player_id === data?.id) ?? null;
+
+  const [lesaoFormAberto, setLesaoFormAberto] = useState(false);
+  const [lesaoForm, setLesaoForm] = useState<{ reason: string; type: InjuryType; endsOn: string }>({
+    reason: "",
+    type: "proximo_jogo",
+    endsOn: "",
+  });
+
+  const registrarLesao = useMutation({
+    mutationFn: async () => {
+      if (!data) return;
+      await createInjury(data.id, {
+        reason: lesaoForm.reason.trim(),
+        type: lesaoForm.type,
+        endsOn: lesaoForm.type === "data" ? lesaoForm.endsOn || null : null,
+      });
+    },
+    onSuccess: () => {
+      toast.success("Lesão registrada");
+      qc.invalidateQueries({ queryKey: ["active-injuries"] });
+      setLesaoForm({ reason: "", type: "proximo_jogo", endsOn: "" });
+      setLesaoFormAberto(false);
+    },
+    onError: (e: Error) => toast.error("Erro ao registrar: " + e.message),
+  });
+
+  const recuperado = useMutation({
+    mutationFn: async () => {
+      if (!data || !minhaLesao) return;
+      await deleteInjury(data.id, minhaLesao.id);
+    },
+    onSuccess: () => {
+      toast.success("Marcado como recuperado");
+      qc.invalidateQueries({ queryKey: ["active-injuries"] });
+    },
+    onError: (e: Error) => toast.error("Erro ao atualizar: " + e.message),
+  });
+
+  const submitLesao = () => {
+    const reason = lesaoForm.reason.trim();
+    if (!reason) return toast.error("Informe qual foi a lesão");
+    if (lesaoForm.type === "data" && !lesaoForm.endsOn)
+      return toast.error("Informe até quando você vai ficar fora");
+    registrarLesao.mutate();
+  };
 
   const save = useMutation({
     mutationFn: async () => {
@@ -275,6 +345,81 @@ function MeuJogadorPage() {
           </div>
         </CardContent>
       </Card>
+
+      {data && (
+        <Card>
+          <CardContent className="space-y-3 pt-6">
+            <div className="flex items-center gap-2">
+              <HeartPulse className="h-4 w-4 text-destructive" />
+              <Label className="text-sm font-medium">Lesão</Label>
+            </div>
+
+            {minhaLesao ? (
+              <div className="space-y-2">
+                <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                  <p>{minhaLesao.reason}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {minhaLesao.type === "data"
+                      ? `Até ${formatDate(minhaLesao.ends_on)}`
+                      : "Só até a próxima partida agendada"}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => recuperado.mutate()}
+                  disabled={recuperado.isPending}
+                >
+                  {recuperado.isPending ? "Atualizando..." : "Marcar como recuperado"}
+                </Button>
+              </div>
+            ) : lesaoFormAberto ? (
+              <div className="space-y-3">
+                <Textarea
+                  placeholder="Qual foi a lesão?"
+                  maxLength={300}
+                  value={lesaoForm.reason}
+                  onChange={(e) => setLesaoForm({ ...lesaoForm, reason: e.target.value })}
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <Select
+                    value={lesaoForm.type}
+                    onValueChange={(v) => setLesaoForm({ ...lesaoForm, type: v as InjuryType })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="proximo_jogo">Só o próximo jogo</SelectItem>
+                      <SelectItem value="data">Até uma data</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {lesaoForm.type === "data" && (
+                    <DatePicker
+                      value={lesaoForm.endsOn}
+                      onChange={(v) => setLesaoForm({ ...lesaoForm, endsOn: v })}
+                      startMonth={new Date()}
+                      disabled={{ before: new Date() }}
+                    />
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={submitLesao} disabled={registrarLesao.isPending}>
+                    {registrarLesao.isPending ? "Registrando..." : "Registrar"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setLesaoFormAberto(false)}>
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" onClick={() => setLesaoFormAberto(true)}>
+                Registrar lesão
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex justify-end">
         <Button onClick={submit} disabled={save.isPending || !isDirty}>

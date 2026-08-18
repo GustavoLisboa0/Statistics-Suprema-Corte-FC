@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import exige_editor, usuario_atual
 from database import supabase
 from models import Partida, PartidaCreate, PartidaUpdate
+from routers.punicoes import avancar_punicoes_por_jogos
 
 # Toda rota daqui exige login; escrita exige papel de editor.
 router = APIRouter(
@@ -74,9 +75,20 @@ def atualizar_partida(
     if not payload:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
 
+    # Descobre se a partida está VIRANDO "realizada" (não se já estava) antes
+    # de gravar, pra descontar jogo de punição uma única vez por partida.
+    vira_realizada = False
+    if payload.get("status") == "realizada":
+        atual = supabase.table(TABLE).select("status").eq("id", str(partida_id)).execute()
+        vira_realizada = bool(atual.data) and atual.data[0]["status"] != "realizada"
+
     resposta = supabase.table(TABLE).update(payload).eq("id", str(partida_id)).execute()
     if not resposta.data:
         raise HTTPException(status_code=404, detail="Partida não encontrada")
+
+    if vira_realizada:
+        avancar_punicoes_por_jogos()
+
     return resposta.data[0]
 
 
