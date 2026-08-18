@@ -74,6 +74,28 @@ class Jogador(JogadorBase):
     perfil_id: Optional[UUID] = None
 
 
+def numero_camisa_disponivel(
+    jogadores: list[dict], numero_camisa: Optional[int], jogador_id: Optional[str] = None
+) -> bool:
+    """
+    Verifica se `numero_camisa` está livre entre os jogadores ativos.
+
+    Sem número (`None`) está sempre disponível — nem todo jogador precisa ter
+    um. Jogador inativo nunca disputa o número com ninguém: ele perde o
+    próprio número ao ser desativado (ver `atualizar_jogador` no router), então
+    só jogadores ativos entram na checagem. `jogador_id` exclui o próprio
+    jogador da comparação, pra não bloquear a edição de quem já tem o número.
+    """
+    if numero_camisa is None:
+        return True
+    return not any(
+        j.get("numero_camisa") == numero_camisa
+        and j.get("ativo", True)
+        and j.get("id") != jogador_id
+        for j in jogadores
+    )
+
+
 # ---------------------------------------------------------------------------
 # Partidas
 # ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from auth import exige_editor, usuario_atual
 from database import supabase
-from models import Jogador, JogadorCreate, JogadorUpdate
+from models import Jogador, JogadorCreate, JogadorUpdate, numero_camisa_disponivel
 
 # Toda rota daqui exige login; escrita exige papel de editor.
 router = APIRouter(
@@ -14,6 +14,18 @@ router = APIRouter(
 )
 
 TABLE = "jogadores"
+
+
+def _checar_numero_camisa(numero_camisa: int | None, jogador_id: str | None = None) -> None:
+    """Levanta 409 se `numero_camisa` já estiver em uso por outro jogador ativo."""
+    if numero_camisa is None:
+        return
+    jogadores = supabase.table(TABLE).select("id,numero_camisa,ativo").execute().data or []
+    if not numero_camisa_disponivel(jogadores, numero_camisa, jogador_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"O número {numero_camisa} já está sendo usado por outro jogador ativo",
+        )
 
 
 @router.get("/", response_model=list[Jogador])
@@ -45,6 +57,8 @@ def criar_meu_jogador(jogador: JogadorCreate, usuario: dict = Depends(usuario_at
     if existente.data:
         raise HTTPException(status_code=409, detail="Você já tem um jogador cadastrado")
 
+    _checar_numero_camisa(jogador.numero_camisa)
+
     payload = jogador.model_dump(mode="json")
     payload["email"] = usuario["email"]
     payload["ativo"] = True
@@ -63,6 +77,7 @@ def obter_jogador(jogador_id: UUID):
 
 @router.post("/", response_model=Jogador, status_code=201)
 def criar_jogador(jogador: JogadorCreate, usuario: dict = Depends(exige_editor)):
+    _checar_numero_camisa(jogador.numero_camisa)
     payload = jogador.model_dump(mode="json")
     resposta = supabase.table(TABLE).insert(payload).execute()
     return resposta.data[0]
@@ -88,6 +103,14 @@ def atualizar_jogador(
     payload = {k: v for k, v in jogador.model_dump(mode="json").items() if v is not None}
     if usuario["papel"] != "editor":
         payload.pop("ativo", None)
+
+    if payload.get("ativo") is False:
+        # Desativar libera o número na hora — sem isso ele ficaria reservado
+        # pra sempre por alguém que nem está mais jogando.
+        payload["numero_camisa"] = None
+    elif "numero_camisa" in payload:
+        _checar_numero_camisa(payload["numero_camisa"], jogador_id=str(jogador_id))
+
     if not payload:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
 
