@@ -44,7 +44,12 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-accent/100 p-4 dark:bg-background">
       <Card className="w-full max-w-sm dark:border-accent/30">
         <CardHeader className="text-center">
-          <CardTitle className="font-display text-3xl dark:text-accent">Suprema Corte FC</CardTitle>
+          {/* CardTitle é uma <div> estilizada, não um heading real — sem isso
+              a página não tem nenhum <h1> pra leitor de tela navegar por título. */}
+          <h1 className="sr-only">Suprema Corte FC</h1>
+          <CardTitle aria-hidden="true" className="font-display text-3xl dark:text-accent">
+            Suprema Corte FC
+          </CardTitle>
           <p className="text-sm text-muted-foreground">Entre para acessar o sistema</p>
         </CardHeader>
         <CardContent>
