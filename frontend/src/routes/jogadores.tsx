@@ -3,7 +3,7 @@ import { isAutenticado } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { HeartPulse, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
+import { HeartPulse, MoreVertical, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -54,6 +54,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -198,30 +205,31 @@ function PlayerCard({
         </div>
         {podeEditar ? (
           <div className="flex shrink-0 flex-col gap-1">
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit} title="Editar">
               <Pencil className="h-3.5 w-3.5" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={onPunicoes}
-              title="Punições"
-            >
-              <ShieldAlert className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={onLesoes}
-              title="Lesões"
-            >
-              <HeartPulse className="h-3.5 w-3.5" />
-            </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onDelete}>
-              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" className="h-7 w-7" title="Mais ações">
+                  <MoreVertical className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={onPunicoes}>
+                  <ShieldAlert className="mr-2 h-3.5 w-3.5" /> Punições
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onLesoes}>
+                  <HeartPulse className="mr-2 h-3.5 w-3.5" /> Lesões
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={onDelete}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5" /> Excluir
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         ) : isMine ? (
           <Button
@@ -264,6 +272,7 @@ function PlayersPage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Player | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [initialForm, setInitialForm] = useState<FormState>(emptyForm);
   const [toDelete, setToDelete] = useState<Player | null>(null);
   const [punicoesDe, setPunicoesDe] = useState<Player | null>(null);
   const [lesoesDe, setLesoesDe] = useState<Player | null>(null);
@@ -294,6 +303,9 @@ function PlayersPage() {
     onError: (e: Error) => toast.error("Erro ao salvar: " + e.message),
   });
 
+  // Salvar só faz sentido depois de alguma mudança de verdade (mesmo padrão de /meu-jogador).
+  const isDirty = JSON.stringify(form) !== JSON.stringify(initialForm);
+
   const remove = useMutation({
     mutationFn: async (id: string) => {
       await deletePlayer(id);
@@ -310,12 +322,12 @@ function PlayersPage() {
   const openNew = () => {
     setEditing(null);
     setForm(emptyForm);
+    setInitialForm(emptyForm);
     setOpen(true);
   };
 
   const openEdit = (p: Player) => {
-    setEditing(p);
-    setForm({
+    const inicial: FormState = {
       name: p.name,
       nickname: p.nickname ?? "",
       phone: p.phone ?? "",
@@ -324,7 +336,10 @@ function PlayersPage() {
       shirt_number: p.shirt_number?.toString() ?? "",
       birth_date: p.birth_date ?? "",
       active: p.active,
-    });
+    };
+    setEditing(p);
+    setForm(inicial);
+    setInitialForm(inicial);
     setOpen(true);
   };
 
@@ -485,15 +500,11 @@ function PlayersPage() {
                 id="email"
                 type="email"
                 inputMode="email"
-                placeholder="usado para o jogador acessar o sistema"
+                placeholder="email@exemplo.com"
                 maxLength={150}
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
               />
-              <p className="mt-1 text-xs text-muted-foreground">
-                É por aqui que a conta de login vira este jogador. Sem email, ele não confirma
-                presença sozinho.
-              </p>
             </div>
             <div>
               <Label htmlFor="shirt">Número da camisa</Label>
@@ -517,7 +528,10 @@ function PlayersPage() {
               />
             </div>
             <div className="sm:col-span-2">
-              <Label>Posições * (máximo {MAX_POSITIONS})</Label>
+              <Label>
+                Posições *{" "}
+                <span className="font-normal text-muted-foreground">(máximo {MAX_POSITIONS})</span>
+              </Label>
               <ToggleGroup
                 type="multiple"
                 value={form.positions}
@@ -540,7 +554,7 @@ function PlayersPage() {
                     key={pos}
                     value={pos}
                     variant="outline"
-                    className="h-8 px-2.5 text-xs"
+                    className="h-8 w-10 text-xs"
                     aria-label={POSITION_LABELS[pos]}
                     title={POSITION_LABELS[pos]}
                   >
@@ -570,7 +584,7 @@ function PlayersPage() {
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={submit} disabled={save.isPending}>
+            <Button onClick={submit} disabled={save.isPending || !isDirty}>
               {save.isPending ? "Salvando..." : "Salvar"}
             </Button>
           </DialogFooter>

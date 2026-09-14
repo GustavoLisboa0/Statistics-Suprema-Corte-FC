@@ -326,7 +326,7 @@ function MeuJogadorPage() {
                   key={pos}
                   value={pos}
                   variant="outline"
-                  className="h-8 px-2.5 text-xs"
+                  className="h-8 w-10 text-xs"
                   aria-label={POSITION_LABELS[pos]}
                   title={POSITION_LABELS[pos]}
                 >
