@@ -3,7 +3,19 @@ import { isAutenticado } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2, Eye, UserCheck, UserPlus, Loader2, X } from "lucide-react";
+import {
+  Pencil,
+  Plus,
+  Trash2,
+  Eye,
+  UserCheck,
+  UserPlus,
+  Loader2,
+  X,
+  CloudSun,
+  CloudOff,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -38,6 +50,7 @@ import {
   createMatch,
   updateMatch,
   deleteMatch,
+  refreshMatchWeather,
   upsertMatchStats,
   type Match,
   type MatchInput,
@@ -105,6 +118,7 @@ export const Route = createFileRoute("/partidas")({
 
 type MatchForm = {
   match_date: string;
+  kickoff_time: string;
   opponent: string;
   venue: string;
   venue_detail: string;
@@ -122,6 +136,7 @@ type MatchForm = {
 
 const emptyMatch: MatchForm = {
   match_date: new Date().toISOString().slice(0, 10),
+  kickoff_time: "",
   opponent: "",
   venue: "trieste",
   venue_detail: "",
@@ -267,6 +282,7 @@ function MatchesPage() {
     mutationFn: async () => {
       const payload: MatchInput = {
         match_date: form.match_date,
+        kickoff_time: form.kickoff_time || null,
         opponent: form.opponent.trim(),
         venue: form.venue as Match["venue"],
         venue_detail: form.venue === "outro" ? form.venue_detail.trim() || null : null,
@@ -317,6 +333,15 @@ function MatchesPage() {
     onError: (e: Error) => toast.error("Erro ao excluir: " + e.message),
   });
 
+  const refreshWeather = useMutation({
+    mutationFn: (id: string) => refreshMatchWeather(id),
+    onSuccess: () => {
+      toast.success("Previsão atualizada");
+      qc.invalidateQueries({ queryKey: ["matches"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const openNew = () => {
     setEditing(null);
     setForm(emptyMatch);
@@ -328,6 +353,7 @@ function MatchesPage() {
     setEditing(m);
     setForm({
       match_date: m.match_date,
+      kickoff_time: m.kickoff_time?.slice(0, 5) ?? "",
       opponent: m.opponent,
       venue: m.venue,
       venue_detail: m.venue_detail ?? "",
@@ -348,6 +374,9 @@ function MatchesPage() {
   const submit = () => {
     if (!form.opponent.trim()) return toast.error("Informe o adversário");
     if (!form.match_date) return toast.error("Informe a data da partida");
+    // Só obrigatório em partidas novas — partidas antigas não têm horário
+    // salvo e continuam editáveis sem ele.
+    if (!editing && !form.kickoff_time) return toast.error("Informe o horário do jogo");
     save.mutate();
   };
 
@@ -494,6 +523,7 @@ function MatchesPage() {
                           <Badge variant={statusVariant(m.status)}>{STATUS_LABELS[m.status]}</Badge>
                           <span className="text-sm text-muted-foreground">
                             {formatDate(m.match_date)}
+                            {m.kickoff_time && ` às ${m.kickoff_time.slice(0, 5)}`}
                           </span>
                         </div>
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -506,6 +536,44 @@ function MatchesPage() {
                             {m.kind === "amistoso" ? "Amistoso" : "Campeonato"}
                           </Badge>
                         </div>
+                        {m.kickoff_time && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {m.weather ? (
+                              <Badge
+                                variant="outline"
+                                className="gap-1.5 border-sky-300 bg-sky-100 font-normal text-sky-900 dark:border-sky-400/30 dark:bg-sky-400/15 dark:text-sky-200"
+                              >
+                                <CloudSun className="h-4 w-4 text-sky-600 dark:text-sky-300" />
+                                {Math.round(m.weather.temperature)}°C · {m.weather.condition}
+                                {m.weather.source === "previsao" && m.weather.rain_chance !== null
+                                  ? ` · ${m.weather.rain_chance}% chuva`
+                                  : m.weather.source === "historico" && m.weather.rain_mm !== null
+                                    ? ` · ${m.weather.rain_mm}mm chuva`
+                                    : ""}
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="gap-1.5 font-normal text-muted-foreground"
+                              >
+                                <CloudOff className="h-4 w-4" />
+                                Clima indisponível
+                              </Badge>
+                            )}
+                            {podeEditar && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6"
+                                title="Atualizar clima"
+                                disabled={refreshWeather.isPending}
+                                onClick={() => refreshWeather.mutate(m.id)}
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       {m.status === "realizada" && (
                         <div className="flex items-center gap-2">
@@ -566,6 +634,18 @@ function MatchesPage() {
                   value={form.match_date}
                   onChange={(v) => setForm({ ...form, match_date: v })}
                 />
+              </div>
+              <div>
+                <Label htmlFor="kickoff">Horário {!editing && "*"}</Label>
+                <Input
+                  id="kickoff"
+                  type="time"
+                  value={form.kickoff_time}
+                  onChange={(e) => setForm({ ...form, kickoff_time: e.target.value })}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Usado pra buscar a previsão do tempo.
+                </p>
               </div>
               <div>
                 <Label htmlFor="opponent">Adversário *</Label>

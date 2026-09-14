@@ -231,9 +231,28 @@ export type Player = {
 
 export type PlayerInput = Omit<Player, "id">;
 
+/**
+ * Clima de Curitiba no horário do jogo — sempre calculado pelo backend.
+ *
+ * `source` diz se é previsão (jogo no futuro, `rain_chance` em %) ou o
+ * clima que realmente ocorreu (jogo no passado, `rain_mm` medidos) — só um
+ * dos dois vem preenchido, dependendo da fonte.
+ */
+export type Weather = {
+  temperature: number;
+  condition: string;
+  rain_chance: number | null;
+  rain_mm: number | null;
+  wind: number | null;
+  updated_at: string;
+  source: "previsao" | "historico";
+};
+
 export type Match = {
   id: string;
   match_date: string;
+  /** Horário do jogo ("HH:MM:SS"); null em partidas antigas, sem ele. */
+  kickoff_time: string | null;
   opponent: string;
   venue: Venue;
   venue_detail: string | null;
@@ -248,9 +267,15 @@ export type Match = {
   court_fee: number | null;
   referee_fee: number | null;
   keeper_fee: number | null;
+  /**
+   * Null enquanto não buscou, se a data está fora da janela de previsão
+   * (~16 dias) ou se a partida é antiga demais pra ter horário salvo.
+   */
+  weather: Weather | null;
 };
 
-export type MatchInput = Omit<Match, "id">;
+// `weather` nunca vem do cliente — é sempre calculado pelo backend.
+export type MatchInput = Omit<Match, "id" | "weather">;
 
 export type MatchStat = {
   id: string;
@@ -285,9 +310,20 @@ type JogadorApi = {
   ativo: boolean;
 };
 
+type ClimaApi = {
+  temperatura: number;
+  condicao: string;
+  chance_chuva: number | null;
+  chuva_mm: number | null;
+  vento: number | null;
+  atualizado_em: string;
+  fonte: "previsao" | "historico";
+};
+
 type PartidaApi = {
   id: string;
   data: string;
+  horario: string | null;
   adversario: string;
   local: Venue;
   local_detalhe: string | null;
@@ -301,6 +337,7 @@ type PartidaApi = {
   valor_quadra: number | string | null;
   valor_arbitragem: number | string | null;
   valor_goleiro: number | string | null;
+  clima: ClimaApi | null;
 };
 
 type PresencaApi = {
@@ -358,11 +395,25 @@ function toJogadorPayload(input: PlayerInput) {
   };
 }
 
+function toWeather(c: ClimaApi | null): Weather | null {
+  if (!c) return null;
+  return {
+    temperature: c.temperatura,
+    condition: c.condicao,
+    rain_chance: c.chance_chuva,
+    rain_mm: c.chuva_mm,
+    wind: c.vento,
+    updated_at: c.atualizado_em,
+    source: c.fonte,
+  };
+}
+
 function toMatch(p: PartidaApi): Match {
   const kind: Kind = p.campeonato_ou_amistoso === "amistoso" ? "amistoso" : "campeonato";
   return {
     id: p.id,
     match_date: p.data,
+    kickoff_time: p.horario,
     opponent: p.adversario,
     venue: p.local,
     venue_detail: p.local_detalhe,
@@ -377,6 +428,7 @@ function toMatch(p: PartidaApi): Match {
     court_fee: toNumber(p.valor_quadra),
     referee_fee: toNumber(p.valor_arbitragem),
     keeper_fee: toNumber(p.valor_goleiro),
+    weather: toWeather(p.clima),
   };
 }
 
@@ -389,6 +441,7 @@ function toNumber(valor: number | string | null): number | null {
 function toPartidaPayload(input: MatchInput) {
   return {
     data: input.match_date,
+    horario: input.kickoff_time,
     adversario: input.opponent,
     local: input.venue,
     local_detalhe: input.venue === "outro" ? input.venue_detail : null,
@@ -498,6 +551,17 @@ export async function updateMatch(id: string, input: MatchInput): Promise<void> 
 
 export async function deleteMatch(id: string): Promise<void> {
   await api.del(`/partidas/${id}`);
+}
+
+/**
+ * Busca o clima de novo pro horário já salvo — útil quando a partida foi
+ * criada fora da janela de ~16 dias da Open-Meteo, ou pra tentar de novo o
+ * clima real de uma partida recém-realizada se a busca automática não achou
+ * dado ainda.
+ */
+export async function refreshMatchWeather(id: string): Promise<Match> {
+  const data = await api.post<PartidaApi>(`/partidas/${id}/clima`, {});
+  return toMatch(data);
 }
 
 // ---------------------------------------------------------------------------

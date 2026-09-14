@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Literal, Optional
 from uuid import UUID
@@ -122,7 +122,10 @@ class PartidaBase(BaseModel):
 
 
 class PartidaCreate(PartidaBase):
-    pass
+    # Obrigatório só na criação (partidas antigas não têm) — mesmo padrão do
+    # telefone em JogadorCreate. É o que permite buscar o clima pro horário
+    # exato do jogo.
+    horario: time
 
 
 class PartidaUpdate(BaseModel):
@@ -140,10 +143,33 @@ class PartidaUpdate(BaseModel):
     valor_quadra: Optional[Decimal] = Field(default=None, ge=0)
     valor_arbitragem: Optional[Decimal] = Field(default=None, ge=0)
     valor_goleiro: Optional[Decimal] = Field(default=None, ge=0)
+    horario: Optional[time] = None
+
+
+class Clima(BaseModel):
+    """
+    Clima de Curitiba no horário do jogo — ver backend/clima.py.
+
+    `fonte` diz se é previsão (jogo no futuro, `chance_chuva` em %) ou o
+    clima que realmente ocorreu (jogo no passado, `chuva_mm` medidos) —
+    só um dos dois vem preenchido, dependendo da fonte.
+    """
+
+    temperatura: float
+    condicao: str
+    chance_chuva: Optional[int] = None
+    chuva_mm: Optional[float] = None
+    vento: Optional[float] = None
+    atualizado_em: datetime
+    fonte: Literal["previsao", "historico"] = "previsao"
 
 
 class Partida(PartidaBase):
     id: UUID
+    horario: Optional[time] = None
+    # Best-effort: null enquanto não buscou, partida fora da janela de
+    # previsão (~16 dias) ou a chamada externa falhou.
+    clima: Optional[Clima] = None
 
 
 def custo_do_time(partida: "PartidaBase | dict") -> Decimal:
