@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CadastroRouteImport } from './routes/cadastro'
+import { Route as EscalacaoRouteImport } from './routes/escalacao'
 import { Route as JogadoresRouteImport } from './routes/jogadores'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MeuJogadorRouteImport } from './routes/meu-jogador'
@@ -24,6 +25,11 @@ const IndexRoute = IndexRouteImport.update({
 const CadastroRoute = CadastroRouteImport.update({
   id: '/cadastro',
   path: '/cadastro',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EscalacaoRoute = EscalacaoRouteImport.update({
+  id: '/escalacao',
+  path: '/escalacao',
   getParentRoute: () => rootRouteImport,
 } as any)
 const JogadoresRoute = JogadoresRouteImport.update({
@@ -50,6 +56,7 @@ const PartidasRoute = PartidasRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/cadastro': typeof CadastroRoute
+  '/escalacao': typeof EscalacaoRoute
   '/jogadores': typeof JogadoresRoute
   '/login': typeof LoginRoute
   '/meu-jogador': typeof MeuJogadorRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cadastro': typeof CadastroRoute
+  '/escalacao': typeof EscalacaoRoute
   '/jogadores': typeof JogadoresRoute
   '/login': typeof LoginRoute
   '/meu-jogador': typeof MeuJogadorRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/cadastro': typeof CadastroRoute
+  '/escalacao': typeof EscalacaoRoute
   '/jogadores': typeof JogadoresRoute
   '/login': typeof LoginRoute
   '/meu-jogador': typeof MeuJogadorRoute
@@ -75,13 +84,27 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/cadastro' | '/jogadores' | '/login' | '/meu-jogador' | '/partidas'
+    | '/'
+    | '/cadastro'
+    | '/escalacao'
+    | '/jogadores'
+    | '/login'
+    | '/meu-jogador'
+    | '/partidas'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/cadastro' | '/jogadores' | '/login' | '/meu-jogador' | '/partidas'
+  to:
+    | '/'
+    | '/cadastro'
+    | '/escalacao'
+    | '/jogadores'
+    | '/login'
+    | '/meu-jogador'
+    | '/partidas'
   id:
     | '__root__'
     | '/'
     | '/cadastro'
+    | '/escalacao'
     | '/jogadores'
     | '/login'
     | '/meu-jogador'
@@ -91,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CadastroRoute: typeof CadastroRoute
+  EscalacaoRoute: typeof EscalacaoRoute
   JogadoresRoute: typeof JogadoresRoute
   LoginRoute: typeof LoginRoute
   MeuJogadorRoute: typeof MeuJogadorRoute
@@ -111,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/cadastro'
       fullPath: '/cadastro'
       preLoaderRoute: typeof CadastroRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/escalacao': {
+      id: '/escalacao'
+      path: '/escalacao'
+      fullPath: '/escalacao'
+      preLoaderRoute: typeof EscalacaoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/jogadores': {
@@ -147,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CadastroRoute: CadastroRoute,
+  EscalacaoRoute: EscalacaoRoute,
   JogadoresRoute: JogadoresRoute,
   LoginRoute: LoginRoute,
   MeuJogadorRoute: MeuJogadorRoute,

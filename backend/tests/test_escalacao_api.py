@@ -48,6 +48,7 @@ def test_fluxo_gerar_salvar_ler(api):
     assert gerado.status_code == 200, gerado.text
     resultado = gerado.json()["resultado"]
     assert len(resultado["titulares"]) == 11 and resultado["formacao"] == "4-4-2"
+    assert len(resultado["jogadores"]) == 16  # dados públicos p/ desenhar a tela e o PDF
 
     # Sem salvar ainda: ninguém vê nada.
     assert c.get(base, headers=api["comum"]).status_code == 404

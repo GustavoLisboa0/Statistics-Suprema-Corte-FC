@@ -1,6 +1,14 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, CalendarDays, Instagram, LogOut, User, Users } from "lucide-react";
+import {
+  BarChart3,
+  CalendarDays,
+  ClipboardList,
+  Instagram,
+  LogOut,
+  User,
+  Users,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { logout, PAPEL_LABELS } from "@/lib/auth";
@@ -25,6 +33,7 @@ const items = [
   { title: "Estatísticas", url: "/", icon: BarChart3 },
   { title: "Jogadores", url: "/jogadores", icon: Users },
   { title: "Partidas", url: "/partidas", icon: CalendarDays },
+  { title: "Escalação", url: "/escalacao", icon: ClipboardList },
 ] as const;
 
 function WhatsAppIcon(props: React.SVGProps<SVGSVGElement>) {

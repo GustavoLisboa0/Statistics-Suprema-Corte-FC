@@ -185,6 +185,19 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
     except EscalacaoInviavel as erro:
         raise HTTPException(status_code=422, detail=str(erro))
 
+    # Dados públicos de cada convocado (nome, camisa, posições) vão junto no
+    # resultado: assim a tela e o PDF mostram a escalação salva sem buscar
+    # mais nada — e quem só visualiza não depende de outras rotas.
+    resultado["jogadores"] = {
+        j["id"]: {
+            "nome": j["nome"],
+            "nome_completo": j["nome_completo"],
+            "numero_camisa": j["numero_camisa"],
+            "posicoes": j["posicoes"],
+        }
+        for j in convocados
+    }
+
     return {
         "partida_id": str(partida_id),
         "convocados": convocados,

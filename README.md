@@ -73,6 +73,22 @@ Logins de teste criados pelo `seed_local.py`:
 Para rodar os testes do backend: `cd backend; $env:LOCAL_DB=1; pytest`.
 O arquivo `backend/env.example` mostra as variáveis de ambiente possíveis.
 
+## Escalador automático (4-4-2)
+
+Menu **Escalação** no site. O administrador escolhe o jogo, confirma os
+convocados (vêm da lista de presença, sem quem está punido ou lesionado),
+escolhe o goleiro (fixo, nunca troca), define duração, número de
+substituições e quantos jogadores trocam por vez, e clica em **Gerar**. O
+sistema monta os 10 de linha (2 zagueiros, 2 laterais, 2 volantes, 2 meias e
+2 atacantes) deixando os minutos parecidos e sem deixar nenhuma posição
+descoberta. Dá para fixar regras ("começa jogando", "joga de zagueiro"...),
+pedir outra opção, salvar e **exportar em PDF**. Usuário comum só vê a
+escalação salva.
+
+- Lógica: `backend/escalacao.py` (funções puras, testadas em `backend/tests/test_escalacao.py`).
+- Rotas: `backend/routers/escalacao.py` (`/partidas/{id}/escalacao...`).
+- No Supabase de verdade, rode antes `database/migration_009_escalacoes.sql`.
+
 ## Setup
 
 ### 1. Banco de dados (Supabase)
