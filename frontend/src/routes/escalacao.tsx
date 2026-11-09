@@ -33,6 +33,13 @@ import {
 import { exportarEscalacaoPdf } from "@/lib/escalacaoPdf";
 import { CampoEscalacao } from "@/components/CampoEscalacao";
 import { AbaTatica } from "@/components/EscalacaoInterna";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { QuemJogaTudo } from "@/components/QuemJogaTudo";
 import {
   AjudaSistema,
@@ -192,7 +199,12 @@ const VisaoEscalacao = memo(function VisaoEscalacao({
     }
   };
 
+  // O goleiro joga o jogo todo e não tem troca: fica fora desta lista.
   const minutosOrdenados = Object.entries(resultado.minutos)
+    .filter(([id]) => {
+      const pos = resultado.jogadores[id]?.posicoes ?? [];
+      return id !== resultado.goleiro_id && !(pos.length > 0 && pos.every((x) => x === "goleiro"));
+    })
     .map(([id, minutos]) => ({ id, minutos, nome: resultado.jogadores[id]?.nome ?? id }))
     .sort((a, b) => b.minutos - a.minutos || a.nome.localeCompare(b.nome));
 
@@ -393,10 +405,9 @@ function tituloDaOpcao(o: OpcaoDeTrocas): string {
     const m = o.mudancas_formacao[0];
     return m ? `Muda de formação aos ${m.minuto}'` : "Muda de formação";
   }
-  if (o.tipo === "fixos") {
-    const n = Math.max(quemJogaTudo(o.resultado).length, o.quantos_fixos);
-    return n === 1 ? "1 jogador joga o jogo todo" : `${n} jogadores jogam o jogo todo`;
-  }
+  // Se alguém joga o jogo todo, não é "todo mundo igual": diz quantos jogam o jogo todo.
+  const n = Math.max(quemJogaTudo(o.resultado).length, o.tipo === "fixos" ? o.quantos_fixos : 0);
+  if (n > 0) return n === 1 ? "1 jogador joga o jogo todo" : `${n} jogadores jogam o jogo todo`;
   return o.aceitavel ? "Todo mundo joga o mesmo tempo" : "Tentativa de tempo igual";
 }
 
@@ -418,6 +429,7 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
   refazendo: boolean;
 }) {
   const [escolhendo, setEscolhendo] = useState<number | null>(null);
+  const [soEsses, setSoEsses] = useState<number | null>(null);
   return (
     <section className="space-y-3">
       <div>
@@ -482,6 +494,13 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
                   </p>
                 );
               })()}
+              {o.tipo === "igual" && quemJogaTudo(o.resultado).length > 0 && (
+                <div className="mt-3">
+                  <Button size="sm" variant="outline" onClick={() => setSoEsses(i)}>
+                    Escolher quem joga o jogo todo
+                  </Button>
+                </div>
+              )}
               {o.tipo === "fixos" && o.fixos.length > 0 && (
                 <div className="mt-3 space-y-1">
                   <Button
@@ -503,6 +522,24 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
           );
         })}
       </div>
+      {soEsses !== null && opcoes[soEsses] && (
+        <Dialog open onOpenChange={(v) => !v && setSoEsses(null)}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Quem joga o jogo todo</DialogTitle>
+              <DialogDescription>
+                Nesta opção só{" "}
+                {quemJogaTudo(opcoes[soEsses].resultado)
+                  .map((id) => opcoes[soEsses].resultado.jogadores[id]?.nome ?? id)
+                  .join(", ")}{" "}
+                {quemJogaTudo(opcoes[soEsses].resultado).length === 1 ? "joga" : "jogam"} o jogo
+                todo. Não há outra escolha válida aqui: as outras passam de 5 minutos de diferença
+                ou não são possíveis pela organização do time. Veja as outras opções.
+              </DialogDescription>
+            </DialogHeader>
+          </DialogContent>
+        </Dialog>
+      )}
       {escolhendo !== null && opcoes[escolhendo] && (
         <QuemJogaTudo
           quantos={opcoes[escolhendo].fixos.length}
