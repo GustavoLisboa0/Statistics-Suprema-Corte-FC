@@ -24,7 +24,7 @@ export type Lugar = string;
 /** Formações que o sistema conhece (nome -> quantos em cada função). */
 export const FORMACOES: Record<string, Record<Funcao, number>> = {
   "4-4-2": { ZAG: 2, LAT: 2, VOL: 2, MEI: 2, ATA: 2 },
-  "4-2-2-2": { ZAG: 2, LAT: 2, VOL: 2, MEI: 2, ATA: 2 },
+  "4-4-2 meias abertos": { ZAG: 2, LAT: 2, VOL: 2, MEI: 2, ATA: 2 },
   "4-4-2 losango": { ZAG: 2, LAT: 2, VOL: 1, MEI: 3, ATA: 2 },
   "4-3-3": { ZAG: 2, LAT: 2, VOL: 1, MEI: 2, ATA: 3 },
   "4-3-3 duplo volante": { ZAG: 2, LAT: 2, VOL: 2, MEI: 1, ATA: 3 },
@@ -40,8 +40,8 @@ export const FORMACOES: Record<string, Record<Funcao, number>> = {
 
 /** Uma frase curta explicando o desenho de cada formação (aparece no seletor). */
 export const FORMACAO_DESCRICAO: Record<string, string> = {
-  "4-4-2": "Dois volantes, dois meias abertos e dois atacantes.",
-  "4-2-2-2": "Dois volantes, dois meias por dentro (atrás dos atacantes) e dois atacantes.",
+  "4-4-2": "Dois volantes, dois meias por dentro e dois atacantes.",
+  "4-4-2 meias abertos": "Dois volantes, dois meias abertos pelos lados e dois atacantes.",
   "4-4-2 losango": "Um volante, dois meias abertos, um 10 e dois atacantes.",
   "4-3-3": "Um volante, dois meias e três atacantes.",
   "4-3-3 duplo volante": "Dois volantes, um meia e três atacantes.",
@@ -77,7 +77,11 @@ export function layoutDaFormacao(formacao: string): Record<Lugar, { x: number; y
   poe("ATA", espalhar(c.ATA, c.ATA === 2 ? 140 : 90, c.ATA === 2 ? 260 : 310), 140);
 
   switch (formacao) {
-    case "4-4-2": // meia, volante, volante, meia
+    case "4-4-2": // dois volantes e dois meias por dentro
+      poe("VOL", [150, 250], 320);
+      poe("MEI", [120, 280], 235);
+      break;
+    case "4-4-2 meias abertos": // meia, volante, volante, meia
       pos.MEI1 = { x: 58, y: 275 };
       pos.VOL1 = { x: 150, y: 290 };
       pos.VOL2 = { x: 250, y: 290 };
@@ -88,10 +92,6 @@ export function layoutDaFormacao(formacao: string): Record<Lugar, { x: number; y
       pos.VOL1 = { x: 150, y: 285 };
       pos.VOL2 = { x: 250, y: 285 };
       pos.MEI2 = { x: 342, y: 255 };
-      break;
-    case "4-2-2-2": // dois volantes, dois meias por dentro
-      poe("VOL", [150, 250], 320);
-      poe("MEI", [120, 280], 235);
       break;
     case "4-4-2 losango":
       poe("VOL", [200], 330);
@@ -284,6 +284,11 @@ export function siglaPosicao(posicoes: string[]): string {
 }
 
 export type OpcaoDeTrocas = {
+  /** igual = todo mundo o mesmo tempo; fixos = alguém joga o jogo todo; formacao = muda de formação. */
+  tipo: "igual" | "fixos" | "formacao";
+  /** Diferença de tempo dentro do limite (5 min). Falso = só a melhor tentativa. */
+  aceitavel: boolean;
+  mudancas_formacao: { minuto: number; formacao: string }[];
   /** Combinações de jogadores que realmente funcionam como "jogo todo" nesta opção. */
   combinacoes: string[][];
   quantos_fixos: number;
@@ -397,23 +402,47 @@ export type Catalogo = {
   }[];
   estrategias: { id: string; nome: string; descricao: string }[];
   estilos: { id: string; nome: string }[];
-  /** Montador de táticas. */
-  situacoes: { id: string; nome: string }[];
-  comportamentos: { id: string; nome: string }[];
-  comportamentos_por_funcao: Record<string, string[]>;
-  modelos: { id: string; nome: string; descricao: string; instrucoes: Instrucoes }[];
+  /** Quadro tático: papéis por posição e modelos prontos. */
+  papeis: Record<string, { id: string; nome: string; descricao: string }[]>;
+  saidas_de_bola: { id: string; nome: string }[];
+  modelos: ModeloTatica[];
 };
 
-/** O que cada posição faz em cada situação: { LAT: { ataque: "sobe" } }. */
-export type Instrucoes = Partial<Record<Funcao, Record<string, string>>>;
+export type AjustesDoTime = {
+  defesa: number;
+  pressao: number;
+  largura: number;
+  saida: "curta" | "mista" | "longa";
+};
+export type PosicaoNoCampo = { x: number; y: number };
+export type OrientacaoDoLugar = {
+  papel?: string;
+  nota?: string;
+  com_bola?: PosicaoNoCampo;
+  sem_bola?: PosicaoNoCampo;
+};
+/** Quadro tático: orientação do time. Não interfere na escalação. */
+export type PlanoTatico = {
+  formacao: string;
+  time: AjustesDoTime;
+  jogadores: Record<string, OrientacaoDoLugar>;
+  notas: string;
+};
+export type ModeloTatica = {
+  id: string;
+  nome: string;
+  descricao: string;
+  time: AjustesDoTime;
+  papeis: Record<string, string>;
+};
 
 export type TaticaSalva = {
   id: string;
   nome: string;
   descricao: string | null;
-  instrucoes: Instrucoes;
+  plano: PlanoTatico;
 };
-type CorpoTatica = { nome: string; descricao: string | null; instrucoes: Instrucoes };
+type CorpoTatica = { nome: string; descricao: string | null; plano: PlanoTatico };
 export const fetchTaticas = () => api.get<TaticaSalva[]>("/taticas");
 export const criarTatica = (corpo: CorpoTatica) => api.post<TaticaSalva>("/taticas", corpo);
 export const editarTatica = (id: string, corpo: CorpoTatica) =>

@@ -1,343 +1,168 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Lightbulb, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Copy, FileDown, Lightbulb, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  FUNCAO_LABELS,
-  FUNCOES,
   apagarTatica,
   criarTatica,
   editarTatica,
   fetchCatalogo,
   fetchContraEstrategia,
   fetchTaticas,
+  layoutDaFormacao,
   salvarAdversario,
   type Adversario,
   type Catalogo,
-  type Funcao,
-  type Instrucoes,
   type RegraComposicao,
+  type TaticaSalva,
 } from "@/lib/escalacao";
+import { frasesDoTime, nomeDoLugar, planoDoModelo, planoVazio } from "@/lib/quadroTatico";
+import { exportarTaticaPdf, type EscopoPdf } from "@/lib/taticaPdf";
 import { CampoFormacao } from "@/components/CampoFormacao";
-import { SeletorFormacao } from "@/components/EscalacaoControles";
+import { MontagemDoTime } from "@/components/MontagemTime";
 import { NumberInput } from "@/components/NumberInput";
-import { Badge } from "@/components/ui/badge";
+import { QuadroTatico, type RascunhoTatica } from "@/components/QuadroTatico";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Aba "Tática e estratégia" — só administrador.
-// Nada daqui entra no PDF (só o nome da tática) nem aparece para usuário comum.
+//   Táticas: quadro tático (orientação do time + PDF). NÃO mexe na escalação.
+//   Montagem do time: regras que mexem na escalação.
+//   Adversário: perfil e sugestão de modelo.
 // ---------------------------------------------------------------------------
 
 type PropsAba = {
   partidaId: string;
   formacao: string;
   setFormacao: (v: string) => void;
-  tatica: string | null;
-  setTatica: (v: string | null) => void;
   composicao: RegraComposicao[];
   setComposicao: (v: RegraComposicao[]) => void;
 };
 
-/** Pílulas de escolha (uma só selecionada). */
-function Pilulas({
-  opcoes,
-  valor,
-  onChange,
-  rotulo,
-  pequeno,
-}: {
-  opcoes: { id: string; nome: string }[];
-  valor: string;
-  onChange: (v: string) => void;
-  rotulo: string;
-  pequeno?: boolean;
-}) {
-  return (
-    <div role="radiogroup" aria-label={rotulo} className="flex flex-wrap gap-1.5">
-      {opcoes.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          role="radio"
-          aria-checked={valor === o.id}
-          onClick={() => onChange(o.id)}
-          className={cn(
-            "rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            pequeno ? "px-2.5 py-0.5 text-xs" : "px-3 py-1 text-sm",
-            valor === o.id
-              ? "border-primary bg-primary text-primary-foreground"
-              : "bg-card hover:border-primary",
-          )}
-        >
-          {o.nome}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const CURTO: Record<string, string> = {
-  fica: "fica",
-  sobe: "sobe",
-  apoia: "apoia",
-  recua: "recua",
-  pressiona: "pressiona",
-  abre: "abre",
-  fecha: "fecha",
-  infiltra: "infiltra",
-};
-
-/** Palavra que resume o que a posição faz (a mais repetida entre as situações). */
-function resumoDaFuncao(instr: Record<string, string> | undefined): string | null {
-  const valores = Object.values(instr ?? {});
-  if (valores.length === 0) return null;
-  const contagem = new Map<string, number>();
-  for (const v of valores) contagem.set(v, (contagem.get(v) ?? 0) + 1);
-  const [melhor] = [...contagem.entries()].sort((a, b) => b[1] - a[1])[0];
-  return CURTO[melhor] ?? melhor;
-}
-
-// ---------------------------------------------------------------------------
-// Montador de táticas: clique no jogador no campinho e diga o que ele faz
-// em cada situação do jogo (como no FIFA / eFootball).
-// ---------------------------------------------------------------------------
-function ConstrutorTatica({
-  formacao,
+/** Janela para escolher o que vai no PDF: tudo, só o geral ou só um lugar. */
+function DialogoPdf({
+  tatica,
   catalogo,
-  inicial,
-  aoSalvar,
-  aoCancelar,
+  aoFechar,
 }: {
-  formacao: string;
+  tatica: TaticaSalva;
   catalogo: Catalogo;
-  inicial: { id?: string; nome: string; descricao: string; instrucoes: Instrucoes };
-  aoSalvar: (t: { id?: string; nome: string; descricao: string; instrucoes: Instrucoes }) => void;
-  aoCancelar: () => void;
+  aoFechar: () => void;
 }) {
-  const [nome, setNome] = useState(inicial.nome);
-  const [descricao, setDescricao] = useState(inicial.descricao);
-  const [instrucoes, setInstrucoes] = useState<Instrucoes>(inicial.instrucoes);
-  const [funcao, setFuncao] = useState<Funcao | null>("LAT");
-  const [salvando, setSalvando] = useState(false);
+  const [escolha, setEscolha] = useState("tudo");
+  const [gerando, setGerando] = useState(false);
+  const lista = lugaresDaFormacao(tatica.plano.formacao);
 
-  const marcas = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const f of FUNCOES) {
-      const r = resumoDaFuncao(instrucoes[f]);
-      if (r) m[f] = r;
-    }
-    return m;
-  }, [instrucoes]);
-  const comInstrucao = useMemo(() => new Set<string>(Object.keys(marcas)), [marcas]);
-
-  const mudar = (f: Funcao, situacao: string, comportamento: string) =>
-    setInstrucoes((atual) => {
-      const dessa = { ...(atual[f] ?? {}) };
-      if (comportamento === "fica") delete dessa[situacao];
-      else dessa[situacao] = comportamento;
-      const novo = { ...atual, [f]: dessa };
-      if (Object.keys(dessa).length === 0) delete novo[f];
-      return novo;
-    });
-
-  const nomeComp = (id: string) => catalogo.comportamentos.find((c) => c.id === id)?.nome ?? id;
-
-  const salvar = async () => {
-    if (!nome.trim()) {
-      toast.error("Dê um nome para a tática.");
-      return;
-    }
-    setSalvando(true);
+  const gerar = async () => {
+    setGerando(true);
     try {
-      await aoSalvar({ id: inicial.id, nome: nome.trim(), descricao, instrucoes });
+      const escopo: EscopoPdf =
+        escolha === "tudo" || escolha === "geral" ? escolha : { lugar: escolha };
+      await exportarTaticaPdf({
+        nome: tatica.nome,
+        descricao: tatica.descricao ?? "",
+        plano: tatica.plano,
+        catalogo,
+        escopo,
+      });
+      aoFechar();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível gerar o PDF");
     } finally {
-      setSalvando(false);
+      setGerando(false);
     }
   };
 
   return (
-    <div className="space-y-4 rounded-xl border-2 border-primary/40 bg-primary/5 p-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label htmlFor="nome-tatica">Nome da tática</Label>
-          <Input
-            id="nome-tatica"
-            value={nome}
-            maxLength={60}
-            placeholder="Ex.: Laterais voando"
-            onChange={(e) => setNome(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="desc-tatica">Ideia da tática (opcional)</Label>
-          <Input
-            id="desc-tatica"
-            value={descricao}
-            maxLength={300}
-            placeholder="Ex.: Laterais sobem e os volantes protegem"
-            onChange={(e) => setDescricao(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-[minmax(0,300px)_1fr]">
+    <Dialog open onOpenChange={(v) => !v && aoFechar()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>PDF da tática “{tatica.nome}”</DialogTitle>
+          <DialogDescription>
+            O PDF de táticas é separado da escalação: você escolhe se manda ou não. Não leva
+            atributos nem notas dos jogadores.
+          </DialogDescription>
+        </DialogHeader>
         <div className="space-y-2">
-          <CampoFormacao
-            formacao={formacao}
-            comRegra={comInstrucao}
-            marcas={marcas}
-            selecionada={funcao}
-            onClickFuncao={setFuncao}
-            className="w-full max-w-[300px] justify-self-center"
-          />
-          <p className="text-center text-xs text-muted-foreground">
-            Clique em um jogador do campinho. Contorno dourado = já tem instrução.
-          </p>
+          <Label>O que incluir</Label>
+          <Select value={escolha} onValueChange={setEscolha}>
+            <SelectTrigger aria-label="O que incluir no PDF">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="tudo">Tudo: geral + uma página por posição</SelectItem>
+              <SelectItem value="geral">Só o geral (para o grupo todo)</SelectItem>
+              {lista.map((l) => (
+                <SelectItem key={l} value={l}>
+                  Só: {nomeDoLugar(tatica.plano.formacao, l)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-
-        <div className="space-y-3">
-          {funcao ? (
-            <>
-              <div className="flex items-center justify-between">
-                <p className="font-semibold">
-                  {FUNCAO_LABELS[funcao]}s — o que fazem em cada momento
-                </p>
-                {instrucoes[funcao] && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setInstrucoes((a) => {
-                        const n = { ...a };
-                        delete n[funcao];
-                        return n;
-                      })
-                    }
-                  >
-                    Limpar
-                  </Button>
-                )}
-              </div>
-              <div className="space-y-3">
-                {catalogo.situacoes.map((s) => (
-                  <div key={s.id} className="space-y-1">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {s.nome}
-                    </p>
-                    <Pilulas
-                      pequeno
-                      rotulo={`${FUNCAO_LABELS[funcao]} — ${s.nome}`}
-                      valor={instrucoes[funcao]?.[s.id] ?? "fica"}
-                      onChange={(v) => mudar(funcao, s.id, v)}
-                      opcoes={(catalogo.comportamentos_por_funcao[funcao] ?? ["fica"]).map(
-                        (id) => ({
-                          id,
-                          nome: nomeComp(id),
-                        }),
-                      )}
-                    />
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Vale para todos os {FUNCAO_LABELS[funcao].toLowerCase()}s do time. O sistema usa
-                isso para preferir quem combina com a tática — sempre que possível. O tempo igual
-                para todos continua mandando.
-              </p>
-            </>
-          ) : (
-            <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-              Escolha uma posição no campinho.
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={salvar} disabled={salvando}>
-          <Save className="mr-1 h-4 w-4" /> {inicial.id ? "Salvar alterações" : "Salvar tática"}
+        <Button onClick={gerar} disabled={gerando}>
+          <FileDown className="mr-1 h-4 w-4" /> {gerando ? "Gerando…" : "Baixar PDF"}
         </Button>
-        <Button variant="outline" onClick={aoCancelar}>
-          Cancelar
-        </Button>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-/** Texto curto com o que a tática manda fazer (para a lista). */
-function ResumoTatica({ instrucoes, catalogo }: { instrucoes: Instrucoes; catalogo: Catalogo }) {
-  const linhas = FUNCOES.flatMap((f) => {
-    const entradas = Object.entries(instrucoes[f] ?? {});
-    if (entradas.length === 0) return [];
-    const nomeSit = (id: string) => catalogo.situacoes.find((s) => s.id === id)?.nome ?? id;
-    return [
-      <li key={f}>
-        <strong>{FUNCAO_LABELS[f]}s:</strong>{" "}
-        {entradas.map(([s, c]) => `${CURTO[c] ?? c} (${nomeSit(s).toLowerCase()})`).join(", ")}
-      </li>,
-    ];
-  });
-  if (linhas.length === 0)
-    return <p className="text-sm text-muted-foreground">Sem instruções: todo mundo na posição.</p>;
-  return <ul className="space-y-0.5 text-sm text-muted-foreground">{linhas}</ul>;
+function lugaresDaFormacao(formacao: string): string[] {
+  return Object.keys(layoutDaFormacao(formacao)).filter((l) => l !== "GOL");
 }
 
 function SecaoTaticas({
-  tatica,
-  setTatica,
   formacao,
+  rascunho,
+  setRascunho,
 }: {
-  tatica: string | null;
-  setTatica: (v: string | null) => void;
   formacao: string;
+  rascunho: RascunhoTatica | null;
+  setRascunho: (r: RascunhoTatica | null) => void;
 }) {
   const qc = useQueryClient();
   const { data: catalogo } = useQuery({ queryKey: ["escalacao-catalogo"], queryFn: fetchCatalogo });
-  const { data: minhas = [] } = useQuery({ queryKey: ["taticas"], queryFn: fetchTaticas });
-  const [editando, setEditando] = useState<null | {
-    id?: string;
-    nome: string;
-    descricao: string;
-    instrucoes: Instrucoes;
-  }>(null);
+  const { data: todas = [] } = useQuery({ queryKey: ["taticas"], queryFn: fetchTaticas });
+  // Ignora táticas de versões antigas (sem quadro tático).
+  const minhas = todas.filter((t) => t.plano?.formacao);
+  const [paraPdf, setParaPdf] = useState<TaticaSalva | null>(null);
 
   const salvar = useMutation({
-    mutationFn: (t: { id?: string; nome: string; descricao: string; instrucoes: Instrucoes }) => {
-      const corpo = { nome: t.nome, descricao: t.descricao || null, instrucoes: t.instrucoes };
+    mutationFn: (t: RascunhoTatica) => {
+      const corpo = { nome: t.nome, descricao: t.descricao || null, plano: t.plano };
       return t.id ? editarTatica(t.id, corpo) : criarTatica(corpo);
     },
-    onSuccess: (salva) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["taticas"] });
-      setTatica(salva.id);
-      setEditando(null);
-      toast.success("Tática salva e escolhida para este jogo.");
+      setRascunho(null);
+      toast.success("Tática salva.");
     },
     onError: (e: Error) => toast.error(e.message),
   });
   const apagar = useMutation({
     mutationFn: (id: string) => apagarTatica(id),
-    onSuccess: (_, id) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["taticas"] });
-      if (tatica === id) setTatica(null);
-      setEditando(null);
       toast.success("Tática apagada.");
     },
     onError: (e: Error) => toast.error(e.message),
@@ -345,118 +170,135 @@ function SecaoTaticas({
 
   if (!catalogo) return <p className="text-sm text-muted-foreground">Carregando…</p>;
 
-  const minha = minhas.find((t) => t.id === tatica);
-  const modelo = catalogo.modelos.find((m) => m.id === tatica);
-  const atual = minha ?? modelo;
-  const instrucoesAtuais: Instrucoes = (minha?.instrucoes ??
-    modelo?.instrucoes ??
-    {}) as Instrucoes;
+  if (rascunho) {
+    return (
+      <QuadroTatico
+        key={rascunho.id ?? "nova"}
+        catalogo={catalogo}
+        inicial={rascunho}
+        aoSalvar={(t) => salvar.mutateAsync(t)}
+        aoCancelar={() => setRascunho(null)}
+      />
+    );
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label className="text-base">Tática deste jogo</Label>
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            value={tatica ?? "nenhuma"}
-            onValueChange={(v) => {
-              setEditando(null);
-              setTatica(v === "nenhuma" ? null : v);
-            }}
-          >
-            <SelectTrigger className="w-full sm:w-72" aria-label="Tática deste jogo">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="nenhuma">Sem tática</SelectItem>
-              {minhas.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>Minhas táticas</SelectLabel>
-                  {minhas.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.nome}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
-              <SelectGroup>
-                <SelectLabel>Modelos prontos</SelectLabel>
-                {catalogo.modelos.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.nome}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="secondary"
-            onClick={() => setEditando({ nome: "", descricao: "", instrucoes: {} })}
-          >
-            <Plus className="mr-1 h-4 w-4" /> Nova tática
-          </Button>
-          {minha && (
-            <>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setEditando({
-                    id: minha.id,
-                    nome: minha.nome,
-                    descricao: minha.descricao ?? "",
-                    instrucoes: minha.instrucoes,
-                  })
-                }
-              >
-                <Pencil className="mr-1 h-4 w-4" /> Editar
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (window.confirm(`Apagar a tática “${minha.nome}”?`)) apagar.mutate(minha.id);
-                }}
-                aria-label="Apagar tática"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </>
-          )}
-          {modelo && (
-            <Button
-              variant="outline"
-              onClick={() =>
-                setEditando({
-                  nome: `${modelo.nome} (minha)`,
-                  descricao: modelo.descricao,
-                  instrucoes: modelo.instrucoes as Instrucoes,
-                })
-              }
-            >
-              <Copy className="mr-1 h-4 w-4" /> Copiar para editar
-            </Button>
-          )}
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-xl">
+          <h3 className="text-base font-semibold">Suas táticas</h3>
+          <p className="text-sm text-muted-foreground">
+            O quadro tático é a orientação do time para o treino e o jogo: onde cada um se posiciona
+            com e sem a bola e o papel de cada um. Ele <strong>não muda a escalação</strong> — e
+            gera um PDF separado, para você mandar só se quiser.
+          </p>
         </div>
-        {!editando && (
-          <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">
-              {atual
-                ? atual.descricao || "Tática sem descrição."
-                : "Sem tática, o sistema só se preocupa em dividir o tempo igual."}
-            </p>
-            {atual && <ResumoTatica instrucoes={instrucoesAtuais} catalogo={catalogo} />}
-          </div>
-        )}
+        <Button
+          onClick={() => setRascunho({ nome: "", descricao: "", plano: planoVazio(formacao) })}
+        >
+          <Plus className="mr-1 h-4 w-4" /> Nova tática
+        </Button>
       </div>
 
-      {editando && (
-        <ConstrutorTatica
-          key={editando.id ?? "nova"}
-          formacao={formacao}
-          catalogo={catalogo}
-          inicial={editando}
-          aoSalvar={(t) => salvar.mutateAsync(t)}
-          aoCancelar={() => setEditando(null)}
-        />
+      {minhas.length === 0 ? (
+        <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+          Você ainda não criou nenhuma tática. Clique em “Nova tática” ou comece de um modelo
+          abaixo.
+        </p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {minhas.map((t) => (
+            <div key={t.id} className="flex gap-3 rounded-xl border bg-card p-3">
+              <CampoFormacao
+                formacao={t.plano.formacao}
+                mini
+                className="w-16 shrink-0 self-start"
+              />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="truncate font-display text-xl leading-tight tracking-wide">
+                  {t.nome}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t.plano.formacao}
+                  {t.descricao ? ` · ${t.descricao}` : ""}
+                </p>
+                <p className="text-xs text-muted-foreground">{frasesDoTime(t.plano.time)[3]}</p>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setRascunho({
+                        id: t.id,
+                        nome: t.nome,
+                        descricao: t.descricao ?? "",
+                        plano: t.plano,
+                      })
+                    }
+                  >
+                    <Pencil className="mr-1 h-3.5 w-3.5" /> Editar
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setParaPdf(t)}>
+                    <FileDown className="mr-1 h-3.5 w-3.5" /> PDF
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Duplicar ${t.nome}`}
+                    onClick={() =>
+                      setRascunho({
+                        nome: `${t.nome} (cópia)`,
+                        descricao: t.descricao ?? "",
+                        plano: t.plano,
+                      })
+                    }
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Apagar ${t.nome}`}
+                    onClick={() => {
+                      if (window.confirm(`Apagar a tática “${t.nome}”?`)) apagar.mutate(t.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Modelos prontos
+        </h3>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {catalogo.modelos.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() =>
+                setRascunho({
+                  nome: m.nome,
+                  descricao: m.descricao,
+                  plano: planoDoModelo(m, formacao),
+                })
+              }
+              className="rounded-xl border bg-card p-3 text-left transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <span className="block font-semibold">{m.nome}</span>
+              <span className="block text-xs text-muted-foreground">{m.descricao}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {paraPdf && (
+        <DialogoPdf tatica={paraPdf} catalogo={catalogo} aoFechar={() => setParaPdf(null)} />
       )}
     </div>
   );
@@ -466,25 +308,23 @@ export function AbaTatica({
   partidaId,
   formacao,
   setFormacao,
-  tatica,
-  setTatica,
   composicao,
   setComposicao,
 }: PropsAba) {
+  const { data: catalogo } = useQuery({ queryKey: ["escalacao-catalogo"], queryFn: fetchCatalogo });
+  const [aba, setAba] = useState("taticas");
+  const [rascunho, setRascunho] = useState<RascunhoTatica | null>(null);
   const [verSugestao, setVerSugestao] = useState(false);
   const sugestao = useQuery({
     queryKey: ["contra-estrategia", partidaId],
     queryFn: () => fetchContraEstrategia(partidaId),
     enabled: verSugestao,
   });
-  const [seletorAberto, setSeletorAberto] = useState(false);
-  const [setor, setSetor] = useState<Funcao | null>(null);
-  const comRegra = new Set(composicao.map((r) => r.funcao as string));
 
   return (
     <Card>
       <CardContent className="pt-6">
-        <Tabs defaultValue="taticas" className="space-y-5">
+        <Tabs value={aba} onValueChange={setAba} className="space-y-5">
           <TabsList>
             <TabsTrigger value="taticas">Táticas</TabsTrigger>
             <TabsTrigger value="montagem">Montagem do time</TabsTrigger>
@@ -492,59 +332,16 @@ export function AbaTatica({
           </TabsList>
 
           <TabsContent value="taticas" className="space-y-4">
-            <SecaoTaticas tatica={tatica} setTatica={setTatica} formacao={formacao} />
+            <SecaoTaticas formacao={formacao} rascunho={rascunho} setRascunho={setRascunho} />
           </TabsContent>
 
-          <TabsContent value="montagem" className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <Label className="text-base">Montagem do time</Label>
-                <p className="text-sm text-muted-foreground">
-                  Clique em uma bolinha para definir como aquele setor deve ser formado (ex.: um
-                  volante rápido e um lento).
-                </p>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => setSeletorAberto(true)}>
-                Formação: {formacao}
-              </Button>
-            </div>
-            <SeletorFormacao
-              aberto={seletorAberto}
-              onAbertoChange={setSeletorAberto}
-              valor={formacao}
-              onEscolher={setFormacao}
+          <TabsContent value="montagem">
+            <MontagemDoTime
+              formacao={formacao}
+              setFormacao={setFormacao}
+              composicao={composicao}
+              setComposicao={setComposicao}
             />
-
-            <div className="grid gap-6 md:grid-cols-[minmax(0,320px)_1fr]">
-              <CampoFormacao
-                formacao={formacao}
-                comRegra={comRegra}
-                selecionada={setor}
-                onClickFuncao={setSetor}
-                className="w-full max-w-xs justify-self-center"
-              />
-              <div className="space-y-4">
-                {setor ? (
-                  <EditorRegra
-                    setor={setor}
-                    regras={composicao}
-                    setRegras={setComposicao}
-                    aoFechar={() => setSetor(null)}
-                  />
-                ) : (
-                  <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                    Escolha um setor no campinho para editar as regras dele. Bolinhas com contorno
-                    dourado já têm regra.
-                  </p>
-                )}
-                <ListaRegras regras={composicao} setRegras={setComposicao} />
-                <p className="text-xs text-muted-foreground">
-                  As regras são preferências: o sistema tenta respeitar, mas o tempo igual para
-                  todos continua mandando. Dependem dos atributos e características preenchidos na
-                  aba Jogadores.
-                </p>
-              </div>
-            </div>
           </TabsContent>
 
           <TabsContent value="adversario" className="space-y-3">
@@ -569,7 +366,7 @@ export function AbaTatica({
             {sugestao.data?.sugestao && (
               <div className="space-y-2 text-sm">
                 <p>
-                  Contra <strong>{sugestao.data.adversario}</strong>: tática{" "}
+                  Contra <strong>{sugestao.data.adversario}</strong>: modelo{" "}
                   <strong>{sugestao.data.sugestao.tatica_nome}</strong>.
                 </p>
                 <ul className="list-disc pl-5 text-muted-foreground">
@@ -588,11 +385,19 @@ export function AbaTatica({
                 <Button
                   size="sm"
                   onClick={() => {
-                    setTatica(sugestao.data!.sugestao!.tatica);
-                    toast.success("Modelo aplicado. Veja na aba Táticas e depois clique em Gerar.");
+                    const m = catalogo?.modelos.find(
+                      (x) => x.id === sugestao.data!.sugestao!.tatica,
+                    );
+                    if (!m) return;
+                    setRascunho({
+                      nome: `${m.nome} contra ${sugestao.data!.adversario}`,
+                      descricao: m.descricao,
+                      plano: planoDoModelo(m, formacao),
+                    });
+                    setAba("taticas");
                   }}
                 >
-                  Usar o modelo “{sugestao.data.sugestao.tatica_nome}”
+                  Montar tática a partir deste modelo
                 </Button>
               </div>
             )}
@@ -605,136 +410,6 @@ export function AbaTatica({
         </Tabs>
       </CardContent>
     </Card>
-  );
-}
-
-function useNomes() {
-  const { data: c } = useQuery({ queryKey: ["escalacao-catalogo"], queryFn: fetchCatalogo });
-  return {
-    c,
-    chave: (r: RegraComposicao) =>
-      (r.tipo === "atributo" ? c?.atributos : c?.caracteristicas)?.find((a) => a.id === r.chave)
-        ?.nome ?? r.chave,
-    modo: (r: RegraComposicao) =>
-      (r.tipo === "atributo" ? c?.modos_atributo : c?.modos_caracteristica)?.find(
-        (m) => m.id === r.modo,
-      )?.nome ?? r.modo,
-  };
-}
-
-function ListaRegras({
-  regras,
-  setRegras,
-}: {
-  regras: RegraComposicao[];
-  setRegras: (v: RegraComposicao[]) => void;
-}) {
-  const n = useNomes();
-  if (regras.length === 0)
-    return <p className="text-sm text-muted-foreground">Nenhuma regra definida.</p>;
-  return (
-    <div className="flex flex-wrap gap-2">
-      {regras.map((r, i) => (
-        <Badge key={i} variant="secondary" className="gap-1 py-1">
-          {FUNCAO_LABELS[r.funcao]}s · {n.chave(r)}: {n.modo(r)}
-          <button
-            type="button"
-            aria-label="Remover regra"
-            onClick={() => setRegras(regras.filter((_, k) => k !== i))}
-            className="rounded-full hover:text-destructive"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </Badge>
-      ))}
-    </div>
-  );
-}
-
-/** Editor da regra do setor clicado no campinho. */
-function EditorRegra({
-  setor,
-  regras,
-  setRegras,
-  aoFechar,
-}: {
-  setor: Funcao;
-  regras: RegraComposicao[];
-  setRegras: (v: RegraComposicao[]) => void;
-  aoFechar: () => void;
-}) {
-  const n = useNomes();
-  const [tipo, setTipo] = useState<"atributo" | "carac">("atributo");
-  const [chave, setChave] = useState("pace");
-  const [modo, setModo] = useState("misto");
-
-  const mudarTipo = (t: "atributo" | "carac") => {
-    setTipo(t);
-    setChave(t === "atributo" ? "pace" : (n.c?.caracteristicas[0]?.id ?? "canhoto"));
-    setModo(t === "atributo" ? "misto" : "pelo_menos_um");
-  };
-  const adicionar = () => {
-    const nova: RegraComposicao = { funcao: setor, tipo, chave, modo };
-    if (regras.some((r) => JSON.stringify(r) === JSON.stringify(nova))) return;
-    setRegras([...regras, nova]);
-  };
-
-  return (
-    <div className="space-y-3 rounded-md border bg-muted/30 p-3">
-      <div className="flex items-center justify-between">
-        <p className="font-semibold">{FUNCAO_LABELS[setor]}s</p>
-        <Button variant="ghost" size="icon" onClick={aoFechar} aria-label="Fechar editor">
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-1">
-          <Label>Baseada em</Label>
-          <Select value={tipo} onValueChange={(v) => mudarTipo(v as "atributo" | "carac")}>
-            <SelectTrigger aria-label="Tipo de regra">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="atributo">Um atributo</SelectItem>
-              <SelectItem value="carac">Uma característica</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label>{tipo === "atributo" ? "Atributo" : "Característica"}</Label>
-          <Select value={chave} onValueChange={setChave}>
-            <SelectTrigger aria-label="Atributo ou característica">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(tipo === "atributo" ? n.c?.atributos : n.c?.caracteristicas)?.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.nome}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label>Como</Label>
-          <Select value={modo} onValueChange={setModo}>
-            <SelectTrigger aria-label="Modo da regra">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(tipo === "atributo" ? n.c?.modos_atributo : n.c?.modos_caracteristica)?.map((m) => (
-                <SelectItem key={m.id} value={m.id}>
-                  {m.nome}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <Button size="sm" onClick={adicionar}>
-        <Plus className="mr-1 h-4 w-4" /> Adicionar regra
-      </Button>
-    </div>
   );
 }
 

@@ -397,11 +397,17 @@ function Sigla({ posicoes }: { posicoes: string[] }) {
   );
 }
 
-const TITULO_OPCAO: Record<number, string> = {
-  0: "Todo mundo joga o mesmo tempo",
-  1: "1 jogador joga o jogo todo",
-  2: "2 jogadores jogam o jogo todo",
-};
+function tituloDaOpcao(o: OpcaoDeTrocas): string {
+  if (o.tipo === "formacao") {
+    const m = o.mudancas_formacao[0];
+    return m ? `Muda de formação aos ${m.minuto}'` : "Muda de formação";
+  }
+  if (o.tipo === "fixos")
+    return o.quantos_fixos === 1
+      ? "1 jogador joga o jogo todo"
+      : `${o.quantos_fixos} jogadores jogam o jogo todo`;
+  return o.aceitavel ? "Todo mundo joga o mesmo tempo" : "Tentativa de tempo igual";
+}
 
 const OpcoesDeTempo = memo(function OpcoesDeTempo({
   opcoes,
@@ -427,12 +433,12 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
           escalação abaixo muda junto.
         </p>
       </div>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {opcoes.map((o, i) => {
           const ativa = i === selecionada;
           return (
             <div
-              key={o.quantos_fixos}
+              key={`${o.tipo}-${o.quantos_fixos}-${i}`}
               className={cn(
                 "rounded-xl border-2 p-4 transition-colors",
                 ativa ? "border-primary bg-primary/5" : "bg-card hover:border-primary/50",
@@ -445,16 +451,27 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
                 className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <span className="block font-display text-xl leading-tight tracking-wide">
-                  {TITULO_OPCAO[o.quantos_fixos] ?? `${o.quantos_fixos} jogadores o jogo todo`}
+                  {tituloDaOpcao(o)}
                 </span>
                 <span className="mt-1 block text-sm">
                   <strong>{o.momentos}</strong> momento{o.momentos === 1 ? "" : "s"} de troca ·{" "}
                   <strong>{o.trocas}</strong> substituições
                 </span>
-                <span className="block text-xs text-muted-foreground">
+                {o.tipo === "formacao" && o.mudancas_formacao[0] && (
+                  <span className="block text-xs">
+                    {o.mudancas_formacao[0].formacao}: ajuda a igualar o tempo
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    "block text-xs",
+                    o.aceitavel ? "text-muted-foreground" : "font-semibold text-destructive",
+                  )}
+                >
                   {o.diferenca_minutos === 0
                     ? "Todos jogam exatamente o mesmo tempo"
                     : `Diferença de tempo: até ${o.diferenca_minutos} min`}
+                  {!o.aceitavel && " — grande demais, não recomendado"}
                 </span>
               </button>
               {o.fixos.length > 0 && (
@@ -524,7 +541,6 @@ function FormularioAdmin({
   const [goleiroId, setGoleiroId] = useState(cfg?.goleiro_id ?? "");
   const [duracao, setDuracao] = useState(String(cfg?.duracao ?? 90));
   const [automatico, setAutomatico] = useState(cfg?.automatico ?? true);
-  const [tatica, setTatica] = useState<string | null>(cfg?.tatica ?? null);
   const [formacao, setFormacao] = useState(cfg?.formacao ?? "4-4-2");
   const [mudancasForm, setMudancasForm] = useState<MudancaFormacaoForm[]>(
     (cfg?.mudancas_formacao ?? []).map((m) => ({ minuto: String(m.minuto), formacao: m.formacao })),
@@ -600,7 +616,11 @@ function FormularioAdmin({
   const montarPayload = (
     sementeUsada: number,
     restr: Restricao[],
-    opcoes?: { comparar?: boolean; fixos?: string[] },
+    opcoes?: {
+      comparar?: boolean;
+      fixos?: string[];
+      mudancas?: { minuto: number; formacao: string }[];
+    },
   ): GerarPayload => {
     const regrasBase = limparRegras(regras, new Set(elenco.map((j) => j.id)));
     for (const id of opcoes?.fixos ?? []) regrasBase[id] = { ...regrasBase[id], grupo_fixo: true };
@@ -610,13 +630,15 @@ function FormularioAdmin({
       remover: [...remover],
       duracao: Number(duracao) || 90,
       automatico,
-      tatica,
+      tatica: null,
       estrategia: "uniforme",
       forca_tatica: 100,
       formacao,
-      mudancas_formacao: mudancasForm
-        .filter((m) => Number(m.minuto) > 0)
-        .map((m) => ({ minuto: Number(m.minuto), formacao: m.formacao })),
+      mudancas_formacao:
+        opcoes?.mudancas ??
+        mudancasForm
+          .filter((m) => Number(m.minuto) > 0)
+          .map((m) => ({ minuto: Number(m.minuto), formacao: m.formacao })),
       composicao,
       // O computador decide as trocas sozinho: tempo quase igual (até 1 min de diferença).
       intervalo_minimo: 3,
@@ -638,8 +660,11 @@ function FormularioAdmin({
     onSuccess: (resposta) => {
       setPrevia(resposta);
       setOpcaoSel((atual) => {
-        const antiga = previa?.opcoes?.[atual]?.quantos_fixos;
-        const achada = resposta.opcoes?.findIndex((o) => o.quantos_fixos === antiga) ?? -1;
+        const antiga = previa?.opcoes?.[atual];
+        const achada =
+          resposta.opcoes?.findIndex(
+            (o) => o.tipo === antiga?.tipo && o.quantos_fixos === antiga?.quantos_fixos,
+          ) ?? -1;
         return achada >= 0 ? achada : 0;
       });
     },
@@ -693,7 +718,10 @@ function FormularioAdmin({
       salvarEscalacao(
         partida.id,
         {
-          config: montarPayload(semente, restricoes, { fixos: opcaoAtual?.fixos }),
+          config: montarPayload(semente, restricoes, {
+            fixos: opcaoAtual?.fixos,
+            mudancas: opcaoAtual?.tipo === "formacao" ? opcaoAtual.mudancas_formacao : undefined,
+          }),
           resultado: resultadoAtual!,
         },
         !!salva,
@@ -755,8 +783,6 @@ function FormularioAdmin({
           partidaId={partida.id}
           formacao={formacao}
           setFormacao={setFormacao}
-          tatica={tatica}
-          setTatica={setTatica}
           composicao={composicao}
           setComposicao={setComposicao}
         />
@@ -824,6 +850,27 @@ function FormularioAdmin({
                       {j.nome} <Sigla posicoes={j.posicoes} /> <X className="h-3 w-3" />
                     </button>
                   ))}
+                {convocadosApi.outros_ativos.filter((j) => !incluir.has(j.id)).length > 0 && (
+                  <Select value="" onValueChange={(id) => alternarExtra(id, true)}>
+                    <SelectTrigger
+                      aria-label="Adicionar outro jogador"
+                      className="h-8 w-auto gap-1 rounded-full border-dashed px-3 text-sm"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <SelectValue placeholder="Adicionar outro" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {convocadosApi.outros_ativos
+                        .filter((j) => !incluir.has(j.id))
+                        .map((j) => (
+                          <SelectItem key={j.id} value={j.id}>
+                            {j.nome}
+                            <Sigla posicoes={j.posicoes} />
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               {convocadosApi.convocados.length === 0 && (
                 <p className="text-sm text-muted-foreground">
@@ -834,7 +881,7 @@ function FormularioAdmin({
                 Clique em um nome para tirar ou devolver o jogador da lista.
               </p>
 
-              <div className="grid gap-3 sm:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label>Goleiro (joga o jogo todo)</Label>
                   <Select value={goleiroId} onValueChange={setGoleiroId}>
@@ -848,23 +895,6 @@ function FormularioAdmin({
                           {j.posicoes.includes("goleiro") ? " 🧤" : ""}
                         </SelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label>Adicionar outro jogador</Label>
-                  <Select value="" onValueChange={(id) => alternarExtra(id, true)}>
-                    <SelectTrigger aria-label="Adicionar outro jogador">
-                      <SelectValue placeholder="Escolher do elenco" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {convocadosApi.outros_ativos
-                        .filter((j) => !incluir.has(j.id))
-                        .map((j) => (
-                          <SelectItem key={j.id} value={j.id}>
-                            {j.nome}
-                          </SelectItem>
-                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -891,12 +921,12 @@ function FormularioAdmin({
                 setFormacao={setFormacao}
                 mudancas={mudancasForm}
                 setMudancas={setMudancasForm}
-                tatica={tatica}
+                tatica={null}
                 duracao={Number(duracao) || 90}
               />
               <p className="text-xs text-muted-foreground">
-                A tática e as regras de montagem ficam na aba “Tática e estratégia”.
-                {tatica ? "" : " Hoje nenhuma tática está escolhida."}
+                As regras de montagem do time ficam na aba “Tática e estratégia”. A tática em si é
+                só orientação (PDF separado) e não muda a escalação.
               </p>
             </section>
 

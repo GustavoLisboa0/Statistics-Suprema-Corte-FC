@@ -265,54 +265,40 @@ def test_limites_de_troca_chegam_na_api(api):
     assert len(r2["plano"]["fixos"]) == 1
 
 
-def test_taticas_montadas_crud_e_uso_na_escalacao(api):
+def test_quadro_tatico_crud_e_validacao(api):
     c, pid = api["c"], api["partida"]
-    corpo = {
-        "nome": "Laterais voando",
-        "descricao": "Laterais sobem e volantes protegem.",
-        "instrucoes": {
-            "LAT": {"ataque": "sobe", "contra_ataque": "sobe"},
-            "VOL": {"defesa": "recua", "ataque": "fica"},
+    plano = {
+        "formacao": "4-4-2",
+        "time": {"defesa": 4, "pressao": 5, "largura": 3, "saida": "curta"},
+        "jogadores": {
+            "LAT1": {"papel": "apoiador", "nota": "Sobe pela linha", "com_bola": {"x": 40, "y": 200}},
+            "VOL1": {"papel": "marcador", "sem_bola": {"x": 150, "y": 330}},
         },
+        "notas": "Pressionar a saida de bola.",
     }
+    corpo = {"nome": "Pressao alta", "descricao": "Linhas altas", "plano": plano}
     # Só admin mexe nas táticas.
     assert c.post("/taticas", json=corpo, headers=api["comum"]).status_code == 403
     assert c.get("/taticas", headers=api["comum"]).status_code == 403
-    # Instrução inválida: lateral não "infiltra".
-    ruim = {**corpo, "instrucoes": {"LAT": {"ataque": "infiltra"}}}
+    # Papel que não existe para a posição, lugar inexistente e ajuste fora da faixa.
+    ruim = {**corpo, "plano": {**plano, "jogadores": {"LAT1": {"papel": "referencia"}}}}
+    assert c.post("/taticas", json=ruim, headers=api["admin"]).status_code == 422
+    ruim = {**corpo, "plano": {**plano, "jogadores": {"ATA9": {}}}}
+    assert c.post("/taticas", json=ruim, headers=api["admin"]).status_code == 422
+    ruim = {**corpo, "plano": {**plano, "time": {"defesa": 9}}}
     assert c.post("/taticas", json=ruim, headers=api["admin"]).status_code == 422
 
     criada = c.post("/taticas", json=corpo, headers=api["admin"])
     assert criada.status_code == 201, criada.text
     tid = criada.json()["id"]
-    assert "ataque" in criada.json()["instrucoes"]["LAT"] and "VOL" in criada.json()["instrucoes"]
-    assert "ataque" not in criada.json()["instrucoes"]["VOL"]  # "fica" é o padrão: não guarda
+    assert criada.json()["plano"]["jogadores"]["LAT1"]["com_bola"] == {"x": 40, "y": 200}
 
-    editada = c.put(f"/taticas/{tid}", json={**corpo, "nome": "Laterais ao ataque"}, headers=api["admin"])
-    assert editada.status_code == 200 and editada.json()["nome"] == "Laterais ao ataque"
-    assert [t["nome"] for t in c.get("/taticas", headers=api["admin"]).json()] == ["Laterais ao ataque"]
+    editada = c.put(f"/taticas/{tid}", json={**corpo, "nome": "Pressao total"}, headers=api["admin"])
+    assert editada.status_code == 200 and editada.json()["nome"] == "Pressao total"
+    assert [t["nome"] for t in c.get("/taticas", headers=api["admin"]).json()] == ["Pressao total"]
 
-    # Usa na escalação: vale o tempo igual e o nome vai para o plano de jogo.
-    gerado = c.post(
-        f"/partidas/{pid}/escalacao/gerar",
-        json={"goleiro_id": api["goleiro"], "tatica": tid},
-        headers=api["admin"],
-    )
-    assert gerado.status_code == 200, gerado.text
-    plano = gerado.json()["resultado"]["plano_de_jogo"]
-    assert plano["tatica"] == "Laterais ao ataque" and plano["estrategia"] is None
-    assert gerado.json().get("analise")
-
-    # O catálogo traz o necessário para montar a tela.
     catalogo = c.get("/escalacao/catalogo", headers=api["admin"]).json()
-    assert catalogo["situacoes"] and catalogo["comportamentos_por_funcao"]["LAT"]
-    assert any(m["id"] == "ofensiva" and m["instrucoes"] for m in catalogo["modelos"])
+    assert catalogo["papeis"]["LAT"] and any(m["id"] == "pressao" and m["papeis"] for m in catalogo["modelos"])
 
     assert c.delete(f"/taticas/{tid}", headers=api["admin"]).status_code == 204
     assert c.get("/taticas", headers=api["admin"]).json() == []
-    sumiu = c.post(
-        f"/partidas/{pid}/escalacao/gerar",
-        json={"goleiro_id": api["goleiro"], "tatica": tid},
-        headers=api["admin"],
-    )
-    assert sumiu.status_code == 422

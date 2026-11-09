@@ -426,3 +426,11 @@ def test_tatica_montada_muda_a_qualidade_da_funcao():
     assert qualidade(rapido, "LAT", cfg) > qualidade(lento, "LAT", cfg)
     # Sem instrução para a posição, nada muda.
     assert qualidade(rapido, "ZAG", cfg) == qualidade(rapido, "ZAG", "equilibrada")
+
+
+def test_modelos_de_quadro_tatico_sao_validos():
+    from tatica import MODELOS_PLANO, PAPEIS, validar_plano
+
+    for modelo in MODELOS_PLANO.values():
+        assert all(p in {x["id"] for x in PAPEIS[f]} for f, p in modelo["papeis"].items())
+        validar_plano({"formacao": "4-4-2", "time": modelo["time"]})

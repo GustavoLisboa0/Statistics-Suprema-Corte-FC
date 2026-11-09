@@ -371,6 +371,7 @@ def _texto_regra(r: RegraComposicao) -> str:
     if r.tipo == "atributo":
         nome = tt.ATRIBUTO_NOMES[r.chave].lower()
         frase = {
+            "pelo_menos_um": f"pelo menos um com bastante {nome}",
             "misto": f"um com mais {nome} e outro com menos",
             "altos": f"todos com muita {nome}",
             "baixos": f"todos com {nome} mais baixa",

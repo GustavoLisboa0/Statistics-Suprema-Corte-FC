@@ -39,11 +39,11 @@ class AdversarioPayload(BaseModel):
 
 
 class TaticaPayload(BaseModel):
-    """Tática montada pelo administrador: instruções por posição e situação."""
+    """Quadro tático montado pelo administrador (orientação do time; não mexe na escalação)."""
 
     nome: str = Field(min_length=1, max_length=60)
     descricao: Optional[str] = Field(default=None, max_length=300)
-    instrucoes: dict[str, dict[str, str]] = {}
+    plano: dict = {}
 
 
 class NotaPayload(BaseModel):
@@ -77,21 +77,10 @@ def catalogo(usuario: dict = Depends(exige_editor)):
             for k, v in tatica.TATICAS.items()
         ],
         "estrategias": [{"id": k, **v} for k, v in tatica.ESTRATEGIAS.items()],
-        # Montador de táticas (estilo FIFA): situações, comportamentos e modelos prontos.
-        "situacoes": [{"id": k, "nome": v} for k, v in tatica.SITUACOES.items()],
-        "comportamentos": [
-            {"id": k, "nome": v["nome"]} for k, v in tatica.COMPORTAMENTOS.items()
-        ],
-        "comportamentos_por_funcao": tatica.COMPORTAMENTOS_POR_FUNCAO,
-        "modelos": [
-            {
-                "id": k,
-                "nome": v["nome"],
-                "descricao": v["descricao"],
-                "instrucoes": tatica.MODELOS_INSTRUCOES.get(k, {}),
-            }
-            for k, v in tatica.TATICAS.items()
-        ],
+        # Quadro tático (estilo FIFA): papéis por posição e modelos prontos.
+        "papeis": tatica.PAPEIS,
+        "saidas_de_bola": [{"id": k, "nome": v} for k, v in tatica.SAIDAS_DE_BOLA.items()],
+        "modelos": [{"id": k, **v} for k, v in tatica.MODELOS_PLANO.items()],
         "estilos": [{"id": k, "nome": v} for k, v in tatica.ESTILOS_ADVERSARIO.items()],
     }
 
@@ -215,9 +204,9 @@ def apagar_adversario(adversario_id: UUID, usuario: dict = Depends(exige_editor)
 # ---------------------------------------------------------------------------
 def resolver_tatica(tatica_id: Optional[str]) -> Optional[dict]:
     """
-    Aceita o id de um modelo pronto ("ofensiva"...) ou de uma tática salva.
-    Devolve {id, nome, descricao, config, estilo} ou None se não existir.
-    `config` é o que `tatica.qualidade` entende (id do modelo ou dict montado).
+    Aceita o id de um modelo antigo ("ofensiva"...) ou de uma tática salva. Devolve
+    {id, nome, descricao, config, estilo} ou None se não existir. O quadro tático
+    salvo é só orientação: não muda a nota dos jogadores (config neutra).
     """
     if not tatica_id:
         return None
@@ -234,25 +223,24 @@ def resolver_tatica(tatica_id: Optional[str]) -> Optional[dict]:
     if not achadas:
         return None
     t = achadas[0]
-    instrucoes = tatica.validar_instrucoes(t.get("instrucoes") or {})
     return {
         "id": t["id"],
         "nome": t["nome"],
         "descricao": t.get("descricao") or "",
-        "config": tatica.config_da_tatica(instrucoes),
-        "estilo": tatica.estilo_da_tatica(instrucoes),
+        "config": tatica.config_da_tatica({}),
+        "estilo": "equilibrada",
     }
 
 
 def _dados_da_tatica(corpo: TaticaPayload) -> dict:
     try:
-        instrucoes = tatica.validar_instrucoes(corpo.instrucoes)
+        plano = tatica.validar_plano(corpo.plano)
     except ValueError as erro:
         raise HTTPException(status_code=422, detail=str(erro))
     return {
         "nome": corpo.nome.strip(),
         "descricao": (corpo.descricao or "").strip() or None,
-        "instrucoes": instrucoes,
+        "plano": plano,
     }
 
 

@@ -115,26 +115,32 @@ escalação salva.
 - **Formações:** 4-4-2, 4-3-3, 4-5-1, 4-2-3-1, 3-5-2, 5-3-2, 3-4-3 e 5-4-1, com
   mudança durante o jogo (ex.: 4-4-2 e aos 60' vai para o 4-3-3). O botão
   "Sugerir formação" propõe uma conforme a tática.
-- **Trocas:** o computador decide sozinho, com todo mundo jogando o mesmo tempo
-  (no máximo 1 minuto de diferença). Ao gerar, ele compara opções — "todo mundo
-  joga o mesmo tempo" (mais trocas) e "1 jogador joga o jogo todo" (menos
-  trocas) — e você escolhe, podendo trocar quem é o jogador que fica o jogo
-  todo. A tática e as regras de composição nunca quebram o tempo igual.
+- **Trocas:** a diferença de minutos entre os jogadores é de no máximo 5 (o ideal
+  é 3 ou menos). O computador sempre mostra **várias opções** e você decide:
+  "todo mundo igual" (só aparece se a diferença for pequena), "mudar de formação
+  no meio do jogo" e "1, 2 ou mais jogadores jogam o jogo todo" (você pode trocar
+  quem fica). A formação escolhida é só a preferida: se não der para igualar o
+  tempo com ela, o sistema sugere mudar de formação em uma das trocas.
 - **Formação** escolhida num seletor visual (campinhos com bolinhas), com
   variações do mesmo número (ex.: 4-4-2 e 4-4-2 losango). Mudança de formação
   no jogo acontece junto com uma troca de jogadores, não cria momento extra.
 - **Aba "Tática e estratégia"** (só administrador), com três partes:
-  - **Táticas**: você cria táticas com nome (ex.: "Laterais voando"). Clique num
-    jogador do campinho e escolha o que ele faz em cada situação (com a bola,
-    sem a bola, atacando, defendendo, contra-ataque): sobe, recua, pressiona,
-    abre, fecha, infiltra... Há modelos prontos para copiar e editar. O sistema
-    aplica a tática sempre que possível ao escolher quem joga onde; o tempo igual
-    para todos continua mandando. Não existe mais "estratégia" nem peso da tática.
-  - **Montagem do time**: regras de composição por setor (ex.: volantes, um
-    rápido e um lento).
-  - **Adversário**: perfil e sugestão de modelo de tática.
+  - **Táticas** (quadro tático, estilo FIFA): é a *orientação do time* para treino
+    e jogo e **não muda a escalação**. Escolha um modelo pronto ou crie do zero:
+    arraste os jogadores no campinho "com a bola" e "sem a bola", escolha o papel
+    de cada um (ex.: lateral ala, volante primeiro passe), escreva uma orientação
+    por lugar e ajuste o time todo (altura da defesa, pressão, largura, saída de
+    bola). Dá para salvar, editar, duplicar e apagar táticas.
+  - **PDF de táticas**, separado do PDF da escalação, para você escolher se manda:
+    o geral (para todo o grupo) e/ou uma página por posição. Sem notas nem
+    atributos.
+  - **Montagem do time**: regras que **mudam a escalação**, montadas clicando no
+    setor do campinho (ex.: "atacantes: pelo menos um rápido", "laterais: pelo
+    menos um canhoto", "um rápido e um mais lento"). O tempo igual continua mandando.
+  - **Adversário**: perfil e sugestão de modelo de tática (dá para abrir o modelo
+    sugerido direto no quadro tático).
 - **Quem joga** mostra a posição principal de cada jogador. Há também a formação
-  4-2-2-2 (dois volantes e dois meias por dentro).
+  4-4-2 com dois volantes e dois meias por dentro (o 4-4-2 de verdade) e o 4-4-2 meias abertos.
 - **Como dividir o tempo**: só aparecem as opções que funcionam, e a lista de quem
   pode jogar o jogo todo só traz jogadores para os quais isso funciona.
 - No Supabase de verdade, rode também `database/migration_012_taticas.sql`.

@@ -382,6 +382,7 @@ BONUS_CARACTERISTICA: dict[str, dict[str, float]] = {
 }
 
 MODOS_ATRIBUTO = {
+    "pelo_menos_um": "Pelo menos um bom no atributo",
     "misto": "Um alto e um baixo",
     "altos": "Todos altos",
     "baixos": "Todos baixos",
@@ -583,3 +584,136 @@ MODELOS_INSTRUCOES: dict[str, dict[str, dict[str, str]]] = {
         "ATA": {"sem_bola": "pressiona"},
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Quadro tático (orientação do time) — NÃO interfere na escalação
+# ---------------------------------------------------------------------------
+# O administrador desenha, para cada lugar da formação, o que o jogador faz com
+# a bola e sem a bola (posição no campo, papel e uma orientação em texto), mais
+# ajustes do time todo. Serve para treino e para gerar o PDF de táticas.
+FASES = ("com_bola", "sem_bola")
+
+PAPEIS: dict[str, list[dict[str, str]]] = {
+    "ZAG": [
+        {"id": "seguranca", "nome": "Zagueiro de segurança", "descricao": "Fica atrás da linha da bola, protege a área e não sobe."},
+        {"id": "sai_jogando", "nome": "Zagueiro que sai jogando", "descricao": "Avança com a bola e começa a armar o jogo."},
+        {"id": "marcador", "nome": "Zagueiro marcador", "descricao": "Antecipa e cola no atacante, sem deixar virar."},
+    ],
+    "LAT": [
+        {"id": "apoiador", "nome": "Lateral apoiador", "descricao": "Sobe para apoiar o ataque e volta para recompor."},
+        {"id": "seguranca", "nome": "Lateral de segurança", "descricao": "Fica na linha da defesa, só cobre."},
+        {"id": "ala", "nome": "Ala", "descricao": "Vive na linha de fundo, ataca e defende pelo lado todo."},
+        {"id": "por_dentro", "nome": "Lateral por dentro", "descricao": "Fecha no meio na saída de bola, ajuda a criar."},
+    ],
+    "VOL": [
+        {"id": "marcador", "nome": "Volante marcador", "descricao": "Protege a defesa e desarma antes da área."},
+        {"id": "primeiro_passe", "nome": "Volante de primeiro passe", "descricao": "Recebe da defesa e distribui o jogo."},
+        {"id": "box_to_box", "nome": "Volante que vai e volta", "descricao": "Ajuda nos dois lados, chega ao ataque e recompõe."},
+    ],
+    "MEI": [
+        {"id": "armador", "nome": "Meia armador", "descricao": "Cria as jogadas e acha o passe decisivo."},
+        {"id": "infiltrado", "nome": "Meia que chega à área", "descricao": "Aparece na área para finalizar."},
+        {"id": "aberto", "nome": "Meia aberto", "descricao": "Abre pelo lado para dar amplitude."},
+        {"id": "pressao", "nome": "Meia de pressão", "descricao": "Pressiona a saída de bola e recupera rápido."},
+    ],
+    "ATA": [
+        {"id": "referencia", "nome": "Atacante de referência", "descricao": "Fixa na área, segura a bola e finaliza."},
+        {"id": "movel", "nome": "Atacante móvel", "descricao": "Sai da área, abre espaço para os outros chegarem."},
+        {"id": "pressao", "nome": "Atacante de pressão", "descricao": "Pressiona os zagueiros e o goleiro adversário."},
+        {"id": "ponta", "nome": "Ponta", "descricao": "Abre pelo lado, dribla e cruza ou finaliza."},
+    ],
+}
+SAIDAS_DE_BOLA = {"curta": "Curta (toca desde a defesa)", "mista": "Mista", "longa": "Longa (bola direta no ataque)"}
+
+# Modelos prontos: ajustes do time + papel de cada função (aplicados a todos os lugares dela).
+MODELOS_PLANO: dict[str, dict[str, Any]] = {
+    "equilibrada": {
+        "nome": "Equilibrada",
+        "descricao": "Time compacto, sem exageros para nenhum lado.",
+        "time": {"defesa": 3, "pressao": 3, "largura": 3, "saida": "mista"},
+        "papeis": {"ZAG": "seguranca", "LAT": "apoiador", "VOL": "primeiro_passe", "MEI": "armador", "ATA": "movel"},
+    },
+    "ofensiva": {
+        "nome": "Ofensiva",
+        "descricao": "Linhas altas, laterais no ataque e muita gente na frente.",
+        "time": {"defesa": 4, "pressao": 4, "largura": 4, "saida": "curta"},
+        "papeis": {"ZAG": "sai_jogando", "LAT": "ala", "VOL": "box_to_box", "MEI": "infiltrado", "ATA": "referencia"},
+    },
+    "defensiva": {
+        "nome": "Defensiva",
+        "descricao": "Bloco baixo, laterais de segurança e saída em velocidade.",
+        "time": {"defesa": 1, "pressao": 2, "largura": 2, "saida": "longa"},
+        "papeis": {"ZAG": "seguranca", "LAT": "seguranca", "VOL": "marcador", "MEI": "pressao", "ATA": "movel"},
+    },
+    "posse": {
+        "nome": "Posse de bola",
+        "descricao": "Sai tocando desde a defesa e controla o jogo pelo meio.",
+        "time": {"defesa": 3, "pressao": 3, "largura": 3, "saida": "curta"},
+        "papeis": {"ZAG": "sai_jogando", "LAT": "por_dentro", "VOL": "primeiro_passe", "MEI": "armador", "ATA": "movel"},
+    },
+    "contra_ataque": {
+        "nome": "Contra-ataque",
+        "descricao": "Espera fechado e sai rápido para o ataque.",
+        "time": {"defesa": 2, "pressao": 2, "largura": 3, "saida": "longa"},
+        "papeis": {"ZAG": "seguranca", "LAT": "apoiador", "VOL": "marcador", "MEI": "aberto", "ATA": "ponta"},
+    },
+    "pressao": {
+        "nome": "Pressão alta",
+        "descricao": "Pressiona no campo do adversário para roubar a bola alta.",
+        "time": {"defesa": 5, "pressao": 5, "largura": 3, "saida": "curta"},
+        "papeis": {"ZAG": "marcador", "LAT": "apoiador", "VOL": "box_to_box", "MEI": "pressao", "ATA": "pressao"},
+    },
+}
+
+
+def validar_plano(plano: Any) -> dict[str, Any]:
+    """Confere e limpa o quadro tático. Levanta ValueError se algo estiver errado."""
+    from escalacao import FORMACOES, slots_da_formacao
+
+    if not isinstance(plano, dict):
+        raise ValueError("Quadro tático inválido")
+    formacao = plano.get("formacao", "4-4-2")
+    if formacao not in FORMACOES:
+        raise ValueError("Formação desconhecida")
+    time = plano.get("time") or {}
+    limpo_time: dict[str, Any] = {}
+    for chave in ("defesa", "pressao", "largura"):
+        v = time.get(chave, 3)
+        if not isinstance(v, int) or isinstance(v, bool) or not 1 <= v <= 5:
+            raise ValueError(f"Ajuste {chave!r} precisa ser de 1 a 5")
+        limpo_time[chave] = v
+    saida = time.get("saida", "mista")
+    if saida not in SAIDAS_DE_BOLA:
+        raise ValueError("Saída de bola desconhecida")
+    limpo_time["saida"] = saida
+
+    lugares = set(slots_da_formacao(formacao))
+    jogadores: dict[str, Any] = {}
+    for lugar, dados in (plano.get("jogadores") or {}).items():
+        if lugar not in lugares or lugar == "GOL" or not isinstance(dados, dict):
+            raise ValueError(f"Lugar desconhecido: {lugar!r}")
+        item: dict[str, Any] = {}
+        papel = dados.get("papel")
+        if papel:
+            if papel not in {p["id"] for p in PAPEIS[lugar[:3]]}:
+                raise ValueError(f"Papel {papel!r} não existe para {lugar[:3]}")
+            item["papel"] = papel
+        nota = (dados.get("nota") or "").strip()
+        if nota:
+            item["nota"] = nota[:200]
+        for fase in FASES:
+            pos = dados.get(fase)
+            if pos:
+                x, y = pos.get("x"), pos.get("y")
+                if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (x, y)):
+                    raise ValueError("Posição inválida")
+                item[fase] = {"x": round(min(max(x, 14), 386)), "y": round(min(max(y, 14), 546))}
+        if item:
+            jogadores[lugar] = item
+    return {
+        "formacao": formacao,
+        "time": limpo_time,
+        "jogadores": jogadores,
+        "notas": (plano.get("notas") or "").strip()[:600],
+    }

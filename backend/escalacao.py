@@ -46,7 +46,7 @@ FORMACOES: dict[str, dict[str, int]] = {
     "5-4-1": {"ZAG": 3, "LAT": 2, "VOL": 2, "MEI": 2, "ATA": 1},
     # Variações com o mesmo "número" mas jeito diferente de organizar o time.
     "4-4-2 losango": {"ZAG": 2, "LAT": 2, "VOL": 1, "MEI": 3, "ATA": 2},
-    "4-2-2-2": {"ZAG": 2, "LAT": 2, "VOL": 2, "MEI": 2, "ATA": 2},
+    "4-4-2 meias abertos": {"ZAG": 2, "LAT": 2, "VOL": 2, "MEI": 2, "ATA": 2},
     "4-1-4-1": {"ZAG": 2, "LAT": 2, "VOL": 1, "MEI": 4, "ATA": 1},
     "4-3-3 duplo volante": {"ZAG": 2, "LAT": 2, "VOL": 2, "MEI": 1, "ATA": 3},
     "3-4-1-2": {"ZAG": 3, "LAT": 2, "VOL": 2, "MEI": 1, "ATA": 2},
@@ -245,7 +245,7 @@ class _Preferencias:
 
     Cada regra: {"funcao": "VOL", "tipo": "atributo"|"carac", "chave": "pace",
     "modo": ...}. Modos de atributo: "misto" (1º lugar alto, último baixo),
-    "altos", "baixos". Modos de característica: "todos", "nenhum",
+    "altos", "baixos", "pelo_menos_um" (um bom no atributo). Modos de característica: "todos", "nenhum",
     "pelo_menos_um". São preferências fortes, mas não impedem a escalação.
     """
 
@@ -276,7 +276,9 @@ class _Preferencias:
                     total += 1 - tem
             else:
                 a = j.attr.get(r.get("chave"), 50) / 100
-                if modo == "altos":
+                if modo == "pelo_menos_um" and indice == 1:
+                    total += 1 - a
+                elif modo == "altos":
                     total += 1 - a
                 elif modo == "baixos":
                     total += a
@@ -1505,8 +1507,8 @@ def avisos_de_igualdade(
             avisos.append(
                 f"{nomes} só jogam de {onde}: são {len(presos)} jogadores para {vagas} vaga(s), "
                 f"então cada um joga no máximo {int(capacidade // len(presos))} min (os outros jogam "
-                "mais). Para igualar, deixe um deles jogar em outra posição "
-                "(regra \"Joga de...\" em Ajustar e gerar de novo)."
+                "mais). Veja as opções abaixo (mudar de formação ou deixar alguém jogar o "
+                "jogo todo) ou deixe um deles jogar em outra posição (regra \"Joga de...\")."
             )
     return avisos
 
@@ -1656,39 +1658,52 @@ def _rodar_em_paralelo(trabalhos: list[tuple]) -> list[Optional[dict]]:
     return [_gerar_ou_none(t) for t in trabalhos]
 
 
+LIMITE_DIFERENCA = 5  # nenhuma opção "igual" pode passar disso (minutos entre quem mais e quem menos joga)
+
+
 def opcoes_de_trocas(
     jogadores: list[dict], goleiro_id: str, **opcoes: Any
 ) -> list[dict[str, Any]]:
     """
-    Compara jeitos de dividir o tempo, para o administrador escolher:
-    todo mundo igual, ou 1 (ou 2) jogador(es) jogando o jogo todo com menos trocas.
-    Só aparece opção que FUNCIONA: com o tempo dentro da tolerância e menos
-    momentos de troca. Cada opção traz o resultado completo e as `combinacoes`
-    de fixos que funcionam (para o administrador trocar o jogador fixo).
+    Dá VÁRIAS opções para o administrador decidir, cada uma com o resultado completo:
+      - "igual": todo mundo joga quase o mesmo tempo (formação escolhida);
+      - "fixos": 1 ou 2 jogadores jogam o jogo todo (menos trocas);
+      - "formacao": muda de formação durante o jogo (iguala o tempo quando a formação
+        escolhida não dá conta).
+    Nenhuma opção passa de LIMITE_DIFERENCA minutos de diferença. Se nem a opção
+    "igual" chega lá, ela vem marcada com `aceitavel=False` (melhor tentativa) e
+    as outras opções vêm junto sempre que existirem.
+    `opcoes` = argumentos de `gerar_automatico`.
     """
     regras = opcoes.get("regras")
     restricoes = opcoes.get("restricoes")
-    tolerancia = opcoes.get("tolerancia", 5)
+    duracao = opcoes.get("duracao", DURACAO_PADRAO)
+    formacao = opcoes.get("formacao", "4-4-2")
+    mudancas_usuario = opcoes.get("mudancas_formacao") or []
     contexto = {
-        "duracao": opcoes.get("duracao", DURACAO_PADRAO),
+        "duracao": duracao,
         "regras": regras,
         "restricoes": restricoes,
-        "formacao": opcoes.get("formacao", "4-4-2"),
-        "mudancas_formacao": opcoes.get("mudancas_formacao"),
+        "formacao": formacao,
+        "mudancas_formacao": mudancas_usuario,
     }
 
-    def montar(k: int, res: dict, combos: list[list[str]]) -> dict[str, Any]:
+    def montar(tipo: str, k: int, res: dict, combos: list[list[str]]) -> dict[str, Any]:
         fixos = list((res.get("plano") or {}).get("fixos", []))
         com_fixos = {a: dict(v) for a, v in (regras or {}).items()}
         for jid in fixos:
             com_fixos.setdefault(jid, {})["grupo_fixo"] = True
+        dif = _diferenca_minutos(res, com_fixos, restricoes)
         return {
+            "tipo": tipo,
             "quantos_fixos": k,
             "momentos": len(res["janelas"]) - 1,
             "trocas": len(res["trocas"]),
-            "diferenca_minutos": _diferenca_minutos(res, com_fixos, restricoes),
+            "diferenca_minutos": dif,
+            "aceitavel": dif <= LIMITE_DIFERENCA,
             "fixos": fixos,
             "combinacoes": combos,
+            "mudancas_formacao": list(res.get("mudancas_formacao") or []),
             "resultado": res,
         }
 
@@ -1711,18 +1726,50 @@ def opcoes_de_trocas(
         combos.sort(key=lambda c: sorted(c) != sorted(preferidos))
         combos_por_k[k] = combos
 
-    # Gera ao mesmo tempo: todo mundo igual + a melhor combinação de cada tamanho.
+    # Formações alternativas (só se a pessoa não escolheu mudanças de formação): a conta
+    # rápida por capacidade das vagas diz quais têm chance de igualar o tempo.
+    avisos_base = avisos_de_igualdade(
+        jogadores, goleiro_id, duracao, regras, restricoes, formacao, mudancas_usuario
+    )
+    candidatas: list[tuple[str, int]] = []
+    if not mudancas_usuario and duracao >= 20:
+        minuto = round(duracao * 0.5)
+        pontuadas = []
+        for outra in FORMACOES:
+            if outra == formacao:
+                continue
+            n = len(
+                avisos_de_igualdade(
+                    jogadores, goleiro_id, duracao, regras, restricoes, formacao,
+                    [{"minuto": minuto, "formacao": outra}],
+                )
+            )
+            if n < len(avisos_base) or (n == 0 and avisos_base):
+                # prefere formações parecidas (mesmo número de zagueiros)
+                parecida = FORMACOES[outra]["ZAG"] != FORMACOES[formacao]["ZAG"]
+                pontuadas.append((n, parecida, outra))
+        pontuadas.sort()
+        candidatas = [(f, minuto) for _, _, f in pontuadas[:3]]
+
+    # Gera tudo ao mesmo tempo: "igual" + melhor combinação de cada tamanho + formações.
     trabalhos = [(jogadores, goleiro_id, {**opcoes, "quantos_fixos": 0})]
     ks = list(combos_por_k)
     for k in ks:
         trabalhos.append((jogadores, goleiro_id, com_fixos_na_regra(combos_por_k[k][0])))
+    for f, minuto in candidatas:
+        trabalhos.append(
+            (jogadores, goleiro_id,
+             {**opcoes, "quantos_fixos": 0, "mudancas_formacao": [{"minuto": minuto, "formacao": f}]})
+        )
     resultados = _rodar_em_paralelo(trabalhos)
     if resultados[0] is None:
         raise EscalacaoInviavel("Não foi possível montar a escalação.")
 
-    saida = [montar(0, resultados[0], [])]
-    for k, res in zip(ks, resultados[1:]):
-        if k == 2 and saida[-1]["momentos"] <= 3:
+    base = montar("igual", 0, resultados[0], [])
+    extras: list[dict[str, Any]] = []
+
+    for k, res in zip(ks, resultados[1 : 1 + len(ks)]):
+        if k == 2 and extras and extras[-1]["momentos"] <= 3:
             continue  # com 1 fixo já está simples: não precisa de mais
         combos = combos_por_k[k]
         tentativas = [(combos[0], res)] + [(c, None) for c in combos[1:2]]
@@ -1732,8 +1779,27 @@ def opcoes_de_trocas(
             if pronto is None:
                 continue
             pronto.setdefault("plano", {})["fixos"] = list(combo)
-            opc = montar(k, pronto, combos)
-            if opc["diferenca_minutos"] <= tolerancia and opc["momentos"] < saida[-1]["momentos"]:
-                saida.append(opc)
+            opc = montar("fixos", k, pronto, combos)
+            melhora = opc["momentos"] < base["momentos"] or opc["diferenca_minutos"] < base["diferenca_minutos"]
+            if opc["aceitavel"] and melhora:
+                extras.append(opc)
                 break
-    return saida
+
+    por_formacao = []
+    for res in resultados[1 + len(ks) :]:
+        if res is None:
+            continue
+        opc = montar("formacao", 0, res, [])
+        melhora = (
+            opc["diferenca_minutos"] < base["diferenca_minutos"]
+            or opc["momentos"] <= base["momentos"] - 2
+        )
+        if opc["aceitavel"] and melhora and opc["mudancas_formacao"]:
+            por_formacao.append(opc)
+    por_formacao.sort(key=lambda o: (o["diferenca_minutos"], o["momentos"]))
+    extras.extend(por_formacao[:2])
+
+    if base["aceitavel"]:
+        return [base, *extras]
+    # A opção "igual" estourou o limite: vai por último, avisando que é só a melhor tentativa.
+    return [*extras, base] if extras else [base]
