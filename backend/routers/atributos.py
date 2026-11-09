@@ -38,6 +38,14 @@ class AdversarioPayload(BaseModel):
     observacoes: Optional[str] = Field(default=None, max_length=1000)
 
 
+class TaticaPayload(BaseModel):
+    """Tática montada pelo administrador: instruções por posição e situação."""
+
+    nome: str = Field(min_length=1, max_length=60)
+    descricao: Optional[str] = Field(default=None, max_length=300)
+    instrucoes: dict[str, dict[str, str]] = {}
+
+
 class NotaPayload(BaseModel):
     texto: str = Field(default="", max_length=4000)
 
@@ -69,6 +77,21 @@ def catalogo(usuario: dict = Depends(exige_editor)):
             for k, v in tatica.TATICAS.items()
         ],
         "estrategias": [{"id": k, **v} for k, v in tatica.ESTRATEGIAS.items()],
+        # Montador de táticas (estilo FIFA): situações, comportamentos e modelos prontos.
+        "situacoes": [{"id": k, "nome": v} for k, v in tatica.SITUACOES.items()],
+        "comportamentos": [
+            {"id": k, "nome": v["nome"]} for k, v in tatica.COMPORTAMENTOS.items()
+        ],
+        "comportamentos_por_funcao": tatica.COMPORTAMENTOS_POR_FUNCAO,
+        "modelos": [
+            {
+                "id": k,
+                "nome": v["nome"],
+                "descricao": v["descricao"],
+                "instrucoes": tatica.MODELOS_INSTRUCOES.get(k, {}),
+            }
+            for k, v in tatica.TATICAS.items()
+        ],
         "estilos": [{"id": k, "nome": v} for k, v in tatica.ESTILOS_ADVERSARIO.items()],
     }
 
@@ -81,9 +104,10 @@ def sugestao_formacao(
     tatica_id: str = "equilibrada", duracao: int = 90, usuario: dict = Depends(exige_editor)
 ):
     """Formação (e mudança durante o jogo) que o sistema sugere para uma tática."""
-    if tatica_id not in tatica.TATICAS:
+    resolvida = resolver_tatica(tatica_id)
+    if not resolvida:
         raise HTTPException(status_code=422, detail="Tática desconhecida")
-    return tatica.sugerir_formacoes(tatica_id, duracao)
+    return tatica.sugerir_formacoes(resolvida["estilo"], duracao)
 
 
 @router.get("/atributos")
@@ -184,3 +208,72 @@ def salvar_adversario(corpo: AdversarioPayload, usuario: dict = Depends(exige_ed
 @router.delete("/adversarios/{adversario_id}", status_code=204)
 def apagar_adversario(adversario_id: UUID, usuario: dict = Depends(exige_editor)):
     supabase.table("adversarios").delete().eq("id", str(adversario_id)).execute()
+
+
+# ---------------------------------------------------------------------------
+# Táticas montadas pelo administrador
+# ---------------------------------------------------------------------------
+def resolver_tatica(tatica_id: Optional[str]) -> Optional[dict]:
+    """
+    Aceita o id de um modelo pronto ("ofensiva"...) ou de uma tática salva.
+    Devolve {id, nome, descricao, config, estilo} ou None se não existir.
+    `config` é o que `tatica.qualidade` entende (id do modelo ou dict montado).
+    """
+    if not tatica_id:
+        return None
+    if tatica_id in tatica.TATICAS:
+        modelo = tatica.TATICAS[tatica_id]
+        return {
+            "id": tatica_id,
+            "nome": modelo["nome"],
+            "descricao": modelo["descricao"],
+            "config": tatica_id,
+            "estilo": tatica_id,
+        }
+    achadas = supabase.table("taticas").select("*").eq("id", tatica_id).execute().data
+    if not achadas:
+        return None
+    t = achadas[0]
+    instrucoes = tatica.validar_instrucoes(t.get("instrucoes") or {})
+    return {
+        "id": t["id"],
+        "nome": t["nome"],
+        "descricao": t.get("descricao") or "",
+        "config": tatica.config_da_tatica(instrucoes),
+        "estilo": tatica.estilo_da_tatica(instrucoes),
+    }
+
+
+def _dados_da_tatica(corpo: TaticaPayload) -> dict:
+    try:
+        instrucoes = tatica.validar_instrucoes(corpo.instrucoes)
+    except ValueError as erro:
+        raise HTTPException(status_code=422, detail=str(erro))
+    return {
+        "nome": corpo.nome.strip(),
+        "descricao": (corpo.descricao or "").strip() or None,
+        "instrucoes": instrucoes,
+    }
+
+
+@router.get("/taticas")
+def listar_taticas(usuario: dict = Depends(exige_editor)):
+    return supabase.table("taticas").select("*").order("nome").execute().data or []
+
+
+@router.post("/taticas", status_code=201)
+def criar_tatica(corpo: TaticaPayload, usuario: dict = Depends(exige_editor)):
+    return supabase.table("taticas").insert(_dados_da_tatica(corpo)).execute().data[0]
+
+
+@router.put("/taticas/{tatica_id}")
+def editar_tatica(tatica_id: UUID, corpo: TaticaPayload, usuario: dict = Depends(exige_editor)):
+    tid = str(tatica_id)
+    if not supabase.table("taticas").select("id").eq("id", tid).execute().data:
+        raise HTTPException(status_code=404, detail="Tática não encontrada")
+    return supabase.table("taticas").update(_dados_da_tatica(corpo)).eq("id", tid).execute().data[0]
+
+
+@router.delete("/taticas/{tatica_id}", status_code=204)
+def apagar_tatica(tatica_id: UUID, usuario: dict = Depends(exige_editor)):
+    supabase.table("taticas").delete().eq("id", str(tatica_id)).execute()

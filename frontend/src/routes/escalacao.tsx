@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { memo, startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import { ClipboardList, Download, Loader2, RefreshCw, Save, Shuffle, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -10,6 +10,7 @@ import { fetchMatches, formatDate, matchTitle, VENUE_LABELS, type Match } from "
 import {
   FUNCAO_LABELS,
   FUNCOES,
+  siglaPosicao,
   escalacaoDaJanela,
   fetchConvocados,
   fetchEscalacaoSalva,
@@ -161,7 +162,7 @@ function PainelVisualizacao({ partida }: { partida: Match }) {
 // ---------------------------------------------------------------------------
 // Visão da escalação (campinho, banco, trocas, minutos) — admin e usuário
 // ---------------------------------------------------------------------------
-function VisaoEscalacao({
+const VisaoEscalacao = memo(function VisaoEscalacao({
   resultado,
   partida,
   acoes,
@@ -316,7 +317,7 @@ function VisaoEscalacao({
       </CardContent>
     </Card>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Admin
@@ -369,11 +370,142 @@ function diferencaDeMinutos(res: ResultadoEscalacao, fixos: string[]) {
   return valores.length ? Math.max(...valores) - Math.min(...valores) : 0;
 }
 
+/** Só quem de fato funciona como "jogo todo" naquele lugar (dado o(s) outro(s) fixo(s)). */
+function candidatosDoFixo(o: OpcaoDeTrocas, k: number, linha: Convocado[]): Convocado[] {
+  const permitidos = new Set<string>(o.fixos[k] ? [o.fixos[k]] : []);
+  for (const combo of o.combinacoes ?? []) {
+    const outros = o.fixos.every((f, kk) => kk === k || combo.includes(f));
+    if (outros && combo.length === o.fixos.length) {
+      for (const id of combo)
+        if (!o.fixos.some((f, kk) => kk !== k && f === id)) permitidos.add(id);
+    }
+  }
+  return linha.filter((j) => permitidos.has(j.id));
+}
+
+/** Legendinha com a posição principal do jogador (a segunda, se houver, vai no balãozinho). */
+function Sigla({ posicoes }: { posicoes: string[] }) {
+  const sigla = siglaPosicao(posicoes);
+  if (!sigla) return null;
+  return (
+    <span
+      title={posicoes.map((p) => p.replace(/_/g, " ")).join(" / ")}
+      className="ml-1.5 rounded bg-muted px-1 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+    >
+      {sigla}
+    </span>
+  );
+}
+
 const TITULO_OPCAO: Record<number, string> = {
   0: "Todo mundo joga o mesmo tempo",
   1: "1 jogador joga o jogo todo",
   2: "2 jogadores jogam o jogo todo",
 };
+
+const OpcoesDeTempo = memo(function OpcoesDeTempo({
+  opcoes,
+  selecionada,
+  aoEscolher,
+  aoTrocarFixo,
+  linha,
+  refazendo,
+}: {
+  opcoes: OpcaoDeTrocas[];
+  selecionada: number;
+  aoEscolher: (i: number) => void;
+  aoTrocarFixo: (indice: number, fixos: string[]) => void;
+  linha: Convocado[];
+  refazendo: boolean;
+}) {
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="font-semibold">Como dividir o tempo?</h2>
+        <p className="text-sm text-muted-foreground">
+          O sistema comparou jeitos de fazer as trocas. Só aparecem os que funcionam. Escolha um — a
+          escalação abaixo muda junto.
+        </p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        {opcoes.map((o, i) => {
+          const ativa = i === selecionada;
+          return (
+            <div
+              key={o.quantos_fixos}
+              className={cn(
+                "rounded-xl border-2 p-4 transition-colors",
+                ativa ? "border-primary bg-primary/5" : "bg-card hover:border-primary/50",
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => aoEscolher(i)}
+                aria-pressed={ativa}
+                className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="block font-display text-xl leading-tight tracking-wide">
+                  {TITULO_OPCAO[o.quantos_fixos] ?? `${o.quantos_fixos} jogadores o jogo todo`}
+                </span>
+                <span className="mt-1 block text-sm">
+                  <strong>{o.momentos}</strong> momento{o.momentos === 1 ? "" : "s"} de troca ·{" "}
+                  <strong>{o.trocas}</strong> substituições
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {o.diferenca_minutos === 0
+                    ? "Todos jogam exatamente o mesmo tempo"
+                    : `Diferença de tempo: até ${o.diferenca_minutos} min`}
+                </span>
+              </button>
+              {o.fixos.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {o.fixos.map((fid, k) => (
+                    <div key={k} className="space-y-1">
+                      <Label className="text-xs">
+                        {o.fixos.length > 1
+                          ? `Jogador ${k + 1} o jogo todo`
+                          : "Quem joga o jogo todo"}
+                      </Label>
+                      <Select
+                        value={fid}
+                        onValueChange={(novo) => {
+                          if (novo === fid) return;
+                          aoEscolher(i);
+                          aoTrocarFixo(
+                            i,
+                            o.fixos.map((x, kk) => (kk === k ? novo : x)),
+                          );
+                        }}
+                        disabled={refazendo}
+                      >
+                        <SelectTrigger className="h-8" aria-label="Quem joga o jogo todo">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {candidatosDoFixo(o, k, linha).map((j) => (
+                            <SelectItem key={j.id} value={j.id}>
+                              {j.nome}
+                              <Sigla posicoes={j.posicoes} />
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                  {refazendo && ativa && (
+                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Refazendo as trocas…
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+});
 
 function FormularioAdmin({
   partida,
@@ -393,8 +525,6 @@ function FormularioAdmin({
   const [duracao, setDuracao] = useState(String(cfg?.duracao ?? 90));
   const [automatico, setAutomatico] = useState(cfg?.automatico ?? true);
   const [tatica, setTatica] = useState<string | null>(cfg?.tatica ?? null);
-  const [estrategia, setEstrategia] = useState(cfg?.estrategia ?? "uniforme");
-  const [forca, setForca] = useState(cfg?.forca_tatica ?? 50);
   const [formacao, setFormacao] = useState(cfg?.formacao ?? "4-4-2");
   const [mudancasForm, setMudancasForm] = useState<MudancaFormacaoForm[]>(
     (cfg?.mudancas_formacao ?? []).map((m) => ({ minuto: String(m.minuto), formacao: m.formacao })),
@@ -481,8 +611,8 @@ function FormularioAdmin({
       duracao: Number(duracao) || 90,
       automatico,
       tatica,
-      estrategia,
-      forca_tatica: forca,
+      estrategia: "uniforme",
+      forca_tatica: 100,
       formacao,
       mudancas_formacao: mudancasForm
         .filter((m) => Number(m.minuto) > 0)
@@ -547,6 +677,13 @@ function FormularioAdmin({
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const escolherOpcao = useCallback((i: number) => startTransition(() => setOpcaoSel(i)), []);
+  const aoTrocarFixo = useCallback(
+    (indice: number, fixos: string[]) => trocarFixo.mutate({ indice, fixos }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [trocarFixo.mutate],
+  );
 
   const opcaoAtual: OpcaoDeTrocas | null = previa?.opcoes?.[opcaoSel] ?? null;
   const resultadoAtual = opcaoAtual?.resultado ?? previa?.resultado ?? null;
@@ -620,10 +757,6 @@ function FormularioAdmin({
           setFormacao={setFormacao}
           tatica={tatica}
           setTatica={setTatica}
-          estrategia={estrategia}
-          setEstrategia={setEstrategia}
-          forca={forca}
-          setForca={setForca}
           composicao={composicao}
           setComposicao={setComposicao}
         />
@@ -658,6 +791,7 @@ function FormularioAdmin({
                       )}
                     >
                       {j.nome}
+                      <Sigla posicoes={j.posicoes} />
                     </button>
                   );
                 })}
@@ -673,7 +807,8 @@ function FormularioAdmin({
                       incluir.has(j.id) ? "border-primary bg-primary/10" : "opacity-60",
                     )}
                   >
-                    {j.nome} <span className="text-xs text-muted-foreground">({j.motivo})</span>
+                    {j.nome} <Sigla posicoes={j.posicoes} />
+                    <span className="text-xs text-muted-foreground">({j.motivo})</span>
                   </button>
                 ))}
                 {convocadosApi.outros_ativos
@@ -686,7 +821,7 @@ function FormularioAdmin({
                       aria-label={`Tirar ${j.nome}`}
                       className="flex items-center gap-1 rounded-full border border-primary bg-primary/10 px-3 py-1 text-sm"
                     >
-                      {j.nome} <X className="h-3 w-3" />
+                      {j.nome} <Sigla posicoes={j.posicoes} /> <X className="h-3 w-3" />
                     </button>
                   ))}
               </div>
@@ -760,7 +895,7 @@ function FormularioAdmin({
                 duracao={Number(duracao) || 90}
               />
               <p className="text-xs text-muted-foreground">
-                Tática, estratégia e regras de composição ficam na aba “Tática e estratégia”.
+                A tática e as regras de montagem ficam na aba “Tática e estratégia”.
                 {tatica ? "" : " Hoje nenhuma tática está escolhida."}
               </p>
             </section>
@@ -932,115 +1067,48 @@ function FormularioAdmin({
             )}
 
             {previa.opcoes && previa.opcoes.length > 0 && (
-              <section className="space-y-3">
-                <div>
-                  <h2 className="font-semibold">Como dividir o tempo?</h2>
-                  <p className="text-sm text-muted-foreground">
-                    O sistema comparou jeitos de fazer as trocas. Escolha um — a escalação abaixo
-                    muda junto.
-                  </p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-3">
-                  {previa.opcoes.map((o, i) => {
-                    const ativa = i === opcaoSel;
-                    return (
-                      <div
-                        key={o.quantos_fixos}
-                        className={cn(
-                          "rounded-xl border-2 p-4 transition-colors",
-                          ativa ? "border-primary bg-primary/5" : "bg-card hover:border-primary/50",
-                        )}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setOpcaoSel(i)}
-                          aria-pressed={ativa}
-                          className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <span className="block font-display text-xl leading-tight tracking-wide">
-                            {TITULO_OPCAO[o.quantos_fixos] ??
-                              `${o.quantos_fixos} jogadores o jogo todo`}
-                          </span>
-                          <span className="mt-1 block text-sm">
-                            <strong>{o.momentos}</strong> momento{o.momentos === 1 ? "" : "s"} de
-                            troca · <strong>{o.trocas}</strong> substituições
-                          </span>
-                          <span className="block text-xs text-muted-foreground">
-                            {o.diferenca_minutos === 0
-                              ? "Todos jogam exatamente o mesmo tempo"
-                              : `Diferença de tempo: até ${o.diferenca_minutos} min`}
-                          </span>
-                        </button>
-                        {o.fixos.length > 0 && (
-                          <div className="mt-3 space-y-2">
-                            {o.fixos.map((fid, k) => (
-                              <div key={k} className="space-y-1">
-                                <Label className="text-xs">
-                                  {o.fixos.length > 1
-                                    ? `Jogador ${k + 1} o jogo todo`
-                                    : "Quem joga o jogo todo"}
-                                </Label>
-                                <Select
-                                  value={fid}
-                                  onValueChange={(novo) => {
-                                    if (novo === fid) return;
-                                    const fixos = o.fixos.map((x, kk) => (kk === k ? novo : x));
-                                    setOpcaoSel(i);
-                                    trocarFixo.mutate({ indice: i, fixos });
-                                  }}
-                                  disabled={trocarFixo.isPending}
-                                >
-                                  <SelectTrigger className="h-8" aria-label="Quem joga o jogo todo">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {linha
-                                      .filter((j) => j.id === fid || !o.fixos.includes(j.id))
-                                      .map((j) => (
-                                        <SelectItem key={j.id} value={j.id}>
-                                          {j.nome}
-                                        </SelectItem>
-                                      ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            ))}
-                            {trocarFixo.isPending && (
-                              <p className="text-xs text-muted-foreground">Refazendo as trocas…</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
+              <OpcoesDeTempo
+                opcoes={previa.opcoes}
+                selecionada={opcaoSel}
+                aoEscolher={escolherOpcao}
+                aoTrocarFixo={aoTrocarFixo}
+                linha={linha}
+                refazendo={trocarFixo.isPending}
+              />
             )}
 
-            <VisaoEscalacao
-              resultado={resultadoAtual}
-              partida={partida}
-              acoes={
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={gerar.isPending}
-                    onClick={() => {
-                      const proxima = semente + 1;
-                      setSemente(proxima);
-                      rodar(proxima);
-                    }}
-                  >
-                    <Shuffle className="mr-1 h-4 w-4" /> Outra opção
-                  </Button>
-                  <Button size="sm" onClick={() => salvar.mutate()} disabled={salvar.isPending}>
-                    <Save className="mr-1 h-4 w-4" />
-                    {salva ? "Atualizar escalação salva" : "Salvar escalação"}
-                  </Button>
-                </>
-              }
-            />
+            <div
+              className={cn(
+                "transition-opacity",
+                (trocarFixo.isPending || gerar.isPending) && "pointer-events-none opacity-60",
+              )}
+              aria-busy={trocarFixo.isPending || gerar.isPending}
+            >
+              <VisaoEscalacao
+                resultado={resultadoAtual}
+                partida={partida}
+                acoes={
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={gerar.isPending}
+                      onClick={() => {
+                        const proxima = semente + 1;
+                        setSemente(proxima);
+                        rodar(proxima);
+                      }}
+                    >
+                      <Shuffle className="mr-1 h-4 w-4" /> Outra opção
+                    </Button>
+                    <Button size="sm" onClick={() => salvar.mutate()} disabled={salvar.isPending}>
+                      <Save className="mr-1 h-4 w-4" />
+                      {salva ? "Atualizar escalação salva" : "Salvar escalação"}
+                    </Button>
+                  </>
+                }
+              />
+            </div>
 
             <section className="space-y-3">
               <Button

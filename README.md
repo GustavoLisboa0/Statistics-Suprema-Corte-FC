@@ -123,9 +123,21 @@ escalação salva.
 - **Formação** escolhida num seletor visual (campinhos com bolinhas), com
   variações do mesmo número (ex.: 4-4-2 e 4-4-2 losango). Mudança de formação
   no jogo acontece junto com uma troca de jogadores, não cria momento extra.
-- **Aba "Tática e estratégia"** (só administrador): tática, estratégia, peso e o
-  campinho clicável: clique numa bolinha para definir a regra de composição do
-  setor (ex.: volantes, um rápido e um lento).
+- **Aba "Tática e estratégia"** (só administrador), com três partes:
+  - **Táticas**: você cria táticas com nome (ex.: "Laterais voando"). Clique num
+    jogador do campinho e escolha o que ele faz em cada situação (com a bola,
+    sem a bola, atacando, defendendo, contra-ataque): sobe, recua, pressiona,
+    abre, fecha, infiltra... Há modelos prontos para copiar e editar. O sistema
+    aplica a tática sempre que possível ao escolher quem joga onde; o tempo igual
+    para todos continua mandando. Não existe mais "estratégia" nem peso da tática.
+  - **Montagem do time**: regras de composição por setor (ex.: volantes, um
+    rápido e um lento).
+  - **Adversário**: perfil e sugestão de modelo de tática.
+- **Quem joga** mostra a posição principal de cada jogador. Há também a formação
+  4-2-2-2 (dois volantes e dois meias por dentro).
+- **Como dividir o tempo**: só aparecem as opções que funcionam, e a lista de quem
+  pode jogar o jogo todo só traz jogadores para os quais isso funciona.
+- No Supabase de verdade, rode também `database/migration_012_taticas.sql`.
 - O botão "?" no topo da página mostra os pesos usados nas contas.
 - **PDF** com várias páginas: capa com plano de jogo (formação, tática,
   estratégia), titulares, banco e trocas, mais uma página por momento do jogo.

@@ -1,15 +1,22 @@
-import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Lightbulb, Plus, Save, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Copy, Lightbulb, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
   FUNCAO_LABELS,
+  FUNCOES,
+  apagarTatica,
+  criarTatica,
+  editarTatica,
   fetchCatalogo,
   fetchContraEstrategia,
+  fetchTaticas,
   salvarAdversario,
   type Adversario,
+  type Catalogo,
   type Funcao,
+  type Instrucoes,
   type RegraComposicao,
 } from "@/lib/escalacao";
 import { CampoFormacao } from "@/components/CampoFormacao";
@@ -18,14 +25,16 @@ import { NumberInput } from "@/components/NumberInput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -33,7 +42,7 @@ import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Aba "Tática e estratégia" — só administrador.
-// Nada daqui entra no PDF nem aparece para usuário comum.
+// Nada daqui entra no PDF (só o nome da tática) nem aparece para usuário comum.
 // ---------------------------------------------------------------------------
 
 type PropsAba = {
@@ -42,10 +51,6 @@ type PropsAba = {
   setFormacao: (v: string) => void;
   tatica: string | null;
   setTatica: (v: string | null) => void;
-  estrategia: string;
-  setEstrategia: (v: string) => void;
-  forca: number;
-  setForca: (v: number) => void;
   composicao: RegraComposicao[];
   setComposicao: (v: RegraComposicao[]) => void;
 };
@@ -55,27 +60,27 @@ function Pilulas({
   opcoes,
   valor,
   onChange,
-  desabilitado,
   rotulo,
+  pequeno,
 }: {
   opcoes: { id: string; nome: string }[];
   valor: string;
   onChange: (v: string) => void;
-  desabilitado?: boolean;
   rotulo: string;
+  pequeno?: boolean;
 }) {
   return (
-    <div role="radiogroup" aria-label={rotulo} className="flex flex-wrap gap-2">
+    <div role="radiogroup" aria-label={rotulo} className="flex flex-wrap gap-1.5">
       {opcoes.map((o) => (
         <button
           key={o.id}
           type="button"
           role="radio"
           aria-checked={valor === o.id}
-          disabled={desabilitado}
           onClick={() => onChange(o.id)}
           className={cn(
-            "rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+            "rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            pequeno ? "px-2.5 py-0.5 text-xs" : "px-3 py-1 text-sm",
             valor === o.id
               ? "border-primary bg-primary text-primary-foreground"
               : "bg-card hover:border-primary",
@@ -88,20 +93,384 @@ function Pilulas({
   );
 }
 
+const CURTO: Record<string, string> = {
+  fica: "fica",
+  sobe: "sobe",
+  apoia: "apoia",
+  recua: "recua",
+  pressiona: "pressiona",
+  abre: "abre",
+  fecha: "fecha",
+  infiltra: "infiltra",
+};
+
+/** Palavra que resume o que a posição faz (a mais repetida entre as situações). */
+function resumoDaFuncao(instr: Record<string, string> | undefined): string | null {
+  const valores = Object.values(instr ?? {});
+  if (valores.length === 0) return null;
+  const contagem = new Map<string, number>();
+  for (const v of valores) contagem.set(v, (contagem.get(v) ?? 0) + 1);
+  const [melhor] = [...contagem.entries()].sort((a, b) => b[1] - a[1])[0];
+  return CURTO[melhor] ?? melhor;
+}
+
+// ---------------------------------------------------------------------------
+// Montador de táticas: clique no jogador no campinho e diga o que ele faz
+// em cada situação do jogo (como no FIFA / eFootball).
+// ---------------------------------------------------------------------------
+function ConstrutorTatica({
+  formacao,
+  catalogo,
+  inicial,
+  aoSalvar,
+  aoCancelar,
+}: {
+  formacao: string;
+  catalogo: Catalogo;
+  inicial: { id?: string; nome: string; descricao: string; instrucoes: Instrucoes };
+  aoSalvar: (t: { id?: string; nome: string; descricao: string; instrucoes: Instrucoes }) => void;
+  aoCancelar: () => void;
+}) {
+  const [nome, setNome] = useState(inicial.nome);
+  const [descricao, setDescricao] = useState(inicial.descricao);
+  const [instrucoes, setInstrucoes] = useState<Instrucoes>(inicial.instrucoes);
+  const [funcao, setFuncao] = useState<Funcao | null>("LAT");
+  const [salvando, setSalvando] = useState(false);
+
+  const marcas = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const f of FUNCOES) {
+      const r = resumoDaFuncao(instrucoes[f]);
+      if (r) m[f] = r;
+    }
+    return m;
+  }, [instrucoes]);
+  const comInstrucao = useMemo(() => new Set<string>(Object.keys(marcas)), [marcas]);
+
+  const mudar = (f: Funcao, situacao: string, comportamento: string) =>
+    setInstrucoes((atual) => {
+      const dessa = { ...(atual[f] ?? {}) };
+      if (comportamento === "fica") delete dessa[situacao];
+      else dessa[situacao] = comportamento;
+      const novo = { ...atual, [f]: dessa };
+      if (Object.keys(dessa).length === 0) delete novo[f];
+      return novo;
+    });
+
+  const nomeComp = (id: string) => catalogo.comportamentos.find((c) => c.id === id)?.nome ?? id;
+
+  const salvar = async () => {
+    if (!nome.trim()) {
+      toast.error("Dê um nome para a tática.");
+      return;
+    }
+    setSalvando(true);
+    try {
+      await aoSalvar({ id: inicial.id, nome: nome.trim(), descricao, instrucoes });
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 rounded-xl border-2 border-primary/40 bg-primary/5 p-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor="nome-tatica">Nome da tática</Label>
+          <Input
+            id="nome-tatica"
+            value={nome}
+            maxLength={60}
+            placeholder="Ex.: Laterais voando"
+            onChange={(e) => setNome(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="desc-tatica">Ideia da tática (opcional)</Label>
+          <Input
+            id="desc-tatica"
+            value={descricao}
+            maxLength={300}
+            placeholder="Ex.: Laterais sobem e os volantes protegem"
+            onChange={(e) => setDescricao(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-[minmax(0,300px)_1fr]">
+        <div className="space-y-2">
+          <CampoFormacao
+            formacao={formacao}
+            comRegra={comInstrucao}
+            marcas={marcas}
+            selecionada={funcao}
+            onClickFuncao={setFuncao}
+            className="w-full max-w-[300px] justify-self-center"
+          />
+          <p className="text-center text-xs text-muted-foreground">
+            Clique em um jogador do campinho. Contorno dourado = já tem instrução.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {funcao ? (
+            <>
+              <div className="flex items-center justify-between">
+                <p className="font-semibold">
+                  {FUNCAO_LABELS[funcao]}s — o que fazem em cada momento
+                </p>
+                {instrucoes[funcao] && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setInstrucoes((a) => {
+                        const n = { ...a };
+                        delete n[funcao];
+                        return n;
+                      })
+                    }
+                  >
+                    Limpar
+                  </Button>
+                )}
+              </div>
+              <div className="space-y-3">
+                {catalogo.situacoes.map((s) => (
+                  <div key={s.id} className="space-y-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {s.nome}
+                    </p>
+                    <Pilulas
+                      pequeno
+                      rotulo={`${FUNCAO_LABELS[funcao]} — ${s.nome}`}
+                      valor={instrucoes[funcao]?.[s.id] ?? "fica"}
+                      onChange={(v) => mudar(funcao, s.id, v)}
+                      opcoes={(catalogo.comportamentos_por_funcao[funcao] ?? ["fica"]).map(
+                        (id) => ({
+                          id,
+                          nome: nomeComp(id),
+                        }),
+                      )}
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Vale para todos os {FUNCAO_LABELS[funcao].toLowerCase()}s do time. O sistema usa
+                isso para preferir quem combina com a tática — sempre que possível. O tempo igual
+                para todos continua mandando.
+              </p>
+            </>
+          ) : (
+            <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+              Escolha uma posição no campinho.
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={salvar} disabled={salvando}>
+          <Save className="mr-1 h-4 w-4" /> {inicial.id ? "Salvar alterações" : "Salvar tática"}
+        </Button>
+        <Button variant="outline" onClick={aoCancelar}>
+          Cancelar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Texto curto com o que a tática manda fazer (para a lista). */
+function ResumoTatica({ instrucoes, catalogo }: { instrucoes: Instrucoes; catalogo: Catalogo }) {
+  const linhas = FUNCOES.flatMap((f) => {
+    const entradas = Object.entries(instrucoes[f] ?? {});
+    if (entradas.length === 0) return [];
+    const nomeSit = (id: string) => catalogo.situacoes.find((s) => s.id === id)?.nome ?? id;
+    return [
+      <li key={f}>
+        <strong>{FUNCAO_LABELS[f]}s:</strong>{" "}
+        {entradas.map(([s, c]) => `${CURTO[c] ?? c} (${nomeSit(s).toLowerCase()})`).join(", ")}
+      </li>,
+    ];
+  });
+  if (linhas.length === 0)
+    return <p className="text-sm text-muted-foreground">Sem instruções: todo mundo na posição.</p>;
+  return <ul className="space-y-0.5 text-sm text-muted-foreground">{linhas}</ul>;
+}
+
+function SecaoTaticas({
+  tatica,
+  setTatica,
+  formacao,
+}: {
+  tatica: string | null;
+  setTatica: (v: string | null) => void;
+  formacao: string;
+}) {
+  const qc = useQueryClient();
+  const { data: catalogo } = useQuery({ queryKey: ["escalacao-catalogo"], queryFn: fetchCatalogo });
+  const { data: minhas = [] } = useQuery({ queryKey: ["taticas"], queryFn: fetchTaticas });
+  const [editando, setEditando] = useState<null | {
+    id?: string;
+    nome: string;
+    descricao: string;
+    instrucoes: Instrucoes;
+  }>(null);
+
+  const salvar = useMutation({
+    mutationFn: (t: { id?: string; nome: string; descricao: string; instrucoes: Instrucoes }) => {
+      const corpo = { nome: t.nome, descricao: t.descricao || null, instrucoes: t.instrucoes };
+      return t.id ? editarTatica(t.id, corpo) : criarTatica(corpo);
+    },
+    onSuccess: (salva) => {
+      qc.invalidateQueries({ queryKey: ["taticas"] });
+      setTatica(salva.id);
+      setEditando(null);
+      toast.success("Tática salva e escolhida para este jogo.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const apagar = useMutation({
+    mutationFn: (id: string) => apagarTatica(id),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: ["taticas"] });
+      if (tatica === id) setTatica(null);
+      setEditando(null);
+      toast.success("Tática apagada.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (!catalogo) return <p className="text-sm text-muted-foreground">Carregando…</p>;
+
+  const minha = minhas.find((t) => t.id === tatica);
+  const modelo = catalogo.modelos.find((m) => m.id === tatica);
+  const atual = minha ?? modelo;
+  const instrucoesAtuais: Instrucoes = (minha?.instrucoes ??
+    modelo?.instrucoes ??
+    {}) as Instrucoes;
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label className="text-base">Tática deste jogo</Label>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            value={tatica ?? "nenhuma"}
+            onValueChange={(v) => {
+              setEditando(null);
+              setTatica(v === "nenhuma" ? null : v);
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-72" aria-label="Tática deste jogo">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="nenhuma">Sem tática</SelectItem>
+              {minhas.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>Minhas táticas</SelectLabel>
+                  {minhas.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.nome}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+              <SelectGroup>
+                <SelectLabel>Modelos prontos</SelectLabel>
+                {catalogo.modelos.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.nome}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="secondary"
+            onClick={() => setEditando({ nome: "", descricao: "", instrucoes: {} })}
+          >
+            <Plus className="mr-1 h-4 w-4" /> Nova tática
+          </Button>
+          {minha && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setEditando({
+                    id: minha.id,
+                    nome: minha.nome,
+                    descricao: minha.descricao ?? "",
+                    instrucoes: minha.instrucoes,
+                  })
+                }
+              >
+                <Pencil className="mr-1 h-4 w-4" /> Editar
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  if (window.confirm(`Apagar a tática “${minha.nome}”?`)) apagar.mutate(minha.id);
+                }}
+                aria-label="Apagar tática"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          )}
+          {modelo && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                setEditando({
+                  nome: `${modelo.nome} (minha)`,
+                  descricao: modelo.descricao,
+                  instrucoes: modelo.instrucoes as Instrucoes,
+                })
+              }
+            >
+              <Copy className="mr-1 h-4 w-4" /> Copiar para editar
+            </Button>
+          )}
+        </div>
+        {!editando && (
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">
+              {atual
+                ? atual.descricao || "Tática sem descrição."
+                : "Sem tática, o sistema só se preocupa em dividir o tempo igual."}
+            </p>
+            {atual && <ResumoTatica instrucoes={instrucoesAtuais} catalogo={catalogo} />}
+          </div>
+        )}
+      </div>
+
+      {editando && (
+        <ConstrutorTatica
+          key={editando.id ?? "nova"}
+          formacao={formacao}
+          catalogo={catalogo}
+          inicial={editando}
+          aoSalvar={(t) => salvar.mutateAsync(t)}
+          aoCancelar={() => setEditando(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 export function AbaTatica({
   partidaId,
   formacao,
   setFormacao,
   tatica,
   setTatica,
-  estrategia,
-  setEstrategia,
-  forca,
-  setForca,
   composicao,
   setComposicao,
 }: PropsAba) {
-  const { data: catalogo } = useQuery({ queryKey: ["escalacao-catalogo"], queryFn: fetchCatalogo });
   const [verSugestao, setVerSugestao] = useState(false);
   const sugestao = useQuery({
     queryKey: ["contra-estrategia", partidaId],
@@ -110,170 +479,130 @@ export function AbaTatica({
   });
   const [seletorAberto, setSeletorAberto] = useState(false);
   const [setor, setSetor] = useState<Funcao | null>(null);
-
-  const taticaAtual = catalogo?.taticas.find((t) => t.id === tatica);
-  const estrategiaAtual = catalogo?.estrategias.find((e) => e.id === estrategia);
   const comRegra = new Set(composicao.map((r) => r.funcao as string));
 
   return (
     <Card>
-      <CardContent className="space-y-6 pt-6">
-        <div className="space-y-3">
-          <Label className="text-base">Tática</Label>
-          <Pilulas
-            rotulo="Tática"
-            valor={tatica ?? "nenhuma"}
-            onChange={(v) => setTatica(v === "nenhuma" ? null : v)}
-            opcoes={[
-              { id: "nenhuma", nome: "Sem tática" },
-              ...(catalogo?.taticas.map((t) => ({ id: t.id, nome: t.nome })) ?? []),
-            ]}
-          />
-          <p className="min-h-5 text-sm text-muted-foreground">
-            {taticaAtual
-              ? taticaAtual.descricao
-              : "Sem tática, o sistema só se preocupa em dividir o tempo igual."}
-          </p>
-        </div>
+      <CardContent className="pt-6">
+        <Tabs defaultValue="taticas" className="space-y-5">
+          <TabsList>
+            <TabsTrigger value="taticas">Táticas</TabsTrigger>
+            <TabsTrigger value="montagem">Montagem do time</TabsTrigger>
+            <TabsTrigger value="adversario">Adversário</TabsTrigger>
+          </TabsList>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <div className="space-y-3">
-            <Label className="text-base">Estratégia (quando os melhores jogam)</Label>
-            <Pilulas
-              rotulo="Estratégia"
-              valor={estrategia}
-              onChange={setEstrategia}
-              desabilitado={!tatica}
-              opcoes={catalogo?.estrategias.map((e) => ({ id: e.id, nome: e.nome })) ?? []}
-            />
-            {estrategiaAtual && tatica && (
-              <p className="text-sm text-muted-foreground">{estrategiaAtual.descricao}</p>
-            )}
-          </div>
-          <div className="space-y-3">
-            <Label className="text-base">Quanto a tática pesa: {forca}%</Label>
-            <Slider
-              min={10}
-              max={100}
-              step={10}
-              value={[forca]}
-              onValueChange={(v) => setForca(v[0])}
-              disabled={!tatica}
-              aria-label="Quanto a tática pesa"
-            />
-            <p className="text-xs text-muted-foreground">
-              Quanto mais peso, mais a tática manda em quem joga onde. O tempo igual continua
-              valendo.
-            </p>
-          </div>
-        </div>
+          <TabsContent value="taticas" className="space-y-4">
+            <SecaoTaticas tatica={tatica} setTatica={setTatica} formacao={formacao} />
+          </TabsContent>
 
-        <Separator />
-
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <Label className="text-base">Montagem do time</Label>
-              <p className="text-sm text-muted-foreground">
-                Clique em uma bolinha para definir como aquele setor deve ser formado (ex.: um
-                volante rápido e um lento).
-              </p>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => setSeletorAberto(true)}>
-              Formação: {formacao}
-            </Button>
-          </div>
-          <SeletorFormacao
-            aberto={seletorAberto}
-            onAbertoChange={setSeletorAberto}
-            valor={formacao}
-            onEscolher={setFormacao}
-          />
-
-          <div className="grid gap-6 md:grid-cols-[minmax(0,320px)_1fr]">
-            <CampoFormacao
-              formacao={formacao}
-              comRegra={comRegra}
-              selecionada={setor}
-              onClickFuncao={setSetor}
-              className="w-full max-w-xs justify-self-center"
-            />
-            <div className="space-y-4">
-              {setor ? (
-                <EditorRegra
-                  setor={setor}
-                  regras={composicao}
-                  setRegras={setComposicao}
-                  aoFechar={() => setSetor(null)}
-                />
-              ) : (
-                <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                  Escolha um setor no campinho para editar as regras dele. Bolinhas com contorno
-                  dourado já têm regra.
+          <TabsContent value="montagem" className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <Label className="text-base">Montagem do time</Label>
+                <p className="text-sm text-muted-foreground">
+                  Clique em uma bolinha para definir como aquele setor deve ser formado (ex.: um
+                  volante rápido e um lento).
                 </p>
-              )}
-              <ListaRegras regras={composicao} setRegras={setComposicao} />
-              <p className="text-xs text-muted-foreground">
-                As regras são preferências: o sistema tenta respeitar, mas o tempo igual para todos
-                continua mandando. Dependem dos atributos e características preenchidos na aba
-                Jogadores.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button variant="secondary" size="sm" onClick={() => setVerSugestao(true)}>
-              <Lightbulb className="mr-1 h-4 w-4" /> Sugerir contra o adversário
-            </Button>
-            {sugestao.isFetching && (
-              <span className="text-sm text-muted-foreground">Pensando…</span>
-            )}
-          </div>
-          {sugestao.data?.aviso && (
-            <p className="text-sm text-muted-foreground">{sugestao.data.aviso}</p>
-          )}
-          {sugestao.data?.sugestao && (
-            <div className="space-y-2 text-sm">
-              <p>
-                Contra <strong>{sugestao.data.adversario}</strong>: tática{" "}
-                <strong>{sugestao.data.sugestao.tatica_nome}</strong>, estratégia{" "}
-                <strong>{sugestao.data.sugestao.estrategia_nome}</strong>.
-              </p>
-              <ul className="list-disc pl-5 text-muted-foreground">
-                {sugestao.data.sugestao.motivos.map((m) => (
-                  <li key={m}>{m}</li>
-                ))}
-              </ul>
-              {sugestao.data.historico.jogos > 0 && (
-                <p className="text-xs text-muted-foreground">
-                  Histórico: {sugestao.data.historico.jogos} jogo(s),{" "}
-                  {sugestao.data.historico.vitorias}V {sugestao.data.historico.empates}E{" "}
-                  {sugestao.data.historico.derrotas}D, gols {sugestao.data.historico.gols_pro}x
-                  {sugestao.data.historico.gols_contra}.
-                </p>
-              )}
-              <Button
-                size="sm"
-                onClick={() => {
-                  setTatica(sugestao.data!.sugestao!.tatica);
-                  setEstrategia(sugestao.data!.sugestao!.estrategia);
-                  toast.success("Sugestão aplicada. Volte e clique em Gerar.");
-                }}
-              >
-                Usar esta sugestão
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setSeletorAberto(true)}>
+                Formação: {formacao}
               </Button>
             </div>
-          )}
-          <PerfilAdversario
-            partidaId={partidaId}
-            aoSalvar={() => sugestao.refetch()}
-            ativo={verSugestao}
-          />
-        </div>
+            <SeletorFormacao
+              aberto={seletorAberto}
+              onAbertoChange={setSeletorAberto}
+              valor={formacao}
+              onEscolher={setFormacao}
+            />
+
+            <div className="grid gap-6 md:grid-cols-[minmax(0,320px)_1fr]">
+              <CampoFormacao
+                formacao={formacao}
+                comRegra={comRegra}
+                selecionada={setor}
+                onClickFuncao={setSetor}
+                className="w-full max-w-xs justify-self-center"
+              />
+              <div className="space-y-4">
+                {setor ? (
+                  <EditorRegra
+                    setor={setor}
+                    regras={composicao}
+                    setRegras={setComposicao}
+                    aoFechar={() => setSetor(null)}
+                  />
+                ) : (
+                  <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                    Escolha um setor no campinho para editar as regras dele. Bolinhas com contorno
+                    dourado já têm regra.
+                  </p>
+                )}
+                <ListaRegras regras={composicao} setRegras={setComposicao} />
+                <p className="text-xs text-muted-foreground">
+                  As regras são preferências: o sistema tenta respeitar, mas o tempo igual para
+                  todos continua mandando. Dependem dos atributos e características preenchidos na
+                  aba Jogadores.
+                </p>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="adversario" className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setVerSugestao(true);
+                  if (verSugestao) sugestao.refetch();
+                }}
+              >
+                <Lightbulb className="mr-1 h-4 w-4" /> Sugerir contra o adversário
+              </Button>
+              {sugestao.isFetching && (
+                <span className="text-sm text-muted-foreground">Pensando…</span>
+              )}
+            </div>
+            {sugestao.data?.aviso && (
+              <p className="text-sm text-muted-foreground">{sugestao.data.aviso}</p>
+            )}
+            {sugestao.data?.sugestao && (
+              <div className="space-y-2 text-sm">
+                <p>
+                  Contra <strong>{sugestao.data.adversario}</strong>: tática{" "}
+                  <strong>{sugestao.data.sugestao.tatica_nome}</strong>.
+                </p>
+                <ul className="list-disc pl-5 text-muted-foreground">
+                  {sugestao.data.sugestao.motivos.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+                {sugestao.data.historico.jogos > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Histórico: {sugestao.data.historico.jogos} jogo(s),{" "}
+                    {sugestao.data.historico.vitorias}V {sugestao.data.historico.empates}E{" "}
+                    {sugestao.data.historico.derrotas}D, gols {sugestao.data.historico.gols_pro}x
+                    {sugestao.data.historico.gols_contra}.
+                  </p>
+                )}
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setTatica(sugestao.data!.sugestao!.tatica);
+                    toast.success("Modelo aplicado. Veja na aba Táticas e depois clique em Gerar.");
+                  }}
+                >
+                  Usar o modelo “{sugestao.data.sugestao.tatica_nome}”
+                </Button>
+              </div>
+            )}
+            <PerfilAdversario
+              partidaId={partidaId}
+              aoSalvar={() => sugestao.refetch()}
+              ativo={verSugestao}
+            />
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   );

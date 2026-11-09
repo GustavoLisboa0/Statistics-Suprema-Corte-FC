@@ -402,3 +402,27 @@ def test_novas_formacoes_tem_dez_de_linha():
 
     assert "4-4-2 losango" in FORMACOES
     assert all(sum(c.values()) == 10 for c in FORMACOES.values())
+
+
+def test_so_aparece_fixo_que_funciona():
+    from escalacao import combinacoes_de_fixos, opcoes_de_trocas
+
+    j = elenco(14)
+    um = combinacoes_de_fixos(j, "J0", 1, 90)
+    assert um and all(len(c) == 1 for c in um)
+    opcoes = opcoes_de_trocas(j, "J0", duracao=90, intervalo_minimo=3, tolerancia=1)
+    assert opcoes[0]["quantos_fixos"] == 0
+    for o in opcoes[1:]:
+        assert o["diferenca_minutos"] <= 1 and o["momentos"] < opcoes[0]["momentos"]
+        assert sorted(o["fixos"]) in [sorted(c) for c in o["combinacoes"]]
+
+
+def test_tatica_montada_muda_a_qualidade_da_funcao():
+    from tatica import MODELOS_INSTRUCOES, config_da_tatica, qualidade, validar_instrucoes
+
+    cfg = config_da_tatica(validar_instrucoes(MODELOS_INSTRUCOES["ofensiva"]))
+    rapido = {"pace": 90}
+    lento = {"pace": 20}
+    assert qualidade(rapido, "LAT", cfg) > qualidade(lento, "LAT", cfg)
+    # Sem instrução para a posição, nada muda.
+    assert qualidade(rapido, "ZAG", cfg) == qualidade(rapido, "ZAG", "equilibrada")

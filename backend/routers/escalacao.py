@@ -31,7 +31,7 @@ from escalacao import (
 )
 from models import lesao_ativa, punicao_ativa
 import tatica as tt
-from routers.atributos import achar_adversario, carregar_atributos
+from routers.atributos import achar_adversario, carregar_atributos, resolver_tatica
 
 router = APIRouter(prefix="/partidas", tags=["Escalação"])
 
@@ -105,7 +105,7 @@ class GerarPayload(BaseModel):
     # V2 (só admin): tática e estratégia mudam quem joga mais e onde.
     tatica: Optional[str] = None
     estrategia: str = "uniforme"
-    forca_tatica: int = Field(default=50, ge=10, le=100)
+    forca_tatica: int = Field(default=100, ge=10, le=100)  # a tática vale sempre que possível
     regras: dict[UUID, RegraJogador] = {}
     restricoes: list[Restricao] = []
     # Muda a semente para pedir "outra opção" igualmente válida.
@@ -218,7 +218,8 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
 
     convocados = [todos[i] for i in ids]
 
-    if payload.tatica is not None and payload.tatica not in tt.TATICAS:
+    tatica_resolvida = resolver_tatica(payload.tatica) if payload.tatica else None
+    if payload.tatica and not tatica_resolvida:
         raise HTTPException(status_code=422, detail="Tática desconhecida")
     if payload.estrategia not in tt.ESTRATEGIAS:
         raise HTTPException(status_code=422, detail="Estratégia desconhecida")
@@ -240,7 +241,7 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
                 f: tt.qualidade(
                     atributos.get(j["id"]),
                     f,
-                    payload.tatica,
+                    tatica_resolvida["config"],
                     (atributos.get(j["id"]) or {}).get("caracteristicas"),
                 )
                 / 100
@@ -312,12 +313,10 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
     # Informações do plano de jogo que VÃO para o PDF (só nomes e ideias, sem
     # notas de atributos nem a análise interna).
     plano_de_jogo = {
-        "tatica": tt.TATICAS[payload.tatica]["nome"] if payload.tatica else None,
-        "tatica_descricao": tt.TATICAS[payload.tatica]["descricao"] if payload.tatica else None,
-        "estrategia": tt.ESTRATEGIAS[payload.estrategia]["nome"] if payload.tatica else None,
-        "estrategia_descricao": (
-            tt.ESTRATEGIAS[payload.estrategia]["descricao"] if payload.tatica else None
-        ),
+        "tatica": tatica_resolvida["nome"] if tatica_resolvida else None,
+        "tatica_descricao": (tatica_resolvida["descricao"] or None) if tatica_resolvida else None,
+        "estrategia": None,
+        "estrategia_descricao": None,
         "regras": [_texto_regra(r) for r in payload.composicao],
     }
     for alvo in [resultado, *[o["resultado"] for o in (opcoes or [])]]:
@@ -357,7 +356,9 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         # Análise interna: só vai nesta resposta do admin; nunca é salva no
         # resultado nem vai para o PDF.
         resposta["analise"] = tt.analisar(
-            resultado, {jid: atributos.get(jid) or {} for jid in resultado["jogadores"]}, payload.tatica
+            resultado,
+            {jid: atributos.get(jid) or {} for jid in resultado["jogadores"]},
+            tatica_resolvida["config"],
         )
     return resposta
 

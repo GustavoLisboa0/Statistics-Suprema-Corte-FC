@@ -26,7 +26,7 @@ from __future__ import annotations
 import math
 import random
 from functools import lru_cache
-from itertools import combinations
+from itertools import combinations, product
 from typing import Any, Optional
 
 from tatica import pesos_das_janelas
@@ -46,6 +46,7 @@ FORMACOES: dict[str, dict[str, int]] = {
     "5-4-1": {"ZAG": 3, "LAT": 2, "VOL": 2, "MEI": 2, "ATA": 1},
     # Variações com o mesmo "número" mas jeito diferente de organizar o time.
     "4-4-2 losango": {"ZAG": 2, "LAT": 2, "VOL": 1, "MEI": 3, "ATA": 2},
+    "4-2-2-2": {"ZAG": 2, "LAT": 2, "VOL": 2, "MEI": 2, "ATA": 2},
     "4-1-4-1": {"ZAG": 2, "LAT": 2, "VOL": 1, "MEI": 4, "ATA": 1},
     "4-3-3 duplo volante": {"ZAG": 2, "LAT": 2, "VOL": 2, "MEI": 1, "ATA": 3},
     "3-4-1-2": {"ZAG": 3, "LAT": 2, "VOL": 2, "MEI": 1, "ATA": 2},
@@ -1066,8 +1067,8 @@ def _melhorar(
             # Troca de "horários": a joga onde b ia jogar e b onde a ia jogar.
             # Os minutos de cada um quase não mudam; só muda QUANDO cada um joga.
             w1, w2 = rng.sample(range(len(campos)), 2)
-            a_opcoes = list(campos[w1] - campos[w2])
-            b_opcoes = list(campos[w2] - campos[w1])
+            a_opcoes = sorted(campos[w1] - campos[w2])
+            b_opcoes = sorted(campos[w2] - campos[w1])
             if a_opcoes and b_opcoes:
                 a, b = rng.choice(a_opcoes), rng.choice(b_opcoes)
                 novo = [set(c) for c in campos]
@@ -1077,7 +1078,7 @@ def _melhorar(
                 novo[w2].add(a)
         if novo is None:
             w = rng.randrange(len(campos))
-            saem = list(campos[w])
+            saem = sorted(campos[w])
             entram = [jid for jid in por_id if jid not in campos[w]]
             if not entram:
                 break
@@ -1448,6 +1449,7 @@ def avisos_de_igualdade(
     restricoes: Optional[list[dict]] = None,
     formacao: str = "4-4-2",
     mudancas_formacao: Optional[list[dict]] = None,
+    fixos_em: Optional[dict[str, str]] = None,
 ) -> list[str]:
     """
     Avisos (em português) quando é IMPOSSÍVEL todo mundo jogar o mesmo tempo
@@ -1460,8 +1462,10 @@ def avisos_de_igualdade(
         for j in jogadores
         if str(j["id"]) != str(goleiro_id)
     ]
-    linha = [j for j in jogs if j.funcoes and not j.grupo_fixo]
-    fixos = [j for j in jogs if j.funcoes and j.grupo_fixo]
+    # `fixos_em` = {id: função}: jogadores que (hipoteticamente) ficam o jogo todo.
+    fixos_em = fixos_em or {}
+    linha = [j for j in jogs if j.funcoes and not j.grupo_fixo and j.id not in fixos_em]
+    fixos = [j for j in jogs if j.funcoes and (j.grupo_fixo or j.id in fixos_em)]
     if len(linha) + len(fixos) <= len(SLOTS_LINHA):
         return []
     # Minutos de vaga de cada função durante o jogo (leva em conta mudanças de formação).
@@ -1475,7 +1479,11 @@ def avisos_de_igualdade(
         for f in FUNCOES_LINHA:
             capacidade_por_funcao[f] += (fim - ini) * FORMACOES[atual][f]
     for f in FUNCOES_LINHA:  # quem fica o jogo todo já ocupa parte das vagas
-        capacidade_por_funcao[f] -= sum(duracao for j in fixos if j.funcoes == [f])
+        capacidade_por_funcao[f] -= sum(
+            duracao for j in fixos if fixos_em.get(j.id, j.funcoes[0] if len(j.funcoes) == 1 else None) == f
+        )
+    if any(c < 0 for c in capacidade_por_funcao.values()):
+        return ["Não há vaga para todos os fixos."]
     vagas_totais = sum(capacidade_por_funcao.values())
     alvo = vagas_totais / max(len(linha), 1)  # minutos de cada um se fosse igual
     avisos: list[str] = []
@@ -1501,6 +1509,65 @@ def avisos_de_igualdade(
                 "(regra \"Joga de...\" em Ajustar e gerar de novo)."
             )
     return avisos
+
+
+def _funcoes_de_fixo(
+    jogador: "_Jogador", formacao: str, mudancas_formacao: Optional[list[dict]]
+) -> list[str]:
+    """Funções em que o jogador cabe o jogo todo (a formação precisa ter vaga em todas as fases)."""
+    formacoes = [formacao, *(m["formacao"] for m in (mudancas_formacao or []))]
+    return [f for f in jogador.funcoes if all(FORMACOES[x][f] >= 1 for x in formacoes)]
+
+
+def combinacoes_de_fixos(
+    jogadores: list[dict],
+    goleiro_id: str,
+    quantos: int,
+    duracao: int = DURACAO_PADRAO,
+    regras: Optional[dict[str, dict]] = None,
+    restricoes: Optional[list[dict]] = None,
+    formacao: str = "4-4-2",
+    mudancas_formacao: Optional[list[dict]] = None,
+    **_: Any,
+) -> list[list[str]]:
+    """
+    Todas as combinações de `quantos` jogadores que PODEM ficar o jogo todo sem
+    atrapalhar o tempo igual dos outros (conta rápida por capacidade das vagas,
+    sem gerar a escalação). Quem tem regra própria não entra.
+    """
+    regras_finais = aplicar_restricoes(regras, restricoes)
+    jogs = [
+        _Jogador(j, regras_finais.get(str(j["id"]), {}))
+        for j in jogadores
+        if str(j["id"]) != str(goleiro_id)
+    ]
+    jogs = [j for j in jogs if j.funcoes]
+    base = len(avisos_de_igualdade(jogadores, goleiro_id, duracao, regras, restricoes, formacao, mudancas_formacao))
+    livres = [
+        j
+        for j in jogs
+        if not any(
+            regras_finais.get(j.id, {}).get(k)
+            for k in ("minutos_max", "so_segundo_tempo", "comeca", "funcao", "grupo_fixo", "nao_sai")
+        )
+    ]
+    validas: list[list[str]] = []
+    for grupo in combinations(livres, quantos):
+        opcoes_funcao = [_funcoes_de_fixo(j, formacao, mudancas_formacao) for j in grupo]
+        if not all(opcoes_funcao):
+            continue
+        funcionou = False
+        for escolha in product(*opcoes_funcao):
+            avisos = avisos_de_igualdade(
+                jogadores, goleiro_id, duracao, regras, restricoes, formacao, mudancas_formacao,
+                fixos_em={j.id: f for j, f in zip(grupo, escolha)},
+            )
+            if len(avisos) <= base:
+                funcionou = True
+                break
+        if funcionou:
+            validas.append([j.id for j in grupo])
+    return validas
 
 
 def sugerir_fixos(
@@ -1558,43 +1625,115 @@ def sugerir_fixos(
     }
 
 
+def _gerar_ou_none(argumentos: tuple) -> Optional[dict]:
+    """Roda `gerar_automatico` (usado em processos separados); None se for inviável."""
+    jogadores, goleiro_id, kwargs = argumentos
+    try:
+        return gerar_automatico(jogadores, goleiro_id, **kwargs)
+    except EscalacaoInviavel:
+        return None
+
+
+_PISCINA: Any = None
+
+
+def _rodar_em_paralelo(trabalhos: list[tuple]) -> list[Optional[dict]]:
+    """
+    Roda as gerações ao mesmo tempo, em processos separados (cada uma usa um
+    núcleo do computador). Se não der para usar processos, roda uma por vez.
+    """
+    global _PISCINA
+    if len(trabalhos) > 1:
+        try:
+            if _PISCINA is None:
+                from concurrent.futures import ProcessPoolExecutor
+
+                _PISCINA = ProcessPoolExecutor(max_workers=3)
+            futuros = [_PISCINA.submit(_gerar_ou_none, t) for t in trabalhos]
+            return [f.result(timeout=120) for f in futuros]
+        except Exception:  # noqa: BLE001 — qualquer falha de processo: cai para o modo simples
+            _PISCINA = None
+    return [_gerar_ou_none(t) for t in trabalhos]
+
+
 def opcoes_de_trocas(
     jogadores: list[dict], goleiro_id: str, **opcoes: Any
 ) -> list[dict[str, Any]]:
     """
     Compara jeitos de dividir o tempo, para o administrador escolher:
     todo mundo igual, ou 1 (ou 2) jogador(es) jogando o jogo todo com menos trocas.
-    Cada opção traz o resultado completo. `opcoes` = argumentos de `gerar_automatico`.
+    Só aparece opção que FUNCIONA: com o tempo dentro da tolerância e menos
+    momentos de troca. Cada opção traz o resultado completo e as `combinacoes`
+    de fixos que funcionam (para o administrador trocar o jogador fixo).
     """
     regras = opcoes.get("regras")
     restricoes = opcoes.get("restricoes")
-    saida: list[dict[str, Any]] = []
-    for k in (0, 1, 2):
-        if k == 2 and saida and saida[-1]["momentos"] <= 3:
-            break  # com 1 fixo já está simples: não precisa de mais
-        try:
-            res = gerar_automatico(jogadores, goleiro_id, quantos_fixos=k, **opcoes)
-        except EscalacaoInviavel:
-            if k == 0:
-                raise
-            continue
+    tolerancia = opcoes.get("tolerancia", 5)
+    contexto = {
+        "duracao": opcoes.get("duracao", DURACAO_PADRAO),
+        "regras": regras,
+        "restricoes": restricoes,
+        "formacao": opcoes.get("formacao", "4-4-2"),
+        "mudancas_formacao": opcoes.get("mudancas_formacao"),
+    }
+
+    def montar(k: int, res: dict, combos: list[list[str]]) -> dict[str, Any]:
         fixos = list((res.get("plano") or {}).get("fixos", []))
-        if k > 0 and not fixos:
-            continue
         com_fixos = {a: dict(v) for a, v in (regras or {}).items()}
         for jid in fixos:
             com_fixos.setdefault(jid, {})["grupo_fixo"] = True
-        momentos = len(res["janelas"]) - 1
-        if saida and momentos >= saida[-1]["momentos"] and k > 0:
-            continue  # não simplifica nada: não vale como opção
-        saida.append(
-            {
-                "quantos_fixos": k,
-                "momentos": momentos,
-                "trocas": len(res["trocas"]),
-                "diferenca_minutos": _diferenca_minutos(res, com_fixos, restricoes),
-                "fixos": fixos,
-                "resultado": res,
-            }
+        return {
+            "quantos_fixos": k,
+            "momentos": len(res["janelas"]) - 1,
+            "trocas": len(res["trocas"]),
+            "diferenca_minutos": _diferenca_minutos(res, com_fixos, restricoes),
+            "fixos": fixos,
+            "combinacoes": combos,
+            "resultado": res,
+        }
+
+    def com_fixos_na_regra(combo: list[str]) -> dict:
+        regras_k = {a: dict(v) for a, v in (regras or {}).items()}
+        for jid in combo:
+            regras_k.setdefault(jid, {})["grupo_fixo"] = True
+        return {**opcoes, "regras": regras_k, "quantos_fixos": 0}
+
+    # Quais combinações de fixos funcionam (conta rápida) e qual o escalador prefere.
+    combos_por_k: dict[int, list[list[str]]] = {}
+    for k in (1, 2):
+        combos = combinacoes_de_fixos(jogadores, goleiro_id, k, **contexto)
+        if not combos:
+            continue
+        preferidos = _escolher_fixos(
+            jogadores, goleiro_id, k, aplicar_restricoes(regras, restricoes),
+            opcoes.get("qualidade"), opcoes.get("perfis"),
         )
+        combos.sort(key=lambda c: sorted(c) != sorted(preferidos))
+        combos_por_k[k] = combos
+
+    # Gera ao mesmo tempo: todo mundo igual + a melhor combinação de cada tamanho.
+    trabalhos = [(jogadores, goleiro_id, {**opcoes, "quantos_fixos": 0})]
+    ks = list(combos_por_k)
+    for k in ks:
+        trabalhos.append((jogadores, goleiro_id, com_fixos_na_regra(combos_por_k[k][0])))
+    resultados = _rodar_em_paralelo(trabalhos)
+    if resultados[0] is None:
+        raise EscalacaoInviavel("Não foi possível montar a escalação.")
+
+    saida = [montar(0, resultados[0], [])]
+    for k, res in zip(ks, resultados[1:]):
+        if k == 2 and saida[-1]["momentos"] <= 3:
+            continue  # com 1 fixo já está simples: não precisa de mais
+        combos = combos_por_k[k]
+        tentativas = [(combos[0], res)] + [(c, None) for c in combos[1:2]]
+        for combo, pronto in tentativas:
+            if pronto is None:
+                pronto = _gerar_ou_none((jogadores, goleiro_id, com_fixos_na_regra(combo)))
+            if pronto is None:
+                continue
+            pronto.setdefault("plano", {})["fixos"] = list(combo)
+            opc = montar(k, pronto, combos)
+            if opc["diferenca_minutos"] <= tolerancia and opc["momentos"] < saida[-1]["momentos"]:
+                saida.append(opc)
+                break
     return saida

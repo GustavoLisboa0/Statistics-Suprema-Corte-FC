@@ -98,8 +98,10 @@ ESTRATEGIAS: dict[str, dict[str, str]] = {
 }
 
 
-def _validar(tatica: str, estrategia: str) -> None:
-    if tatica not in TATICAS:
+def _validar(tatica: Any, estrategia: str) -> None:
+    if isinstance(tatica, dict):  # tática montada pelo administrador (ver `config_da_tatica`)
+        pass
+    elif tatica not in TATICAS:
         raise ValueError(f"Tática desconhecida: {tatica!r}")
     if estrategia not in ESTRATEGIAS:
         raise ValueError(f"Estratégia desconhecida: {estrategia!r}")
@@ -111,7 +113,7 @@ def _validar(tatica: str, estrategia: str) -> None:
 def qualidade(
     atributos: Optional[dict],
     funcao: str,
-    tatica: str = "equilibrada",
+    tatica: Any = "equilibrada",
     caracteristicas: Optional[list[str]] = None,
 ) -> float:
     """
@@ -121,16 +123,23 @@ def qualidade(
     `caracteristicas`: ["marcador", ...] — dão um pequeno bônus conforme a tática.
     """
     _validar(tatica, "uniforme")
-    config = TATICAS[tatica]
+    montada = isinstance(tatica, dict)
+    config = tatica if montada else TATICAS[tatica]
     atributos = atributos or {}
     total = 0.0
     peso_total = 0.0
+    por_funcao = config.get("attr_funcao", {}).get(funcao, {}) if montada else {}
     for atributo, peso in PESOS_FUNCAO[funcao].items():
-        peso *= config["attr"].get(atributo, 1.0)
+        peso *= config["attr"].get(atributo, 1.0) * por_funcao.get(atributo, 1.0)
         valor = atributos.get(atributo)
         total += peso * (PADRAO if valor is None else valor)
         peso_total += peso
-    bonus = sum(BONUS_CARACTERISTICA.get(tatica, {}).get(c, 0) for c in caracteristicas or [])
+    tabela_bonus = (
+        config.get("bonus_funcao", {}).get(funcao, {})
+        if montada
+        else BONUS_CARACTERISTICA.get(tatica, {})
+    )
+    bonus = sum(tabela_bonus.get(c, 0) for c in caracteristicas or [])
     return (total / peso_total + bonus) * config["funcao"].get(funcao, 1.0)
 
 
@@ -165,7 +174,7 @@ def _media(valores: list[float]) -> float:
 def analisar(
     resultado: dict,
     atributos_por_id: dict[str, dict],
-    tatica: str = "equilibrada",
+    tatica: Any = "equilibrada",
 ) -> dict[str, Any]:
     """
     Nota de cada momento do jogo e do jogo todo (0–100) + pontos de atenção.
@@ -416,3 +425,161 @@ def sugerir_formacoes(tatica: Optional[str], duracao: int = 90) -> dict[str, Any
         ),
         "motivo": motivo,
     }
+
+
+# ---------------------------------------------------------------------------
+# Táticas montadas pelo administrador (estilo FIFA / eFootball)
+# ---------------------------------------------------------------------------
+# Cada função (zagueiro, lateral...) recebe uma instrução para cada situação
+# do jogo. O sistema traduz isso em "o que esta função precisa ter" (velocidade,
+# marcação, passe...) e prefere escalar quem tem isso — sempre que possível.
+SITUACOES: dict[str, str] = {
+    "com_bola": "Com a bola",
+    "sem_bola": "Sem a bola",
+    "ataque": "Atacando",
+    "defesa": "Defendendo",
+    "contra_ataque": "No contra-ataque",
+}
+
+COMPORTAMENTOS: dict[str, dict[str, Any]] = {
+    "fica": {"nome": "Fica na posição", "attr": {}, "carac": {}},
+    "sobe": {
+        "nome": "Sobe ao ataque",
+        "attr": {"pace": 1.2, "fisico": 1.1, "passe": 1.1, "finalizacao": 1.1},
+        "carac": {"folego": 3, "driblador": 2},
+    },
+    "apoia": {
+        "nome": "Apoia quem tem a bola",
+        "attr": {"passe": 1.2, "visao": 1.1},
+        "carac": {"armador": 2},
+    },
+    "recua": {
+        "nome": "Recua e protege",
+        "attr": {"defesa": 1.25, "fisico": 1.05},
+        "carac": {"marcador": 3, "desarme": 3, "jogo_aereo": 2},
+    },
+    "pressiona": {
+        "nome": "Pressiona a saída",
+        "attr": {"fisico": 1.25, "pace": 1.15, "defesa": 1.1},
+        "carac": {"folego": 4, "desarme": 3},
+    },
+    "abre": {
+        "nome": "Abre pelos lados",
+        "attr": {"pace": 1.25, "passe": 1.1},
+        "carac": {"driblador": 3},
+    },
+    "fecha": {
+        "nome": "Fecha por dentro",
+        "attr": {"passe": 1.15, "visao": 1.2},
+        "carac": {"armador": 3, "passe_longo": 2},
+    },
+    "infiltra": {
+        "nome": "Infiltra no espaço",
+        "attr": {"pace": 1.25, "finalizacao": 1.2},
+        "carac": {"finalizador": 4, "driblador": 2},
+    },
+}
+
+# O que faz sentido para cada posição (o primeiro é o padrão).
+COMPORTAMENTOS_POR_FUNCAO: dict[str, list[str]] = {
+    "ZAG": ["fica", "sobe", "recua", "pressiona", "fecha"],
+    "LAT": ["fica", "sobe", "apoia", "recua", "abre", "fecha", "pressiona"],
+    "VOL": ["fica", "recua", "apoia", "sobe", "pressiona", "fecha"],
+    "MEI": ["fica", "apoia", "abre", "fecha", "infiltra", "sobe", "pressiona", "recua"],
+    "ATA": ["fica", "infiltra", "pressiona", "abre", "fecha", "recua"],
+}
+
+
+def validar_instrucoes(instrucoes: Any) -> dict[str, dict[str, str]]:
+    """Confere e limpa {função: {situação: comportamento}}. Levanta ValueError se inválido."""
+    if not isinstance(instrucoes, dict):
+        raise ValueError("Instruções inválidas")
+    limpo: dict[str, dict[str, str]] = {}
+    for funcao, situacoes in instrucoes.items():
+        if funcao not in COMPORTAMENTOS_POR_FUNCAO or not isinstance(situacoes, dict):
+            raise ValueError(f"Posição desconhecida: {funcao!r}")
+        for situacao, comportamento in situacoes.items():
+            if situacao not in SITUACOES:
+                raise ValueError(f"Situação desconhecida: {situacao!r}")
+            if comportamento not in COMPORTAMENTOS_POR_FUNCAO[funcao]:
+                raise ValueError(f"{comportamento!r} não vale para {funcao}")
+            if comportamento != "fica":
+                limpo.setdefault(funcao, {})[situacao] = comportamento
+    return limpo
+
+
+def config_da_tatica(instrucoes: dict[str, dict[str, str]]) -> dict[str, Any]:
+    """Traduz as instruções em multiplicadores de atributo e bônus por função."""
+    attr_funcao: dict[str, dict[str, float]] = {}
+    bonus_funcao: dict[str, dict[str, float]] = {}
+    for funcao, situacoes in instrucoes.items():
+        extra: dict[str, float] = {}
+        bonus: dict[str, float] = {}
+        for comportamento in situacoes.values():
+            info = COMPORTAMENTOS[comportamento]
+            for atributo, mult in info["attr"].items():
+                extra[atributo] = extra.get(atributo, 0.0) + (mult - 1.0)
+            for carac, valor in info["carac"].items():
+                bonus[carac] = bonus.get(carac, 0.0) + valor / 2
+        attr_funcao[funcao] = {a: min(1.8, max(0.7, 1.0 + v / 2.5)) for a, v in extra.items()}
+        bonus_funcao[funcao] = bonus
+    return {"attr": {}, "funcao": {}, "attr_funcao": attr_funcao, "bonus_funcao": bonus_funcao}
+
+
+def estilo_da_tatica(instrucoes: dict[str, dict[str, str]]) -> str:
+    """Estilo (id de TATICAS) mais parecido com as instruções — usado para sugerir formação."""
+    pontos = {"ofensiva": 0, "defensiva": 0, "posse": 0, "contra_ataque": 0, "pressao": 0}
+    for situacoes in instrucoes.values():
+        for situacao, c in situacoes.items():
+            if c in ("sobe", "infiltra"):
+                pontos["contra_ataque" if situacao == "contra_ataque" else "ofensiva"] += 1
+            elif c == "recua":
+                pontos["defensiva"] += 1
+            elif c in ("apoia", "fecha"):
+                pontos["posse"] += 1
+            elif c == "pressiona":
+                pontos["pressao"] += 1
+            elif c == "abre":
+                pontos["ofensiva"] += 1
+    melhor = max(pontos, key=lambda k: pontos[k])
+    return melhor if pontos[melhor] > 0 else "equilibrada"
+
+
+# Modelos prontos para começar (o administrador pode copiar e mexer).
+MODELOS_INSTRUCOES: dict[str, dict[str, dict[str, str]]] = {
+    "equilibrada": {},
+    "ofensiva": {
+        "LAT": {"ataque": "sobe", "com_bola": "sobe", "contra_ataque": "sobe"},
+        "VOL": {"ataque": "apoia", "com_bola": "apoia"},
+        "MEI": {"ataque": "infiltra", "com_bola": "apoia", "contra_ataque": "infiltra"},
+        "ATA": {"ataque": "infiltra", "contra_ataque": "infiltra", "sem_bola": "pressiona"},
+    },
+    "defensiva": {
+        "ZAG": {"defesa": "recua", "sem_bola": "recua"},
+        "LAT": {"defesa": "recua", "sem_bola": "recua"},
+        "VOL": {"defesa": "recua", "sem_bola": "recua", "contra_ataque": "apoia"},
+        "MEI": {"defesa": "recua", "sem_bola": "recua"},
+        "ATA": {"defesa": "recua", "contra_ataque": "infiltra"},
+    },
+    "posse": {
+        "ZAG": {"com_bola": "fecha"},
+        "LAT": {"com_bola": "apoia", "ataque": "fecha"},
+        "VOL": {"com_bola": "apoia", "ataque": "fecha"},
+        "MEI": {"com_bola": "fecha", "ataque": "apoia"},
+        "ATA": {"com_bola": "fecha"},
+    },
+    "contra_ataque": {
+        "ZAG": {"defesa": "recua", "sem_bola": "recua"},
+        "VOL": {"defesa": "recua", "contra_ataque": "apoia"},
+        "LAT": {"contra_ataque": "sobe", "defesa": "recua"},
+        "MEI": {"contra_ataque": "infiltra", "defesa": "recua"},
+        "ATA": {"contra_ataque": "infiltra"},
+    },
+    "pressao": {
+        "ZAG": {"sem_bola": "pressiona"},
+        "LAT": {"sem_bola": "pressiona", "ataque": "sobe"},
+        "VOL": {"sem_bola": "pressiona"},
+        "MEI": {"sem_bola": "pressiona"},
+        "ATA": {"sem_bola": "pressiona"},
+    },
+}

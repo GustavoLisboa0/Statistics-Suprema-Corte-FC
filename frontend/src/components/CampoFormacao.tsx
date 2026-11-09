@@ -9,6 +9,8 @@ type Props = {
   comRegra?: Set<string>;
   /** Função selecionada (a que está sendo editada). */
   selecionada?: string | null;
+  /** Palavrinha embaixo de cada bolinha, por função (ex.: { LAT: "sobe" }). */
+  marcas?: Record<string, string>;
   /** Clique numa bolinha (quando passado, as bolinhas viram botões). */
   onClickFuncao?: (funcao: Funcao) => void;
   className?: string;
@@ -20,6 +22,7 @@ export function CampoFormacao({
   mini,
   comRegra,
   selecionada,
+  marcas,
   onClickFuncao,
   className,
 }: Props) {
@@ -73,6 +76,21 @@ export function CampoFormacao({
               stroke={ativa ? "#f0b411" : regra ? "#f0b411" : "#fff"}
               strokeWidth={mini ? 7 : ativa ? 5 : regra ? 4 : 2.5}
             />
+            {!mini && marcas?.[funcao] && lugar !== "GOL" && (
+              <text
+                y="42"
+                textAnchor="middle"
+                fontSize="13"
+                fontWeight="700"
+                fill="#fff"
+                stroke="#14532d"
+                strokeWidth="3"
+                paintOrder="stroke"
+                fontFamily="Barlow, system-ui, sans-serif"
+              >
+                {marcas[funcao]}
+              </text>
+            )}
             {!mini && (
               <text
                 y="5"

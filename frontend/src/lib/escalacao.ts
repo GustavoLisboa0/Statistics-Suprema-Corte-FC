@@ -24,6 +24,7 @@ export type Lugar = string;
 /** Formações que o sistema conhece (nome -> quantos em cada função). */
 export const FORMACOES: Record<string, Record<Funcao, number>> = {
   "4-4-2": { ZAG: 2, LAT: 2, VOL: 2, MEI: 2, ATA: 2 },
+  "4-2-2-2": { ZAG: 2, LAT: 2, VOL: 2, MEI: 2, ATA: 2 },
   "4-4-2 losango": { ZAG: 2, LAT: 2, VOL: 1, MEI: 3, ATA: 2 },
   "4-3-3": { ZAG: 2, LAT: 2, VOL: 1, MEI: 2, ATA: 3 },
   "4-3-3 duplo volante": { ZAG: 2, LAT: 2, VOL: 2, MEI: 1, ATA: 3 },
@@ -40,6 +41,7 @@ export const FORMACOES: Record<string, Record<Funcao, number>> = {
 /** Uma frase curta explicando o desenho de cada formação (aparece no seletor). */
 export const FORMACAO_DESCRICAO: Record<string, string> = {
   "4-4-2": "Dois volantes, dois meias abertos e dois atacantes.",
+  "4-2-2-2": "Dois volantes, dois meias por dentro (atrás dos atacantes) e dois atacantes.",
   "4-4-2 losango": "Um volante, dois meias abertos, um 10 e dois atacantes.",
   "4-3-3": "Um volante, dois meias e três atacantes.",
   "4-3-3 duplo volante": "Dois volantes, um meia e três atacantes.",
@@ -86,6 +88,10 @@ export function layoutDaFormacao(formacao: string): Record<Lugar, { x: number; y
       pos.VOL1 = { x: 150, y: 285 };
       pos.VOL2 = { x: 250, y: 285 };
       pos.MEI2 = { x: 342, y: 255 };
+      break;
+    case "4-2-2-2": // dois volantes, dois meias por dentro
+      poe("VOL", [150, 250], 320);
+      poe("MEI", [120, 280], 235);
       break;
     case "4-4-2 losango":
       poe("VOL", [200], 330);
@@ -256,7 +262,30 @@ export type ResultadoEscalacao = {
   };
 };
 
+/** Sigla da posição do cadastro (para a legendinha ao lado do nome). */
+export const ABREV_POSICAO: Record<string, string> = {
+  goleiro: "GOL",
+  zagueiro: "ZAG",
+  lateral_direito: "LD",
+  lateral_esquerdo: "LE",
+  volante: "VOL",
+  meia: "MEI",
+  meia_esquerda: "ME",
+  meia_direita: "MD",
+  meia_atacante: "MA",
+  atacante: "ATA",
+  ponta_esquerda: "PE",
+  ponta_direita: "PD",
+  centro_avante: "CA",
+};
+
+export function siglaPosicao(posicoes: string[]): string {
+  return posicoes[0] ? (ABREV_POSICAO[posicoes[0]] ?? posicoes[0]) : "";
+}
+
 export type OpcaoDeTrocas = {
+  /** Combinações de jogadores que realmente funcionam como "jogo todo" nesta opção. */
+  combinacoes: string[][];
   quantos_fixos: number;
   momentos: number;
   trocas: number;
@@ -368,7 +397,28 @@ export type Catalogo = {
   }[];
   estrategias: { id: string; nome: string; descricao: string }[];
   estilos: { id: string; nome: string }[];
+  /** Montador de táticas. */
+  situacoes: { id: string; nome: string }[];
+  comportamentos: { id: string; nome: string }[];
+  comportamentos_por_funcao: Record<string, string[]>;
+  modelos: { id: string; nome: string; descricao: string; instrucoes: Instrucoes }[];
 };
+
+/** O que cada posição faz em cada situação: { LAT: { ataque: "sobe" } }. */
+export type Instrucoes = Partial<Record<Funcao, Record<string, string>>>;
+
+export type TaticaSalva = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  instrucoes: Instrucoes;
+};
+type CorpoTatica = { nome: string; descricao: string | null; instrucoes: Instrucoes };
+export const fetchTaticas = () => api.get<TaticaSalva[]>("/taticas");
+export const criarTatica = (corpo: CorpoTatica) => api.post<TaticaSalva>("/taticas", corpo);
+export const editarTatica = (id: string, corpo: CorpoTatica) =>
+  api.put<TaticaSalva>(`/taticas/${id}`, corpo);
+export const apagarTatica = (id: string) => api.del(`/taticas/${id}`);
 
 export type AtributosJogador = {
   jogador_id: string;
