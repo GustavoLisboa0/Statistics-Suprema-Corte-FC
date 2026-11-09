@@ -89,6 +89,24 @@ escalação salva.
 - Rotas: `backend/routers/escalacao.py` (`/partidas/{id}/escalacao...`).
 - No Supabase de verdade, rode antes `database/migration_009_escalacoes.sql`.
 
+### V2: tempo igual, atributos, tática e contra-estratégia
+
+- **Automático (padrão):** jogo de 90 min; o computador escolhe quantas
+  substituições e quantos saem por vez para todo mundo jogar o mesmo tempo
+  (minutos das trocas arredondados para cima, por causa do acréscimo). Dá para
+  desligar e escolher na mão. Se as posições impedirem o tempo igual (ex.: 3
+  atacantes para 2 vagas), aparece um aviso dizendo quem e como resolver.
+- **Só administrador (papel `editor`):** atributos dos jogadores (velocidade,
+  físico, defesa, finalização, passe, visão), nota interna do time, tática,
+  estratégia e perfil de adversários. Nada disso aparece para usuário comum
+  nem no PDF (as rotas devolvem 403 e a escalação salva sai sem a tática).
+- **Tática** (ofensiva, defensiva, posse, contra-ataque, pressão) muda quem
+  joga em cada lugar; **estratégia** muda *quando* os melhores jogam (início,
+  final). O botão "Sugerir contra o adversário" usa o perfil cadastrado dele e
+  o histórico de jogos.
+- Lógica: `backend/tatica.py`; rotas: `backend/routers/atributos.py`.
+- No Supabase de verdade, rode também `database/migration_010_atributos_taticas.sql`.
+
 ## Setup
 
 ### 1. Banco de dados (Supabase)

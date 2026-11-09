@@ -185,3 +185,22 @@ def test_historico_pesa_na_sugestao():
     )
     assert historico["jogos"] == 2 and historico["derrotas"] == 2 and historico["gols_contra"] == 7
     assert tt.sugerir_contra_estrategia({}, historico)["tatica"] == "defensiva"
+
+
+# ---------------------------------------------------------------------------
+# Aviso quando igualar é impossível por causa das posições
+# ---------------------------------------------------------------------------
+def test_aviso_de_atacantes_demais():
+    from escalacao import avisos_de_igualdade
+
+    elenco_ = elenco(14)  # flexível: sem aviso
+    assert avisos_de_igualdade(elenco_, "J0", 90) == []
+    # 3 atacantes puros para 2 vagas de ataque
+    rigido = elenco(11) + [
+        {"id": f"A{i}", "nome": f"Ata{i}", "posicoes": ["atacante"]} for i in range(3)
+    ]
+    for j in rigido:
+        if j["id"] in ("J8", "J9", "J10"):  # tira os atacantes flexíveis
+            j["posicoes"] = ["meia"]
+    avisos = avisos_de_igualdade(rigido, "J0", 90)
+    assert any("Ata0" in a and "atacante" in a and "no máximo 60" in a for a in avisos), avisos

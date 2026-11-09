@@ -1073,3 +1073,50 @@ def gerar_automatico(
     if melhor is None:
         raise ultimo_erro or EscalacaoInviavel("Não foi possível montar a escalação.")
     return melhor
+
+
+def avisos_de_igualdade(
+    jogadores: list[dict],
+    goleiro_id: str,
+    duracao: int,
+    regras: Optional[dict[str, dict]] = None,
+    restricoes: Optional[list[dict]] = None,
+) -> list[str]:
+    """
+    Avisos (em português) quando é IMPOSSÍVEL todo mundo jogar o mesmo tempo
+    por causa das posições, ex.: 3 atacantes que só jogam de atacante para
+    2 vagas. Diz quem é afetado e como resolver.
+    """
+    regras_finais = aplicar_restricoes(regras, restricoes)
+    jogs = [
+        _Jogador(j, regras_finais.get(str(j["id"]), {}))
+        for j in jogadores
+        if str(j["id"]) != str(goleiro_id)
+    ]
+    linha = [j for j in jogs if j.funcoes]
+    if len(linha) <= len(SLOTS_LINHA):
+        return []
+    alvo = duracao * len(SLOTS_LINHA) / len(linha)  # minutos de cada um se fosse igual
+    avisos: list[str] = []
+    achados: list[set[str]] = []
+    for tamanho in range(1, len(FUNCOES_LINHA) + 1):
+        for conjunto in combinations(FUNCOES_LINHA, tamanho):
+            funcoes = set(conjunto)
+            presos = [j for j in linha if set(j.funcoes) <= funcoes]
+            capacidade = 2 * duracao * tamanho  # cada função tem 2 vagas o jogo todo
+            if not presos or len(presos) * alvo <= capacidade + 1e-9:
+                continue
+            ids = {j.id for j in presos}
+            if any(antigo <= ids for antigo in achados):
+                continue  # já avisado por um grupo menor
+            achados.append(ids)
+            nomes = ", ".join(j.nome for j in presos)
+            onde = " / ".join(NOMES_FUNCAO[f] for f in FUNCOES_LINHA if f in funcoes)
+            vagas = 2 * tamanho
+            avisos.append(
+                f"{nomes} só jogam de {onde}: são {len(presos)} jogadores para {vagas} vaga(s), "
+                f"então cada um joga no máximo {capacidade // len(presos)} min (os outros jogam "
+                "mais). Para igualar, deixe um deles jogar em outra posição "
+                "(regra \"Joga de...\" em Ajustar e gerar de novo)."
+            )
+    return avisos

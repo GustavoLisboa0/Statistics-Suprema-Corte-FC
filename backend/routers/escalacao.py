@@ -22,6 +22,7 @@ from escalacao import (
     SUBSTITUICOES_PADRAO,
     TROCAS_POR_VEZ_PADRAO,
     EscalacaoInviavel,
+    avisos_de_igualdade,
     gerar_automatico,
     gerar_escalacao,
 )
@@ -240,6 +241,9 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         "config": payload.model_dump(mode="json"),
         "resultado": resultado,
     }
+    resposta["avisos"] = avisos_de_igualdade(
+        convocados, goleiro_id, payload.duracao, comuns["regras"], comuns["restricoes"]
+    )
     if payload.tatica:
         # Análise interna: só vai nesta resposta do admin; nunca é salva no
         # resultado nem vai para o PDF.

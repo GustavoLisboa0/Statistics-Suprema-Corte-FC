@@ -88,11 +88,17 @@ export type GerarPayload = {
   incluir: string[];
   remover: string[];
   duracao: number;
+  /** Automático: o computador escolhe quando trocar e quantos trocam por vez. */
+  automatico: boolean;
   n_substituicoes: number;
   trocas_por_vez: number;
   regras: Record<string, RegraJogador>;
   restricoes: Restricao[];
   semente: number;
+  /** V2 (só admin): tática e estratégia. */
+  tatica: string | null;
+  estrategia: string;
+  forca_tatica: number;
 };
 
 export type Janela = {
@@ -130,6 +136,8 @@ export type ResultadoEscalacao = {
   minutos: Record<string, number>;
   /** Dados públicos de cada convocado, para desenhar sem buscar mais nada. */
   jogadores: Record<string, JogadorResumo>;
+  /** Só no modo automático: o que o computador decidiu. */
+  plano?: { n_substituicoes: number; trocas_por_vez: number; cortes: number[] };
 };
 
 export type PreviaEscalacao = {
@@ -137,6 +145,10 @@ export type PreviaEscalacao = {
   convocados: Convocado[];
   config: GerarPayload;
   resultado: ResultadoEscalacao;
+  /** Só admin, e só quando há tática. Nunca vai para o PDF. */
+  analise?: Analise;
+  /** Avisos do sistema para o admin (ex.: tempo igual impossível por causa das posições). */
+  avisos?: string[];
 };
 
 export type EscalacaoSalva = {
@@ -183,3 +195,87 @@ export function escalacaoDaJanela(resultado: ResultadoEscalacao, indice: number)
   const banco = Object.keys(resultado.jogadores).filter((id) => !emCampo.has(id));
   return { janela, banco };
 }
+
+// ---------------------------------------------------------------------------
+// V2 — tudo abaixo é INTERNO do admin (a API recusa quem não é editor)
+// ---------------------------------------------------------------------------
+export const ATRIBUTOS = [
+  { id: "pace", nome: "Velocidade" },
+  { id: "fisico", nome: "Físico" },
+  { id: "defesa", nome: "Defesa" },
+  { id: "finalizacao", nome: "Finalização" },
+  { id: "passe", nome: "Passe" },
+  { id: "visao", nome: "Visão" },
+] as const;
+export type AtributoId = (typeof ATRIBUTOS)[number]["id"];
+
+export type Analise = {
+  tatica: string;
+  nota_geral: number;
+  janelas: {
+    inicio: number;
+    fim: number;
+    nota: number;
+    setores: { defesa: number; meio: number; ataque: number };
+  }[];
+  pontos_de_atencao: string[];
+};
+
+export type Catalogo = {
+  taticas: { id: string; nome: string; descricao: string }[];
+  estrategias: { id: string; nome: string; descricao: string }[];
+  estilos: { id: string; nome: string }[];
+};
+
+export type AtributosJogador = {
+  jogador_id: string;
+  nome: string;
+  posicoes: string[];
+  numero_camisa: number | null;
+  nota: string | null;
+} & Record<AtributoId, number | null>;
+
+export type Adversario = {
+  id?: string;
+  nome: string;
+  ataque: number | null;
+  meio: number | null;
+  defesa: number | null;
+  estilo: string | null;
+  observacoes: string | null;
+};
+
+export type ContraEstrategia = {
+  adversario: string;
+  perfil: Adversario | null;
+  historico: {
+    jogos: number;
+    vitorias: number;
+    empates: number;
+    derrotas: number;
+    gols_pro: number;
+    gols_contra: number;
+  };
+  sugestao: {
+    tatica: string;
+    estrategia: string;
+    tatica_nome: string;
+    estrategia_nome: string;
+    motivos: string[];
+  } | null;
+  aviso: string | null;
+};
+
+export const fetchCatalogo = () => api.get<Catalogo>("/escalacao/catalogo");
+export const fetchAtributos = () => api.get<AtributosJogador[]>("/atributos");
+export const salvarAtributos = (
+  jogadorId: string,
+  corpo: Partial<Record<AtributoId, number | null>> & { nota?: string | null },
+) => api.put(`/atributos/${jogadorId}`, corpo);
+export const fetchNota = (partidaId: string) =>
+  api.get<{ texto: string }>(`/partidas/${partidaId}/escalacao/nota`);
+export const salvarNota = (partidaId: string, texto: string) =>
+  api.put<{ texto: string }>(`/partidas/${partidaId}/escalacao/nota`, { texto });
+export const fetchContraEstrategia = (partidaId: string) =>
+  api.get<ContraEstrategia>(`/partidas/${partidaId}/escalacao/contra-estrategia`);
+export const salvarAdversario = (corpo: Adversario) => api.put<Adversario>("/adversarios", corpo);

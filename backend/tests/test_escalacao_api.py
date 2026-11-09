@@ -159,6 +159,8 @@ def test_tatica_gera_analise_e_nada_vaza_para_usuario_comum(api):
     # (o elenco de teste tem posições bem presas: aqui aceitamos até uma janela de diferença)
     assert res["duracao"] == 90 and max(minutos) - min(minutos) <= 10
     assert dados["resultado"]["plano"]["cortes"] == sorted(dados["resultado"]["plano"]["cortes"])
+    # No elenco de teste há 3 atacantes puros para 2 vagas: o sistema avisa o admin.
+    assert any("Igor" in a and "no máximo 60" in a for a in dados["avisos"]), dados["avisos"]
     # O que vai para o PDF/usuário (resultado) não tem atributos nem análise.
     texto = str(dados["resultado"])
     assert "SEGREDO" not in texto and "finalizacao" not in texto and "analise" not in texto

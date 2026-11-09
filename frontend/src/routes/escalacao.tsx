@@ -26,6 +26,12 @@ import {
 } from "@/lib/escalacao";
 import { exportarEscalacaoPdf } from "@/lib/escalacaoPdf";
 import { CampoEscalacao } from "@/components/CampoEscalacao";
+import {
+  CartaoAnalise,
+  CartaoAtributos,
+  CartaoNota,
+  CartaoTatica,
+} from "@/components/EscalacaoInterna";
 import { NumberInput } from "@/components/NumberInput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -282,6 +288,13 @@ function VisaoEscalacao({
       <Card>
         <CardHeader>
           <CardTitle className="font-display text-2xl tracking-wide">Minutos por jogador</CardTitle>
+          {resultado.plano && (
+            <p className="text-sm text-muted-foreground">
+              O sistema escolheu {resultado.plano.n_substituicoes} momento(s) de troca, com até{" "}
+              {resultado.plano.trocas_por_vez} jogador(es) saindo por vez (minutos{" "}
+              {resultado.plano.cortes.join(", ") || "—"}).
+            </p>
+          )}
         </CardHeader>
         <CardContent className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
           {minutosOrdenados.map((m) => (
@@ -360,7 +373,11 @@ function FormularioAdmin({
   const [incluir, setIncluir] = useState<Set<string>>(new Set(cfg?.incluir ?? []));
   const [remover, setRemover] = useState<Set<string>>(new Set(cfg?.remover ?? []));
   const [goleiroId, setGoleiroId] = useState(cfg?.goleiro_id ?? "");
-  const [duracao, setDuracao] = useState(String(cfg?.duracao ?? 60));
+  const [duracao, setDuracao] = useState(String(cfg?.duracao ?? 90));
+  const [automatico, setAutomatico] = useState(cfg?.automatico ?? true);
+  const [tatica, setTatica] = useState<string | null>(cfg?.tatica ?? null);
+  const [estrategia, setEstrategia] = useState(cfg?.estrategia ?? "uniforme");
+  const [forca, setForca] = useState(cfg?.forca_tatica ?? 50);
   const [nSubs, setNSubs] = useState(String(cfg?.n_substituicoes ?? 5));
   const [trocas, setTrocas] = useState(String(cfg?.trocas_por_vez ?? 2));
   const [regras, setRegras] = useState<Record<string, RegraJogador>>(cfg?.regras ?? {});
@@ -430,7 +447,11 @@ function FormularioAdmin({
     goleiro_id: goleiroId,
     incluir: [...incluir],
     remover: [...remover],
-    duracao: Number(duracao) || 60,
+    duracao: Number(duracao) || 90,
+    automatico,
+    tatica,
+    estrategia,
+    forca_tatica: forca,
     n_substituicoes: Number(nSubs) || 0,
     trocas_por_vez: Number(trocas) || 1,
     regras: limparRegras(regras, new Set(elenco.map((j) => j.id))),
@@ -623,15 +644,33 @@ function FormularioAdmin({
               <Label htmlFor="duracao">Duração (minutos)</Label>
               <NumberInput id="duracao" value={duracao} onChange={setDuracao} min={10} max={120} />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="subs">Momentos de substituição</Label>
-              <NumberInput id="subs" value={nSubs} onChange={setNSubs} min={0} max={20} />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="trocas">Quantos trocam por vez</Label>
-              <NumberInput id="trocas" value={trocas} onChange={setTrocas} min={1} max={10} />
-            </div>
+            {!automatico && (
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor="subs">Momentos de substituição</Label>
+                  <NumberInput id="subs" value={nSubs} onChange={setNSubs} min={0} max={20} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="trocas">Quantos trocam por vez</Label>
+                  <NumberInput id="trocas" value={trocas} onChange={setTrocas} min={1} max={10} />
+                </div>
+              </>
+            )}
           </div>
+          <label className="flex items-start gap-3 text-sm">
+            <Switch
+              checked={automatico}
+              onCheckedChange={setAutomatico}
+              aria-label="Deixar o computador decidir as substituições"
+            />
+            <span>
+              <strong>Deixar o computador decidir as substituições</strong>
+              <span className="block text-muted-foreground">
+                Ele escolhe quantas trocas e quantos saem por vez para todo mundo jogar o mesmo
+                tempo. Os minutos das trocas são arredondados para cima (por causa do acréscimo).
+              </span>
+            </span>
+          </label>
 
           <Button variant="link" className="h-auto p-0" onClick={() => setMostrarRegras((v) => !v)}>
             {mostrarRegras ? "Esconder" : "Mostrar"} regras opcionais por jogador
@@ -717,6 +756,17 @@ function FormularioAdmin({
         </CardContent>
       </Card>
 
+      <CartaoTatica
+        partidaId={partida.id}
+        tatica={tatica}
+        setTatica={setTatica}
+        estrategia={estrategia}
+        setEstrategia={setEstrategia}
+        forca={forca}
+        setForca={setForca}
+      />
+      <CartaoAtributos idsDoElenco={elenco.map((j) => j.id)} />
+
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => rodar()} disabled={gerar.isPending} size="lg">
           <RefreshCw className={`mr-2 h-4 w-4 ${gerar.isPending ? "animate-spin" : ""}`} />
@@ -732,6 +782,20 @@ function FormularioAdmin({
       {/* 5. Prévia */}
       {previa && (
         <div className="space-y-6">
+          {previa.avisos && previa.avisos.length > 0 && (
+            <Card className="border-accent">
+              <CardHeader>
+                <CardTitle className="text-base">Atenção</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="list-disc space-y-1 pl-5 text-sm">
+                  {previa.avisos.map((a) => (
+                    <li key={a}>{a}</li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
           <VisaoEscalacao
             resultado={previa.resultado}
             partida={partida}
@@ -756,6 +820,9 @@ function FormularioAdmin({
               </>
             }
           />
+
+          {previa.analise && <CartaoAnalise analise={previa.analise} />}
+          <CartaoNota partidaId={partida.id} />
 
           <Card>
             <CardHeader>
