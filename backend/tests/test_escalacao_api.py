@@ -173,8 +173,10 @@ def test_tatica_gera_analise_e_nada_vaza_para_usuario_comum(api):
     assert visto.status_code == 200
     bruto = visto.text
     assert "NOTA-SECRETA" not in bruto and "SEGREDO" not in bruto
-    assert "ofensiva" not in bruto and "forca_no_final" not in bruto
+    assert "forca_tatica" not in bruto and "forca_no_final" not in bruto  # nada de config interna
     assert visto.json()["config"] == {}
+    # O plano de jogo (nomes e ideias) é público: entra no PDF para todos.
+    assert visto.json()["resultado"]["plano_de_jogo"]["tatica"] == "Ofensiva"
     # O admin continua vendo a configuração
     assert c.get(base, headers=api["admin"]).json()["config"]["tatica"] == "ofensiva"
 
@@ -209,3 +211,55 @@ def test_contra_estrategia_usa_perfil_do_adversario(api):
     assert len(c.get("/adversarios", headers=api["admin"]).json()) == 1
     s = c.get(url, headers=api["admin"]).json()["sugestao"]
     assert s["tatica"] == "defensiva" and s["tatica_nome"] == "Defensiva" and s["motivos"]
+
+
+def test_formacao_mudanca_composicao_e_caracteristicas(api):
+    c, pid = api["c"], api["partida"]
+    for j in api["jogadores"][:6]:
+        r = c.put(f"/atributos/{j['id']}", json={"pace": 90, "caracteristicas": ["canhoto", "marcador"]}, headers=api["admin"])
+        assert r.status_code == 200 and r.json()["caracteristicas"] == ["canhoto", "marcador"]
+    assert c.put(f"/atributos/{api['jogadores'][0]['id']}", json={"caracteristicas": ["voa"]}, headers=api["admin"]).status_code == 422
+    lista = c.get("/atributos", headers=api["admin"]).json()
+    assert any(a["caracteristicas"] == ["canhoto", "marcador"] for a in lista)
+
+    corpo = {
+        "goleiro_id": api["goleiro"],
+        "formacao": "4-3-3",
+        "mudancas_formacao": [{"minuto": 60, "formacao": "4-5-1"}],
+        "composicao": [{"funcao": "VOL", "tipo": "atributo", "chave": "pace", "modo": "misto"}],
+        "tolerancia_minutos": 10,
+    }
+    g = c.post(f"/partidas/{pid}/escalacao/gerar", json=corpo, headers=api["admin"])
+    assert g.status_code == 200, g.text
+    res = g.json()["resultado"]
+    assert res["formacao"] == "4-3-3" and res["mudancas_formacao"][0]["formacao"] == "4-5-1"
+    assert res["plano_de_jogo"]["regras"] and "Volantes" in res["plano_de_jogo"]["regras"][0]
+    assert "pace" not in str(res)  # o número do atributo nunca sai no resultado
+
+    for ruim in (
+        {"formacao": "9-9-9"},
+        {"composicao": [{"funcao": "VOL", "tipo": "atributo", "chave": "pace", "modo": "xx"}]},
+        {"mudancas_formacao": [{"minuto": 50, "formacao": "0-0-0"}]},
+    ):
+        r = c.post(f"/partidas/{pid}/escalacao/gerar", json={"goleiro_id": api["goleiro"], **ruim}, headers=api["admin"])
+        assert r.status_code == 422, ruim
+
+
+def test_sugestao_de_formacao_e_catalogo(api):
+    c = api["c"]
+    s = c.get("/escalacao/sugestao-formacao?tatica_id=defensiva&duracao=90", headers=api["admin"]).json()
+    assert s["mudancas"] == [{"minuto": 60, "formacao": "5-4-1"}] and s["motivo"]
+    assert c.get("/escalacao/sugestao-formacao?tatica_id=xx", headers=api["admin"]).status_code == 422
+    assert c.get("/escalacao/sugestao-formacao", headers=api["comum"]).status_code == 403
+    cat = c.get("/escalacao/catalogo", headers=api["admin"]).json()
+    assert {f["id"] for f in cat["formacoes"]} >= {"4-4-2", "4-5-1", "3-5-2"}
+    assert cat["pesos_funcao"]["VOL"] and cat["caracteristicas"] and cat["modos_atributo"]
+
+
+def test_limites_de_troca_chegam_na_api(api):
+    c, pid = api["c"], api["partida"]
+    corpo = {"goleiro_id": api["goleiro"], "max_momentos": 3, "intervalo_minimo": 15, "tolerancia_minutos": 20}
+    r = c.post(f"/partidas/{pid}/escalacao/gerar", json=corpo, headers=api["admin"]).json()["resultado"]
+    assert len(r["janelas"]) - 1 <= 3
+    r2 = c.post(f"/partidas/{pid}/escalacao/gerar", json={**corpo, "quantos_fixos": 1}, headers=api["admin"]).json()["resultado"]
+    assert len(r2["plano"]["fixos"]) == 1

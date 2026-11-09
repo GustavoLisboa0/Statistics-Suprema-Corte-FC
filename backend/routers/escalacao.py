@@ -22,9 +22,11 @@ from escalacao import (
     SUBSTITUICOES_PADRAO,
     TROCAS_POR_VEZ_PADRAO,
     EscalacaoInviavel,
+    FORMACOES,
     avisos_de_igualdade,
     gerar_automatico,
     gerar_escalacao,
+    sugerir_fixos,
 )
 from models import lesao_ativa, punicao_ativa
 import tatica as tt
@@ -56,6 +58,25 @@ class Restricao(BaseModel):
     funcao: Optional[FuncaoLinha] = None
 
 
+class MudancaFormacao(BaseModel):
+    """Troca de formação durante o jogo (ex.: aos 60 min vai para o 4-5-1)."""
+
+    minuto: int = Field(ge=1, le=119)
+    formacao: str
+
+
+class RegraComposicao(BaseModel):
+    """
+    Regra de composição do administrador. Ex.: nos volantes, um rápido e um
+    lento -> {funcao: "VOL", tipo: "atributo", chave: "pace", modo: "misto"}.
+    """
+
+    funcao: FuncaoLinha
+    tipo: Literal["atributo", "carac"] = "atributo"
+    chave: str
+    modo: str
+
+
 class GerarPayload(BaseModel):
     goleiro_id: UUID
     # Ajustes manuais sobre a lista padrão (confirmados sem punição/lesão).
@@ -67,6 +88,17 @@ class GerarPayload(BaseModel):
     automatico: bool = True
     n_substituicoes: int = Field(default=SUBSTITUICOES_PADRAO, ge=0, le=20)
     trocas_por_vez: int = Field(default=TROCAS_POR_VEZ_PADRAO, ge=1, le=10)
+    # Quanto o computador pode mexer nas trocas (modo automático).
+    intervalo_minimo: int = Field(default=10, ge=3, le=45)  # minutos entre uma troca e outra
+    tolerancia_minutos: int = Field(default=5, ge=0, le=30)  # diferença de tempo aceita
+    max_momentos: Optional[int] = Field(default=None, ge=0, le=20)
+    max_trocas_por_vez: Optional[int] = Field(default=None, ge=1, le=10)
+    quantos_fixos: int = Field(default=0, ge=0, le=5)  # jogadores que ficam o jogo todo
+    # Formação (4-4-2 por padrão) e mudanças durante o jogo.
+    formacao: str = "4-4-2"
+    mudancas_formacao: list[MudancaFormacao] = []
+    # Regras de composição (ex.: 2 volantes, 1 rápido e 1 lento) — só admin.
+    composicao: list[RegraComposicao] = []
     # V2 (só admin): tática e estratégia mudam quem joga mais e onde.
     tatica: Optional[str] = None
     estrategia: str = "uniforme"
@@ -187,17 +219,40 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         raise HTTPException(status_code=422, detail="Tática desconhecida")
     if payload.estrategia not in tt.ESTRATEGIAS:
         raise HTTPException(status_code=422, detail="Estratégia desconhecida")
-    atributos = carregar_atributos() if payload.tatica else {}
+    if payload.formacao not in FORMACOES or any(
+        m.formacao not in FORMACOES for m in payload.mudancas_formacao
+    ):
+        raise HTTPException(status_code=422, detail="Formação desconhecida")
+    for r in payload.composicao:
+        modos = tt.MODOS_ATRIBUTO if r.tipo == "atributo" else tt.MODOS_CARACTERISTICA
+        chaves = tt.ATRIBUTOS if r.tipo == "atributo" else tt.CARACTERISTICAS
+        if r.modo not in modos or r.chave not in chaves:
+            raise HTTPException(status_code=422, detail="Regra de composição inválida")
+    precisa_perfis = bool(payload.tatica or payload.composicao or payload.quantos_fixos)
+    atributos = carregar_atributos() if precisa_perfis else {}
     qualidade = None
     if payload.tatica:
         qualidade = {
             j["id"]: {
-                f: tt.qualidade(atributos.get(j["id"]), f, payload.tatica) / 100
+                f: tt.qualidade(
+                    atributos.get(j["id"]),
+                    f,
+                    payload.tatica,
+                    (atributos.get(j["id"]) or {}).get("caracteristicas"),
+                )
+                / 100
                 for f in tt.PESOS_FUNCAO
                 if f != "GOL"
             }
             for j in convocados
         }
+    perfis = {
+        j["id"]: {
+            "attr": {k: (atributos.get(j["id"]) or {}).get(k) for k in tt.ATRIBUTOS},
+            "carac": (atributos.get(j["id"]) or {}).get("caracteristicas") or [],
+        }
+        for j in convocados
+    }
 
     comuns = dict(
         duracao=payload.duracao,
@@ -207,10 +262,22 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         qualidade=qualidade,
         estrategia=payload.estrategia,
         forca=payload.forca_tatica,
+        formacao=payload.formacao,
+        mudancas_formacao=[m.model_dump() for m in payload.mudancas_formacao],
+        perfis=perfis,
+        composicao=[r.model_dump() for r in payload.composicao],
+    )
+    automaticas = dict(
+        intervalo_minimo=payload.intervalo_minimo,
+        tolerancia=payload.tolerancia_minutos,
+        max_momentos=payload.max_momentos,
+        max_trocas=payload.max_trocas_por_vez,
     )
     try:
         if payload.automatico:
-            resultado = gerar_automatico(convocados, goleiro_id, **comuns)
+            resultado = gerar_automatico(
+                convocados, goleiro_id, quantos_fixos=payload.quantos_fixos, **comuns, **automaticas
+            )
         else:
             resultado = gerar_escalacao(
                 convocados,
@@ -241,9 +308,34 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         "config": payload.model_dump(mode="json"),
         "resultado": resultado,
     }
+    # Informações do plano de jogo que VÃO para o PDF (só nomes e ideias, sem
+    # notas de atributos nem a análise interna).
+    plano_de_jogo = {
+        "tatica": tt.TATICAS[payload.tatica]["nome"] if payload.tatica else None,
+        "tatica_descricao": tt.TATICAS[payload.tatica]["descricao"] if payload.tatica else None,
+        "estrategia": tt.ESTRATEGIAS[payload.estrategia]["nome"] if payload.tatica else None,
+        "estrategia_descricao": (
+            tt.ESTRATEGIAS[payload.estrategia]["descricao"] if payload.tatica else None
+        ),
+        "regras": [_texto_regra(r) for r in payload.composicao],
+    }
+    resultado["plano_de_jogo"] = plano_de_jogo
+    resposta["resultado"] = resultado
     resposta["avisos"] = avisos_de_igualdade(
-        convocados, goleiro_id, payload.duracao, comuns["regras"], comuns["restricoes"]
+        convocados,
+        goleiro_id,
+        payload.duracao,
+        comuns["regras"],
+        comuns["restricoes"],
+        payload.formacao,
+        comuns["mudancas_formacao"],
     )
+    if payload.automatico and payload.quantos_fixos == 0:
+        try:
+            dica = sugerir_fixos(convocados, goleiro_id, resultado, **comuns, **automaticas)
+        except EscalacaoInviavel:
+            dica = None
+        resposta["dica_fixos"] = dica
     if payload.tatica:
         # Análise interna: só vai nesta resposta do admin; nunca é salva no
         # resultado nem vai para o PDF.
@@ -251,6 +343,28 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
             resultado, {jid: atributos.get(jid) or {} for jid in resultado["jogadores"]}, payload.tatica
         )
     return resposta
+
+
+def _texto_regra(r: RegraComposicao) -> str:
+    """Frase simples para uma regra de composição (vai no plano de jogo)."""
+    funcao = {"ZAG": "Zagueiros", "LAT": "Laterais", "VOL": "Volantes", "MEI": "Meias", "ATA": "Atacantes"}[
+        r.funcao
+    ]
+    if r.tipo == "atributo":
+        nome = tt.ATRIBUTO_NOMES[r.chave].lower()
+        frase = {
+            "misto": f"um com mais {nome} e outro com menos",
+            "altos": f"todos com muita {nome}",
+            "baixos": f"todos com {nome} mais baixa",
+        }[r.modo]
+        return f"{funcao}: {frase}."
+    nome = tt.CARACTERISTICAS[r.chave].lower()
+    frase = {
+        "pelo_menos_um": f"pelo menos um que seja {nome}",
+        "todos": f"todos com a característica \"{nome}\"",
+        "nenhum": f"ninguém com a característica \"{nome}\"",
+    }[r.modo]
+    return f"{funcao}: {frase}."
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +394,7 @@ def contra_estrategia(partida_id: UUID, usuario: dict = Depends(exige_editor)):
     sugestao = tt.sugerir_contra_estrategia(perfil or {}, historico)
     sugestao["tatica_nome"] = tt.TATICAS[sugestao["tatica"]]["nome"]
     sugestao["estrategia_nome"] = tt.ESTRATEGIAS[sugestao["estrategia"]]["nome"]
+    sugestao["formacoes"] = tt.sugerir_formacoes(sugestao["tatica"])
     return {
         "adversario": nome,
         "perfil": perfil,

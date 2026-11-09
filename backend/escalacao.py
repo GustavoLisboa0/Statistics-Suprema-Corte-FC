@@ -33,6 +33,27 @@ from tatica import pesos_das_janelas
 
 FORMACAO = "4-4-2"
 
+# Formações disponíveis: quantos jogadores de linha em cada função (sempre 10).
+# O goleiro é fixo. Os lugares se chamam ZAG1, ZAG2... da esquerda para a direita.
+FORMACOES: dict[str, dict[str, int]] = {
+    "4-4-2": {"ZAG": 2, "LAT": 2, "VOL": 2, "MEI": 2, "ATA": 2},
+    "4-3-3": {"ZAG": 2, "LAT": 2, "VOL": 1, "MEI": 2, "ATA": 3},
+    "4-5-1": {"ZAG": 2, "LAT": 2, "VOL": 2, "MEI": 3, "ATA": 1},
+    "4-2-3-1": {"ZAG": 2, "LAT": 2, "VOL": 2, "MEI": 3, "ATA": 1},
+    "3-5-2": {"ZAG": 3, "LAT": 2, "VOL": 1, "MEI": 2, "ATA": 2},
+    "5-3-2": {"ZAG": 3, "LAT": 2, "VOL": 1, "MEI": 2, "ATA": 2},
+    "3-4-3": {"ZAG": 3, "LAT": 2, "VOL": 0, "MEI": 2, "ATA": 3},
+    "5-4-1": {"ZAG": 3, "LAT": 2, "VOL": 2, "MEI": 2, "ATA": 1},
+}
+
+
+def slots_da_formacao(formacao: str) -> tuple[str, ...]:
+    """Lugares de linha da formação, na ordem ZAG, LAT, VOL, MEI, ATA."""
+    if formacao not in FORMACOES:
+        raise EscalacaoInviavel(f"Formação desconhecida: {formacao!r}")
+    contagem = FORMACOES[formacao]
+    return tuple(f"{f}{i}" for f in ("ZAG", "LAT", "VOL", "MEI", "ATA") for i in range(1, contagem[f] + 1))
+
 # Lugares em campo. A ordem aqui é a ordem em que aparecem no resultado.
 SLOTS: list[str] = [
     "GOL",
@@ -140,12 +161,19 @@ def _hungaro(custo: list[list[float]]) -> list[int]:
     return resposta
 
 
+_SLOTS_442 = tuple(s for s in SLOTS if s != "GOL")
+
+
 @lru_cache(maxsize=None)
-def _cabe_chaves(chaves: tuple[tuple[str, ...], ...]) -> bool:
-    return _cabe_nos_lugares([set(c) for c in chaves])
+def _cabe_chaves(
+    chaves: tuple[tuple[str, ...], ...], slots: tuple[str, ...] = _SLOTS_442
+) -> bool:
+    return _cabe_nos_lugares([set(c) for c in chaves], slots)
 
 
-def _cabe_nos_lugares(funcoes_por_jogador: list[set[str]]) -> bool:
+def _cabe_nos_lugares(
+    funcoes_por_jogador: list[set[str]], slots: tuple[str, ...] = _SLOTS_442
+) -> bool:
     """
     Dá para colocar estes jogadores (um por lugar) nos 10 lugares de linha?
     Casamento simples por caminhos aumentantes — mais rápido que o húngaro,
@@ -154,7 +182,7 @@ def _cabe_nos_lugares(funcoes_por_jogador: list[set[str]]) -> bool:
     dono: dict[int, int] = {}  # índice do lugar -> índice do jogador
 
     def tenta(j: int, vistos: set[int]) -> bool:
-        for s, slot in enumerate(SLOTS_LINHA):
+        for s, slot in enumerate(slots):
             if slot[:3] in funcoes_por_jogador[j] and s not in vistos:
                 vistos.add(s)
                 if s not in dono or tenta(dono[s], vistos):
@@ -204,11 +232,90 @@ def aplicar_restricoes(
     return resultado
 
 
+class _Preferencias:
+    """
+    Regras de composição escolhidas pelo administrador, ex.: "nos volantes, um
+    rápido e um lento" ou "pelo menos um canhoto nos laterais".
+
+    Cada regra: {"funcao": "VOL", "tipo": "atributo"|"carac", "chave": "pace",
+    "modo": ...}. Modos de atributo: "misto" (1º lugar alto, último baixo),
+    "altos", "baixos". Modos de característica: "todos", "nenhum",
+    "pelo_menos_um". São preferências fortes, mas não impedem a escalação.
+    """
+
+    PESO = 15.0  # custo por regra não cumprida num lugar (comparável aos custos de encaixe)
+
+    def __init__(self, regras: list[dict]):
+        self.regras = [r for r in regras if r.get("funcao") in FUNCOES_LINHA]
+        self._memo: dict = {}
+
+    def __bool__(self) -> bool:
+        return bool(self.regras)
+
+    def custo_slot(self, j: "_Jogador", lugar: str, slots: tuple[str, ...]) -> float:
+        funcao, indice = lugar[:3], int(lugar[3:])
+        n = sum(1 for s in slots if s[:3] == funcao)
+        total = 0.0
+        for r in self.regras:
+            if r["funcao"] != funcao:
+                continue
+            modo = r.get("modo")
+            if r.get("tipo") == "carac":
+                tem = 1.0 if r.get("chave") in j.carac else 0.0
+                if modo == "todos":
+                    total += 1 - tem
+                elif modo == "nenhum":
+                    total += tem
+                elif modo == "pelo_menos_um" and indice == 1:
+                    total += 1 - tem
+            else:
+                a = j.attr.get(r.get("chave"), 50) / 100
+                if modo == "altos":
+                    total += 1 - a
+                elif modo == "baixos":
+                    total += a
+                elif modo == "misto" and n >= 2:
+                    if indice == 1:
+                        total += 1 - a
+                    elif indice == n:
+                        total += a
+        return self.PESO * total
+
+    def custo_conjunto(self, campo: list["_Jogador"], slots: tuple[str, ...]) -> float:
+        """Menor custo de composição possível para este grupo de 10 (0 = tudo certo)."""
+        if not self.regras:
+            return 0.0
+        chave = (frozenset(j.id for j in campo), slots)
+        achado = self._memo.get(chave)
+        if achado is not None:
+            return achado
+        custo = [
+            [
+                _PROIBIDO if lugar[:3] not in j.funcoes else self.custo_slot(j, lugar, slots)
+                for j in campo
+            ]
+            for lugar in slots
+        ]
+        escolha = _hungaro(custo)
+        valor = sum(custo[i][c] for i, c in enumerate(escolha) if custo[i][c] < _PROIBIDO)
+        self._memo[chave] = valor
+        return valor
+
+
 class _Jogador:
     """Dados de um jogador de linha já preparados para o algoritmo."""
 
-    def __init__(self, dados: dict, regra: dict, qual: Optional[dict] = None):
+    def __init__(
+        self,
+        dados: dict,
+        regra: dict,
+        qual: Optional[dict] = None,
+        perfil: Optional[dict] = None,
+    ):
         self.id = str(dados["id"])
+        perfil = perfil or {}
+        self.attr: dict[str, int] = {k: v for k, v in (perfil.get("attr") or {}).items() if v}
+        self.carac: set[str] = set(perfil.get("carac") or [])
         self.nome = dados.get("nome") or self.id
         self.funcoes = [f for f in funcoes_do_jogador(dados.get("posicoes", [])) if f != "GOL"]
         forcada = regra.get("funcao")
@@ -265,20 +372,21 @@ def janelas_dos_cortes(duracao: int, cortes: list[int]) -> list[tuple[int, int]]
 # ---------------------------------------------------------------------------
 # Validação de entrada
 # ---------------------------------------------------------------------------
-def _explicar_falta(jogadores: list[_Jogador]) -> str:
+def _explicar_falta(jogadores: list[_Jogador], formacao: str = "4-4-2") -> str:
     """Mensagem clara dizendo qual posição não tem gente suficiente."""
     faltas = []
     for funcao in FUNCOES_LINHA:
         tem = sum(1 for j in jogadores if funcao in j.funcoes)
-        if tem < 2:
+        precisa = FORMACOES[formacao][funcao]
+        if tem < precisa:
             nome = NOMES_FUNCAO[funcao]
-            faltas.append(f"{nome} (precisa de 2, tem {tem})")
+            faltas.append(f"{nome} (precisa de {precisa}, tem {tem})")
     if faltas:
         return "Faltam jogadores para: " + ", ".join(faltas) + "."
     return (
-        "Os jogadores convocados não conseguem cobrir as 10 vagas de linha ao mesmo tempo "
-        "(2 zagueiros, 2 laterais, 2 volantes, 2 meias e 2 atacantes): alguns jogam só "
-        "as mesmas posições. Convoque alguém para as posições mais concorridas."
+        f"Os jogadores convocados não conseguem cobrir as 10 vagas de linha da formação "
+        f"{formacao} ao mesmo tempo: alguns jogam só as mesmas posições. "
+        "Convoque alguém para as posições mais concorridas ou escolha outra formação."
     )
 
 
@@ -302,7 +410,10 @@ def _validar_entrada(
 # Atribuição de lugares
 # ---------------------------------------------------------------------------
 def _atribuir_lugares(
-    campo: list[_Jogador], anterior: dict[str, str]
+    campo: list[_Jogador],
+    anterior: dict[str, str],
+    slots: tuple[str, ...] = _SLOTS_442,
+    prefs: Optional[_Preferencias] = None,
 ) -> Optional[dict[str, str]]:
     """
     Distribui os 10 de linha nos 10 lugares (ids -> lugar), ou None se não couber.
@@ -315,7 +426,7 @@ def _atribuir_lugares(
     ids_campo = {j.id for j in campo}
     vagos = {lugar for jid, lugar in anterior.items() if jid not in ids_campo}
     custo: list[list[float]] = []
-    for lugar in SLOTS_LINHA:
+    for lugar in slots:
         linha = []
         for j in campo:
             funcao = lugar[:3]
@@ -333,11 +444,16 @@ def _atribuir_lugares(
                 if lugares_ocupados:
                     base += 0 if lugar in vagos else 5
                 linha.append(base)
+        if prefs:
+            linha = [
+                c if c >= _PROIBIDO else c + prefs.custo_slot(j, lugar, slots)
+                for c, j in zip(linha, campo)
+            ]
         custo.append(linha)
     escolha = _hungaro(custo)
     if any(custo[i][c] >= _PROIBIDO for i, c in enumerate(escolha)):
         return None
-    return {campo[c].id: SLOTS_LINHA[i] for i, c in enumerate(escolha)}
+    return {campo[c].id: slots[i] for i, c in enumerate(escolha)}
 
 
 def _escolher_titulares(
@@ -346,6 +462,8 @@ def _escolher_titulares(
     duracao: int,
     rng: Optional[random.Random] = None,
     peso_q: float = 0.0,
+    slots: tuple[str, ...] = _SLOTS_442,
+    prefs: Optional[_Preferencias] = None,
 ) -> list[_Jogador]:
     """Escolhe os 10 de linha da 1ª janela respeitando as regras de início."""
     candidatos = [j for j in linha if j.disponivel(janela, duracao, 0)]
@@ -356,15 +474,15 @@ def _escolher_titulares(
                 "(só 2º tempo / minutos máximos) o impede."
             )
     obrigatorios = [j for j in candidatos if j.comeca == "titular"]
-    if len(obrigatorios) > len(SLOTS_LINHA):
+    if len(obrigatorios) > len(slots):
         raise EscalacaoInviavel("Há mais de 10 jogadores de linha marcados para começar jogando.")
-    if len(candidatos) < len(SLOTS_LINHA):
+    if len(candidatos) < len(slots):
         raise EscalacaoInviavel(
             f"Só {len(candidatos)} jogador(es) de linha podem começar o jogo; são necessários 10."
         )
 
     custo = []
-    for lugar in SLOTS_LINHA:
+    for lugar in slots:
         funcao = lugar[:3]
         linha_custo = []
         for ordem, j in enumerate(candidatos):
@@ -399,6 +517,9 @@ def _proxima_janela(
     max_trocas: int,
     anterior: dict[str, str],
     rng: Optional[random.Random] = None,
+    slots: tuple[str, ...] = _SLOTS_442,
+    prefs: Optional[_Preferencias] = None,
+    mudou_formacao: bool = False,
 ) -> tuple[list[_Jogador], dict[str, str]]:
     """Decide quem sai e quem entra na janela seguinte (no máximo `max_trocas`)."""
     ids_campo = {j.id for j in campo}
@@ -440,7 +561,7 @@ def _proxima_janela(
                 ganho = sum(j.acumulado for j in saem) - sum(j.acumulado for j in entram)
                 if m > len(obrigados) and ganho <= 0:
                     continue
-                if not _cabe_chaves(tuple(sorted(j.chave for j in fica + list(entram)))):
+                if not _cabe_chaves(tuple(sorted(j.chave for j in fica + list(entram))), slots):
                     continue
                 # Troca "pura": quem entra joga a função de quem sai.
                 puras = _contar_trocas_puras(saem, entram, anterior)
@@ -452,7 +573,10 @@ def _proxima_janela(
 
     escolha = None
     melhor_geral = None
-    for m in range(max(len(obrigados), 1), min(max_trocas, len(entram_possiveis)) + 1):
+    # Ao mudar de formação sem ninguém sair, só vale se o time atual já cabe nela.
+    campo_cabe = _cabe_chaves(tuple(sorted(j.chave for j in campo)), slots)
+    minimo = len(obrigados) if (mudou_formacao and campo_cabe) else max(len(obrigados), 1)
+    for m in range(minimo, min(max_trocas, len(entram_possiveis)) + 1):
         achado = melhor(m, ampliar=False) or melhor(m, ampliar=True)
         if achado and (melhor_geral is None or achado[0] > melhor_geral[0]):
             melhor_geral = achado
@@ -465,12 +589,20 @@ def _proxima_janela(
                 f"No minuto {janela[0]} não há reserva que possa entrar no lugar de "
                 f"{', '.join(j.nome for j in obrigados)} sem deixar uma posição sem jogador."
             )
+        if mudou_formacao:
+            lugares = _atribuir_lugares(campo, anterior, slots, prefs)
+            if lugares is None:
+                raise EscalacaoInviavel(
+                    f"No minuto {janela[0]} não dá para mudar de formação: com os jogadores "
+                    "disponíveis alguma posição ficaria sem ninguém."
+                )
+            return campo, lugares
         return campo, anterior  # ninguém troca nesta janela
 
     saem, entram = escolha
     novo_campo = [j for j in campo if j not in saem] + entram
     # Ordena estável (mesma ordem de linha) só por previsibilidade.
-    lugares = _atribuir_lugares(novo_campo, anterior)
+    lugares = _atribuir_lugares(novo_campo, anterior, slots, prefs)
     if lugares is None:  # não deveria acontecer: já testamos o encaixe
         raise EscalacaoInviavel("Não foi possível encaixar os jogadores nas posições.")
     return novo_campo, lugares
@@ -507,9 +639,13 @@ def gerar_escalacao(
     estrategia: str = "uniforme",
     forca: int = 50,
     cortes: Optional[list[int]] = None,
+    formacao: str = "4-4-2",
+    mudancas_formacao: Optional[list[dict]] = None,
+    perfis: Optional[dict[str, dict]] = None,
+    composicao: Optional[list[dict]] = None,
 ) -> dict[str, Any]:
     """
-    Monta a escalação 4-4-2.
+    Monta a escalação (4-4-2 por padrão; veja `FORMACOES`).
 
     Gera uma tentativa "pura" (sem sorteio) e várias outras com pequenos
     sorteios (a `semente` deixa o resultado reprodutível; mudar a semente dá
@@ -530,9 +666,23 @@ def gerar_escalacao(
     estrategia: "uniforme" | "forca_no_inicio" | "forca_no_final".
     forca: 10–100, quanto a qualidade pesa frente ao equilíbrio de minutos.
 
+    formacao / mudancas_formacao: formação inicial e, se quiser mudar durante o
+            jogo, [{"minuto": 60, "formacao": "4-5-1"}].
+    perfis: por id, {"attr": {"pace": 80, ...}, "carac": ["canhoto", ...]}.
+    composicao: regras de composição (veja `_Preferencias`).
+
     Levanta `EscalacaoInviavel` (mensagem em português) se não houver solução.
     """
-    extra = {"qualidade": qualidade, "estrategia": estrategia, "forca": forca, "cortes": cortes}
+    extra = {
+        "qualidade": qualidade,
+        "estrategia": estrategia,
+        "forca": forca,
+        "cortes": cortes,
+        "formacao": formacao,
+        "mudancas_formacao": mudancas_formacao,
+        "perfis": perfis,
+        "composicao": composicao,
+    }
     # A 1ª tentativa é determinística: se ela não tem solução, o erro dela é
     # o que explica o problema ao usuário.
     melhor = _gerar_uma(
@@ -625,6 +775,10 @@ def _gerar_uma(
     forca: int = 50,
     cortes: Optional[list[int]] = None,
     tentativas_busca: int = 1500,
+    formacao: str = "4-4-2",
+    mudancas_formacao: Optional[list[dict]] = None,
+    perfis: Optional[dict[str, dict]] = None,
+    composicao: Optional[list[dict]] = None,
 ) -> dict[str, Any]:
     """Uma tentativa de escalação (com ou sem sorteio nos desempates)."""
     goleiro_id = str(goleiro_id)
@@ -634,8 +788,14 @@ def _gerar_uma(
     regras_finais = aplicar_restricoes(regras, restricoes)
 
     goleiro = next(j for j in jogadores if str(j["id"]) == goleiro_id)
+    prefs = _Preferencias(composicao or [])
     todos = [
-        _Jogador(j, regras_finais.get(str(j["id"]), {}), (qualidade or {}).get(str(j["id"])))
+        _Jogador(
+            j,
+            regras_finais.get(str(j["id"]), {}),
+            (qualidade or {}).get(str(j["id"])),
+            (perfis or {}).get(str(j["id"])),
+        )
         for j in jogadores
     ]
     # Só entram na rotação quem sabe jogar em alguma função de linha. Quem é
@@ -647,32 +807,56 @@ def _gerar_uma(
         raise EscalacaoInviavel(
             f"Convocados insuficientes: há {len(linha)} jogador(es) de linha e são necessários 10."
         )
-    # Com todos os convocados dá para formar o time?
-    if not _tem_time_possivel(linha):
-        raise EscalacaoInviavel(_explicar_falta(linha))
+    janelas = janelas_dos_cortes(duracao, cortes) if cortes is not None else montar_janelas(
+        duracao, n_substituicoes
+    )
+    # Formação de cada janela: a inicial, trocando nos minutos pedidos.
+    mudancas = sorted(mudancas_formacao or [], key=lambda m: m["minuto"])
+    for m in mudancas:
+        if m["formacao"] not in FORMACOES:
+            raise EscalacaoInviavel(f"Formação desconhecida: {m['formacao']!r}")
+        if not 0 < m["minuto"] < duracao:
+            raise EscalacaoInviavel("O minuto da mudança de formação deve ficar dentro do jogo.")
+    slots_formacao_inicial = slots_da_formacao(formacao)  # valida o nome
+    if mudancas:  # os minutos das mudanças viram momentos de troca
+        pontos = {j[1] for j in janelas[:-1]} | {m["minuto"] for m in mudancas}
+        janelas = janelas_dos_cortes(duracao, sorted(pontos))
+    formacoes: list[str] = []
+    for ini, _fim in janelas:
+        atual = formacao
+        for m in mudancas:
+            if m["minuto"] <= ini:
+                atual = m["formacao"]
+        formacoes.append(atual)
+    slots_por_janela = [slots_da_formacao(f) for f in formacoes]
+
+    # Com todos os convocados dá para formar o time (em cada formação usada)?
+    for nome_f in dict.fromkeys(formacoes):
+        if not _tem_time_possivel(linha, slots_da_formacao(nome_f)):
+            raise EscalacaoInviavel(_explicar_falta(linha, nome_f))
 
     fixos = [j for j in linha if j.grupo_fixo]
     if len(fixos) > len(SLOTS_LINHA):
         raise EscalacaoInviavel("O grupo que não roda tem mais de 10 jogadores de linha.")
 
-    janelas = janelas_dos_cortes(duracao, cortes) if cortes is not None else montar_janelas(
-        duracao, n_substituicoes
-    )
     # Na "força no final" os melhores não precisam começar; na "força no
     # início" começar com eles pesa em dobro.
     primeiro = pesos_das_janelas(len(janelas), estrategia)[0]
     peso_q = 8.0 * max(0.0, 1 + 2 * (primeiro - 1)) if qualidade else 0.0
-    campo = _escolher_titulares(linha, janelas[0], duracao, rng, peso_q)
-    lugares = _atribuir_lugares(campo, {})
+    campo = _escolher_titulares(
+        linha, janelas[0], duracao, rng, peso_q, slots_formacao_inicial, prefs
+    )
+    lugares = _atribuir_lugares(campo, {}, slots_formacao_inicial, prefs)
     if lugares is None:
-        raise EscalacaoInviavel(_explicar_falta(linha))
+        raise EscalacaoInviavel(_explicar_falta(linha, formacoes[0]))
 
     # Fase 1 (gulosa): janela por janela, tira quem jogou mais e põe quem jogou menos.
     campos: list[list[_Jogador]] = []
     for indice, janela in enumerate(janelas):
         if indice > 0:
             campo, lugares = _proxima_janela(
-                campo, linha, janela, indice, duracao, trocas_por_vez, lugares, rng
+                campo, linha, janela, indice, duracao, trocas_por_vez, lugares, rng,
+                slots_por_janela[indice], prefs, formacoes[indice] != formacoes[indice - 1],
             )
         for j in campo:
             j.acumulado += janela[1] - janela[0]
@@ -685,7 +869,11 @@ def _gerar_uma(
         campos, linha, janelas, duracao, trocas_por_vez, rng or random.Random(0),
         tentativas=tentativas_busca,
         pesos_janela=pesos, k_qualidade=300.0 if qualidade else 0.0,
-        folga_extra=round(forca / 100 * min(j[1] - j[0] for j in janelas)) if qualidade else 0,
+        folga_extra=round(forca / 100 * min(j[1] - j[0] for j in janelas))
+        if (qualidade or prefs)
+        else 0,
+        slots_por_janela=slots_por_janela,
+        prefs=prefs,
     )
 
     historico: list[dict] = []
@@ -694,8 +882,8 @@ def _gerar_uma(
     por_id = {j.id: j for j in todos}
     minutos_linha = {j.id: 0 for j in linha}
     anterior: dict[str, str] = {}
-    for janela, campo in zip(janelas, campos):
-        lugares = _atribuir_lugares(campo, anterior)
+    for i, (janela, campo) in enumerate(zip(janelas, campos)):
+        lugares = _atribuir_lugares(campo, anterior, slots_por_janela[i], prefs)
         if lugares is None:  # não deveria acontecer: a busca valida o encaixe
             raise EscalacaoInviavel("Não foi possível encaixar os jogadores nas posições.")
         if anterior:
@@ -706,6 +894,7 @@ def _gerar_uma(
             {
                 "inicio": janela[0],
                 "fim": janela[1],
+                "formacao": formacoes[i],
                 "lugares": {"GOL": goleiro_id, **{lugar: jid for jid, lugar in lugares.items()}},
             }
         )
@@ -718,7 +907,7 @@ def _gerar_uma(
             "jogador_id": historico[0]["lugares"][lugar],
             "nome": _nome(jogadores, historico[0]["lugares"][lugar]),
         }
-        for lugar in SLOTS
+        for lugar in ("GOL", *slots_formacao_inicial)
     ]
     ids_titulares = {t["jogador_id"] for t in titulares}
     banco = [
@@ -731,7 +920,12 @@ def _gerar_uma(
     minutos.update(minutos_linha)
 
     return {
-        "formacao": FORMACAO,
+        "formacao": formacoes[0],
+        "mudancas_formacao": [
+            {"minuto": janelas[i][0], "formacao": formacoes[i]}
+            for i in range(1, len(janelas))
+            if formacoes[i] != formacoes[i - 1]
+        ],
         "duracao": duracao,
         "goleiro_id": goleiro_id,
         "goleiro_nome": goleiro.get("nome"),
@@ -754,10 +948,12 @@ def _plano_valido(
     janelas: list[tuple[int, int]],
     duracao: int,
     max_trocas: int,
+    slots_por_janela: Optional[list[tuple[str, ...]]] = None,
 ) -> bool:
     """Confere todas as regras de um plano (um conjunto de 10 por janela)."""
     for i, ids in enumerate(campos):
-        if not _cabe_chaves(tuple(sorted(por_id[j].chave for j in ids))):
+        slots = slots_por_janela[i] if slots_por_janela else _SLOTS_442
+        if not _cabe_chaves(tuple(sorted(por_id[j].chave for j in ids)), slots):
             return False
         if i and len(ids - campos[i - 1]) > max_trocas:
             return False
@@ -792,6 +988,8 @@ def _melhorar(
     pesos_janela: Optional[list[float]] = None,
     k_qualidade: float = 0.0,
     folga_extra: int = 0,
+    slots_por_janela: Optional[list[tuple[str, ...]]] = None,
+    prefs: Optional[_Preferencias] = None,
 ) -> list[list[_Jogador]]:
     """
     Busca local: troca "a sai, b entra" durante um trecho de janelas e fica com
@@ -800,6 +998,8 @@ def _melhorar(
     por_id = {j.id: j for j in linha}
     campos = [{j.id for j in c} for c in campos_ini]
     tamanho = [fim - ini for ini, fim in janelas]
+    slots_j = slots_por_janela or [_SLOTS_442] * len(janelas)
+    modo_pref = bool(k_qualidade or prefs)  # tática/regras de composição ativas
     # Quem tem regra própria de tempo não entra na conta de equilíbrio.
     equilibrar = [
         j.id
@@ -816,7 +1016,18 @@ def _melhorar(
                 m[jid] += t
         return m
 
-    def custo(plano: list[set[str]]) -> float:
+    comp_memo: dict = {}
+
+    def comp_janela(i: int, ids: set[str]) -> float:
+        """Custo de composição (regras do admin) de um time, vezes o tempo da janela."""
+        chave = (i, frozenset(ids))
+        v = comp_memo.get(chave)
+        if v is None:
+            v = 3.0 * tamanho[i] * prefs.custo_conjunto([por_id[j] for j in ids], slots_j[i])
+            comp_memo[chave] = v
+        return v
+
+    def custo(plano: list[set[str]], comp: Optional[float] = None) -> float:
         m = minutos(plano)
         quadrados = sum(m[jid] ** 2 for jid in equilibrar)
         entradas = sum(len(plano[i] - plano[i - 1]) for i in range(1, len(plano)))
@@ -826,9 +1037,12 @@ def _melhorar(
                 t * p * sum(por_id[j].qmax for j in ids)
                 for ids, t, p in zip(plano, tamanho, pesos_janela)
             )
-        return quadrados + 0.001 * entradas - ganho_q
+        if comp is None:
+            comp = sum(comp_janela(i, ids) for i, ids in enumerate(plano)) if prefs else 0.0
+        return quadrados + 0.001 * entradas - ganho_q + comp
 
-    atual = custo(campos)
+    comp_por_janela = [comp_janela(i, ids) if prefs else 0.0 for i, ids in enumerate(campos)]
+    atual = custo(campos, sum(comp_por_janela))
     sem_melhora = 0
     # Com tática, a qualidade só reorganiza QUEM fica no banco e QUANDO: a
     # diferença de minutos entre os jogadores não pode passar da que já havia
@@ -838,12 +1052,12 @@ def _melhorar(
     for _ in range(tentativas):
         m = minutos(campos)
         folga = max(m[j] for j in equilibrar) - min(m[j] for j in equilibrar)
-        if folga <= min(tamanho) and sem_melhora > 200 and not k_qualidade:
+        if folga <= min(tamanho) and sem_melhora > 200 and not modo_pref:
             break
-        if k_qualidade and sem_melhora > 350:
+        if modo_pref and sem_melhora > 350:
             break
         novo = None
-        if k_qualidade and len(campos) > 1 and rng.random() < 0.5:
+        if modo_pref and len(campos) > 1 and rng.random() < 0.5:
             # Troca de "horários": a joga onde b ia jogar e b onde a ia jogar.
             # Os minutos de cada um quase não mudam; só muda QUANDO cada um joga.
             w1, w2 = rng.sample(range(len(campos)), 2)
@@ -873,14 +1087,24 @@ def _melhorar(
             for i in range(lo, hi + 1):
                 novo[i].remove(a)
                 novo[i].add(b)
-        valor = custo(novo)
-        if k_qualidade:
+        if prefs:
+            comp_nova = list(comp_por_janela)
+            for i in range(len(novo)):
+                if novo[i] != campos[i]:
+                    comp_nova[i] = comp_janela(i, novo[i])
+        else:
+            comp_nova = comp_por_janela
+        valor = custo(novo, sum(comp_nova))
+        if modo_pref:
             mn = minutos(novo)
             if max(mn[j] for j in equilibrar) - min(mn[j] for j in equilibrar) > limite_folga:
                 sem_melhora += 1
                 continue
-        if valor < atual - 1e-9 and _plano_valido(novo, por_id, janelas, duracao, max_trocas):
+        if valor < atual - 1e-9 and _plano_valido(
+            novo, por_id, janelas, duracao, max_trocas, slots_j
+        ):
             campos, atual, sem_melhora = novo, valor, 0
+            comp_por_janela = comp_nova
         else:
             sem_melhora += 1
     return [[por_id[jid] for jid in sorted(ids)] for ids in campos]
@@ -890,11 +1114,9 @@ def _nome(jogadores: list[dict], jogador_id: str) -> Optional[str]:
     return next((j.get("nome") for j in jogadores if str(j["id"]) == jogador_id), None)
 
 
-def _tem_time_possivel(linha: list[_Jogador]) -> bool:
+def _tem_time_possivel(linha: list[_Jogador], slots: tuple[str, ...] = _SLOTS_442) -> bool:
     """Existe alguma escolha de 10 entre `linha` que preencha todos os lugares?"""
-    custo = [
-        [0 if lugar[:3] in j.funcoes else _PROIBIDO for j in linha] for lugar in SLOTS_LINHA
-    ]
+    custo = [[0 if lugar[:3] in j.funcoes else _PROIBIDO for j in linha] for lugar in slots]
     escolha = _hungaro(custo)
     return all(custo[i][c] < _PROIBIDO for i, c in enumerate(escolha))
 
@@ -980,6 +1202,46 @@ def _quantos_de_linha(jogadores: list[dict], goleiro_id: str) -> int:
     )
 
 
+def _escolher_fixos(
+    jogadores: list[dict],
+    goleiro_id: str,
+    quantos: int,
+    regras: dict[str, dict],
+    qualidade: Optional[dict[str, dict[str, float]]],
+    perfis: Optional[dict[str, dict]],
+) -> list[str]:
+    """
+    Quem fica o jogo todo para as trocas ficarem mais simples. Prefere os de
+    maior qualidade (se há tática/atributos); sem isso, os que cobrem posições
+    escassas no elenco. Só escolhe quem não tem regra própria.
+    """
+    if quantos <= 0:
+        return []
+    linha = [
+        _Jogador(j, regras.get(str(j["id"]), {}), None, (perfis or {}).get(str(j["id"])))
+        for j in jogadores
+        if str(j["id"]) != str(goleiro_id)
+    ]
+    linha = [j for j in linha if j.funcoes]
+    oferta = {f: sum(1 for j in linha if f in j.funcoes) or 1 for f in FUNCOES_LINHA}
+
+    def pontos(j: _Jogador) -> float:
+        if qualidade and qualidade.get(j.id):
+            return 100 * max(qualidade[j.id].values())
+        return sum(1 / oferta[f] for f in j.funcoes)
+
+    livres = [
+        j
+        for j in linha
+        if not any(
+            regras.get(j.id, {}).get(k)
+            for k in ("minutos_max", "so_segundo_tempo", "comeca", "funcao", "grupo_fixo", "nao_sai")
+        )
+    ]
+    livres.sort(key=lambda j: -pontos(j))
+    return [j.id for j in livres[:quantos]]
+
+
 def gerar_automatico(
     jogadores: list[dict],
     goleiro_id: str,
@@ -990,48 +1252,89 @@ def gerar_automatico(
     qualidade: Optional[dict[str, dict[str, float]]] = None,
     estrategia: str = "uniforme",
     forca: int = 50,
+    formacao: str = "4-4-2",
+    mudancas_formacao: Optional[list[dict]] = None,
+    perfis: Optional[dict[str, dict]] = None,
+    composicao: Optional[list[dict]] = None,
+    intervalo_minimo: int = 10,
+    tolerancia: int = 5,
+    max_momentos: Optional[int] = None,
+    max_trocas: Optional[int] = None,
+    quantos_fixos: int = 0,
 ) -> dict[str, Any]:
     """
     Como `gerar_escalacao`, mas sem o usuário dizer quantas substituições nem
-    quantos trocam por vez: testa vários jeitos e fica com o que deixa todo
-    mundo jogando o mesmo tempo (com poucas diferenças de 1–2 minutos) e,
-    entre os parecidos, o que tem menos trocas.
+    quantos trocam por vez: testa vários jeitos e escolhe, nesta ordem:
+    1. tempo parecido: diferença de minutos até `tolerancia`;
+    2. poucos momentos de troca (cada troca fica a pelo menos `intervalo_minimo`
+       minutos da outra, e há no máximo `max_momentos`);
+    3. qualidade (se há tática), poucas mudanças de posição e poucas trocas.
 
-    O resultado ganha `plano`: {"n_substituicoes", "trocas_por_vez", "cortes"}.
+    `quantos_fixos`: o sistema escolhe tantos jogadores para ficarem o jogo
+    todo (trocas mais simples). O resultado ganha `plano`:
+    {"n_substituicoes", "trocas_por_vez", "cortes", "fixos"}.
     """
     goleiro_id = str(goleiro_id)
+    regras = {k: dict(v) for k, v in (regras or {}).items()}
+    fixos = _escolher_fixos(
+        jogadores, goleiro_id, quantos_fixos, aplicar_restricoes(regras, restricoes), qualidade, perfis
+    )
+    for jid in fixos:
+        regras.setdefault(jid, {})["grupo_fixo"] = True
+
     n_linha = _quantos_de_linha(jogadores, goleiro_id)
     banco = max(n_linha - len(SLOTS_LINHA), 0)
+    mud_minutos = {m["minuto"] for m in (mudancas_formacao or [])}
     if banco == 0:
-        # Sem reservas de linha, não há o que trocar.
         candidatos_cortes: list[list[int]] = [[]]
     else:
+        n_rodando = n_linha - len(fixos)
+        opcoes = [_cortes_ciclicos(n_rodando, duracao)] if n_rodando > len(SLOTS_LINHA) - len(fixos) else []
+        opcoes += [_cortes_uniformes(duracao, w) for w in range(2, 13)]
         candidatos_cortes = []
         vistos = set()
-        opcoes = [_cortes_ciclicos(n_linha, duracao)]
-        opcoes += [_cortes_uniformes(duracao, w) for w in range(2, 13)]
         for cortes in opcoes:
-            if tuple(cortes) not in vistos and cortes and min(
-                b - a for a, b in zip([0] + cortes, cortes + [duracao])
-            ) >= 3:
-                vistos.add(tuple(cortes))
-                candidatos_cortes.append(cortes)
-    maximos = list(range(1, min(max(banco, 1), 5) + 1))
-    comuns = dict(qualidade=qualidade, estrategia=estrategia, forca=forca)
+            efetivos = sorted(set(cortes) | mud_minutos)
+            lacunas = [y - x for x, y in zip([0] + cortes, cortes + [duracao])]
+            if not cortes or tuple(cortes) in vistos:
+                continue
+            if min(lacunas) < intervalo_minimo:
+                continue
+            if max_momentos is not None and len(efetivos) > max_momentos:
+                continue
+            vistos.add(tuple(cortes))
+            candidatos_cortes.append(cortes)
+        if not candidatos_cortes:
+            # Nenhum jeito respeita os limites: tenta o mais simples possível.
+            candidatos_cortes = [_cortes_uniformes(duracao, 2), _cortes_uniformes(duracao, 3)]
+    maximos = [max_trocas] if max_trocas else list(range(1, min(max(banco, 1), 4) + 1))
+    comuns = dict(
+        qualidade=qualidade,
+        estrategia=estrategia,
+        forca=forca,
+        formacao=formacao,
+        mudancas_formacao=mudancas_formacao,
+        perfis=perfis,
+        composicao=composicao,
+    )
 
     def chave(res: dict) -> tuple:
-        # Só usa os 3 primeiros números da nota (minutos, ajustes, trocas).
-        diferenca, ajustes, trocas = _nota(res, jogadores, regras, None)[:3] if not qualidade else (
-            _diferenca_minutos(res, regras, restricoes), len(res["ajustes_de_posicao"]), len(res["trocas"])
-        )
+        diferenca = _diferenca_minutos(res, regras, restricoes)
+        momentos = len(res["janelas"]) - 1
         valor = 0.0
         if qualidade:
             pesos = pesos_das_janelas(len(res["janelas"]), estrategia)
             for peso, jan in zip(pesos, res["janelas"]):
                 for lugar, jid in jan["lugares"].items():
                     valor += (jan["fim"] - jan["inicio"]) * peso * qualidade.get(jid, {}).get(lugar[:3], 0.5)
-        # 1º: tempo igual (tolerância de 2 min); 2º: qualidade; 3º: poucas trocas.
-        return (max(diferenca - 2, 0), -round(valor / 5), trocas, diferenca, ajustes)
+        return (
+            max(diferenca - tolerancia, 0),
+            momentos,
+            -round(valor / 5),
+            len(res["ajustes_de_posicao"]),
+            len(res["trocas"]),
+            diferenca,
+        )
 
     # 1) Triagem rápida: uma tentativa de cada combinação.
     triagem = []
@@ -1041,7 +1344,7 @@ def gerar_automatico(
             try:
                 res = _gerar_uma(
                     jogadores, goleiro_id, duracao, len(cortes), maximo, regras, restricoes,
-                    None, cortes=cortes, tentativas_busca=400, **comuns,
+                    None, cortes=cortes, tentativas_busca=300, **comuns,
                 )
             except EscalacaoInviavel as erro:
                 ultimo_erro = erro
@@ -1066,9 +1369,10 @@ def gerar_automatico(
         if melhor_chave is None or k < melhor_chave:
             melhor, melhor_chave = res, k
             melhor["plano"] = {
-                "n_substituicoes": len(cortes),
+                "n_substituicoes": len(res["janelas"]) - 1,
                 "trocas_por_vez": maximo,
-                "cortes": cortes,
+                "cortes": [j["inicio"] for j in res["janelas"][1:]],
+                "fixos": fixos,
             }
     if melhor is None:
         raise ultimo_erro or EscalacaoInviavel("Não foi possível montar a escalação.")
@@ -1081,6 +1385,8 @@ def avisos_de_igualdade(
     duracao: int,
     regras: Optional[dict[str, dict]] = None,
     restricoes: Optional[list[dict]] = None,
+    formacao: str = "4-4-2",
+    mudancas_formacao: Optional[list[dict]] = None,
 ) -> list[str]:
     """
     Avisos (em português) quando é IMPOSSÍVEL todo mundo jogar o mesmo tempo
@@ -1093,17 +1399,31 @@ def avisos_de_igualdade(
         for j in jogadores
         if str(j["id"]) != str(goleiro_id)
     ]
-    linha = [j for j in jogs if j.funcoes]
-    if len(linha) <= len(SLOTS_LINHA):
+    linha = [j for j in jogs if j.funcoes and not j.grupo_fixo]
+    fixos = [j for j in jogs if j.funcoes and j.grupo_fixo]
+    if len(linha) + len(fixos) <= len(SLOTS_LINHA):
         return []
-    alvo = duracao * len(SLOTS_LINHA) / len(linha)  # minutos de cada um se fosse igual
+    # Minutos de vaga de cada função durante o jogo (leva em conta mudanças de formação).
+    pontos = sorted({0, *(m["minuto"] for m in (mudancas_formacao or [])), duracao})
+    capacidade_por_funcao = {f: 0 for f in FUNCOES_LINHA}
+    for ini, fim in zip(pontos[:-1], pontos[1:]):
+        atual = formacao
+        for m in sorted(mudancas_formacao or [], key=lambda m: m["minuto"]):
+            if m["minuto"] <= ini:
+                atual = m["formacao"]
+        for f in FUNCOES_LINHA:
+            capacidade_por_funcao[f] += (fim - ini) * FORMACOES[atual][f]
+    for f in FUNCOES_LINHA:  # quem fica o jogo todo já ocupa parte das vagas
+        capacidade_por_funcao[f] -= sum(duracao for j in fixos if j.funcoes == [f])
+    vagas_totais = sum(capacidade_por_funcao.values())
+    alvo = vagas_totais / max(len(linha), 1)  # minutos de cada um se fosse igual
     avisos: list[str] = []
     achados: list[set[str]] = []
     for tamanho in range(1, len(FUNCOES_LINHA) + 1):
         for conjunto in combinations(FUNCOES_LINHA, tamanho):
             funcoes = set(conjunto)
             presos = [j for j in linha if set(j.funcoes) <= funcoes]
-            capacidade = 2 * duracao * tamanho  # cada função tem 2 vagas o jogo todo
+            capacidade = sum(capacidade_por_funcao[f] for f in funcoes)
             if not presos or len(presos) * alvo <= capacidade + 1e-9:
                 continue
             ids = {j.id for j in presos}
@@ -1112,11 +1432,62 @@ def avisos_de_igualdade(
             achados.append(ids)
             nomes = ", ".join(j.nome for j in presos)
             onde = " / ".join(NOMES_FUNCAO[f] for f in FUNCOES_LINHA if f in funcoes)
-            vagas = 2 * tamanho
+            vagas = round(capacidade / duracao)
             avisos.append(
                 f"{nomes} só jogam de {onde}: são {len(presos)} jogadores para {vagas} vaga(s), "
-                f"então cada um joga no máximo {capacidade // len(presos)} min (os outros jogam "
+                f"então cada um joga no máximo {int(capacidade // len(presos))} min (os outros jogam "
                 "mais). Para igualar, deixe um deles jogar em outra posição "
                 "(regra \"Joga de...\" em Ajustar e gerar de novo)."
             )
     return avisos
+
+
+def sugerir_fixos(
+    jogadores: list[dict],
+    goleiro_id: str,
+    atual: dict[str, Any],
+    **opcoes: Any,
+) -> Optional[dict[str, Any]]:
+    """
+    Se deixar 1 ou 2 jogadores o jogo todo deixa as trocas bem mais simples
+    (menos momentos de troca ou tempo mais parecido), devolve a dica; senão None.
+    `atual` é o resultado sem ninguém fixo; `opcoes` são os mesmos argumentos
+    usados em `gerar_automatico`.
+    """
+    regras = opcoes.get("regras")
+    restricoes = opcoes.get("restricoes")
+    tolerancia = opcoes.get("tolerancia", 5)
+
+    def resumo(res: dict) -> tuple[int, int]:
+        return len(res["janelas"]) - 1, _diferenca_minutos(res, regras, restricoes)
+
+    momentos, dif = resumo(atual)
+    if momentos <= 3 and dif <= tolerancia:
+        return None
+    melhor = None
+    for k in (1, 2):
+        try:
+            res = gerar_automatico(jogadores, goleiro_id, quantos_fixos=k, **opcoes)
+        except EscalacaoInviavel:
+            continue
+        m2, d2 = resumo(res)
+        # Só vale a dica se melhora de verdade e mantém o tempo dentro do aceito.
+        if d2 <= tolerancia and (m2 <= momentos - 2 or (dif > tolerancia and m2 <= momentos)):
+            if melhor is None or (m2, k) < (melhor[1], melhor[0]):
+                melhor = (k, m2, res)
+    if not melhor:
+        return None
+    k, m2, res = melhor
+    nomes = [
+        next((j.get("nome") for j in jogadores if str(j["id"]) == jid), jid)
+        for jid in res["plano"]["fixos"]
+    ]
+    return {
+        "quantos_fixos": k,
+        "fixos": nomes,
+        "momentos": m2,
+        "texto": (
+            f"Dica: deixando {', '.join(nomes)} jogar o jogo todo, as trocas caem de "
+            f"{momentos} para {m2} momento(s) e ficam mais simples."
+        ),
+    }

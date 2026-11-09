@@ -52,7 +52,7 @@ def test_cortes_ciclicos_sao_inteiros_e_dentro_do_jogo():
 
 @pytest.mark.parametrize("n", [12, 13, 14, 15, 16])
 def test_automatico_todo_mundo_joga_o_mesmo_tempo(n):
-    r = gerar_automatico(elenco(n), "J0", 90)
+    r = gerar_automatico(elenco(n), "J0", 90, tolerancia=2, intervalo_minimo=3)
     linha = [m for jid, m in r["minutos"].items() if jid != "J0"]
     assert max(linha) - min(linha) <= 2
     assert r["minutos"]["J0"] == 90
@@ -62,7 +62,7 @@ def test_automatico_todo_mundo_joga_o_mesmo_tempo(n):
 
 
 def test_automatico_13_jogadores_troca_dois_por_vez():
-    r = gerar_automatico(elenco(14), "J0", 90)  # goleiro + 13 de linha
+    r = gerar_automatico(elenco(14), "J0", 90, tolerancia=2, intervalo_minimo=3)  # goleiro + 13 de linha
     assert r["plano"]["trocas_por_vez"] >= 1
     linha = [m for jid, m in r["minutos"].items() if jid != "J0"]
     assert max(linha) - min(linha) <= 2
@@ -108,8 +108,8 @@ def test_estrategia_forca_no_inicio_vs_no_final():
     jogadores = elenco(14)
     estrelas = {"J1", "J2", "J3"}  # são do ciclo: ZAG/LAT, LAT/VOL, VOL/MEI
     q = _qualidade_com_estrelas(jogadores, estrelas)
-    inicio = gerar_automatico(jogadores, "J0", 90, qualidade=q, estrategia="forca_no_inicio")
-    final = gerar_automatico(jogadores, "J0", 90, qualidade=q, estrategia="forca_no_final")
+    inicio = gerar_automatico(jogadores, "J0", 90, qualidade=q, estrategia="forca_no_inicio", tolerancia=2, intervalo_minimo=3)
+    final = gerar_automatico(jogadores, "J0", 90, qualidade=q, estrategia="forca_no_final", tolerancia=2, intervalo_minimo=3)
 
     def cedo(r):  # minutos das estrelas na 1ª metade do jogo
         return sum(
@@ -204,3 +204,164 @@ def test_aviso_de_atacantes_demais():
             j["posicoes"] = ["meia"]
     avisos = avisos_de_igualdade(rigido, "J0", 90)
     assert any("Ata0" in a and "atacante" in a and "no máximo 60" in a for a in avisos), avisos
+
+
+# ---------------------------------------------------------------------------
+# Formações (e mudança durante o jogo)
+# ---------------------------------------------------------------------------
+def _funcoes_na_janela(jan):
+    contagem = {}
+    for lugar in jan["lugares"]:
+        contagem[lugar[:3]] = contagem.get(lugar[:3], 0) + 1
+    return contagem
+
+
+@pytest.mark.parametrize("nome", ["4-4-2", "4-3-3", "4-5-1", "4-2-3-1", "3-5-2", "5-3-2", "3-4-3", "5-4-1"])
+def test_todas_as_formacoes_geram_time_valido(nome):
+    from escalacao import FORMACOES
+
+    r = gerar_automatico(elenco(15), "J0", 90, formacao=nome, tolerancia=8)
+    esperado = {"GOL": 1, **{f: n for f, n in FORMACOES[nome].items() if n}}
+    assert r["formacao"] == nome
+    for jan in r["janelas"]:
+        assert _funcoes_na_janela(jan) == esperado
+        assert len(set(jan["lugares"].values())) == 11
+
+
+def test_mudanca_de_formacao_no_meio_do_jogo():
+    r = gerar_automatico(
+        elenco(15), "J0", 90, formacao="4-4-2",
+        mudancas_formacao=[{"minuto": 60, "formacao": "4-5-1"}], tolerancia=8,
+    )
+    assert r["mudancas_formacao"] == [{"minuto": 60, "formacao": "4-5-1"}]
+    for jan in r["janelas"]:
+        esperado = "4-5-1" if jan["inicio"] >= 60 else "4-4-2"
+        assert jan["formacao"] == esperado
+        assert _funcoes_na_janela(jan)["MEI"] == (3 if esperado == "4-5-1" else 2)
+    assert any(j["inicio"] == 60 for j in r["janelas"])  # o minuto virou momento de troca
+
+
+def test_formacao_desconhecida_e_minuto_invalido():
+    from escalacao import EscalacaoInviavel
+
+    with pytest.raises(EscalacaoInviavel):
+        gerar_escalacao(elenco(13), "J0", 90, 3, 2, formacao="9-9-9")
+    with pytest.raises(EscalacaoInviavel):
+        gerar_escalacao(elenco(13), "J0", 90, 3, 2, mudancas_formacao=[{"minuto": 200, "formacao": "4-5-1"}])
+
+
+# ---------------------------------------------------------------------------
+# Quem fica o jogo todo / limites de trocas
+# ---------------------------------------------------------------------------
+def test_jogador_fixo_nao_troca_e_trocas_ficam_simples():
+    r = gerar_automatico(elenco(14), "J0", 90, quantos_fixos=1)
+    fixos = r["plano"]["fixos"]
+    assert len(fixos) == 1 and r["minutos"][fixos[0]] == 90
+    assert all(fixos[0] not in (t["sai"], t["entra"]) for t in r["trocas"])
+    assert len(r["janelas"]) - 1 <= 4  # poucas trocas
+
+
+def test_intervalo_minimo_e_maximo_de_momentos_sao_respeitados():
+    r = gerar_automatico(elenco(15), "J0", 90, intervalo_minimo=15, max_momentos=3, tolerancia=20)
+    cortes = [j["inicio"] for j in r["janelas"][1:]]
+    assert len(cortes) <= 3
+    assert all(b - a >= 15 for a, b in list(zip([0] + cortes, cortes + [90]))[:-1])
+    r2 = gerar_automatico(elenco(15), "J0", 90, max_trocas=2, tolerancia=20)
+    for j in r2["janelas"][1:]:
+        assert sum(1 for t in r2["trocas"] if t["minuto"] == j["inicio"]) <= 2
+
+
+def test_dica_de_fixos_quando_simplifica():
+    from escalacao import sugerir_fixos
+
+    jogadores = elenco(14)
+    atual = gerar_automatico(jogadores, "J0", 90)
+    dica = sugerir_fixos(jogadores, "J0", atual)
+    if dica:  # só aparece quando melhora de verdade
+        assert dica["quantos_fixos"] in (1, 2) and dica["momentos"] < len(atual["janelas"]) - 1
+        assert "Dica" in dica["texto"]
+
+
+# ---------------------------------------------------------------------------
+# Regras de composição definidas pelo administrador
+# ---------------------------------------------------------------------------
+def _perfis_com_velocidade(jogadores):
+    """Os volantes ficam bem diferentes: uns muito rápidos, outros bem lentos."""
+    perfis = {}
+    for i, j in enumerate(jogadores):
+        perfis[j["id"]] = {"attr": {"pace": 90 if i % 2 else 15}, "carac": ["canhoto"] if i % 3 == 0 else []}
+    return perfis
+
+
+def _paces_de(r, jogadores, perfis, funcao):
+    saida = []
+    for jan in r["janelas"]:
+        lugares = sorted(l for l in jan["lugares"] if l[:3] == funcao)
+        saida.append([perfis[jan["lugares"][l]]["attr"]["pace"] for l in lugares])
+    return saida
+
+
+def _media_pace(r, perfis, funcao):
+    """Velocidade média, ponderada pelo tempo, de quem joga na função."""
+    total = tempo = 0
+    for jan in r["janelas"]:
+        for lugar, jid in jan["lugares"].items():
+            if lugar[:3] == funcao:
+                t = jan["fim"] - jan["inicio"]
+                total += perfis[jid]["attr"]["pace"] * t
+                tempo += t
+    return total / tempo
+
+
+def test_composicao_de_atributo_nos_volantes():
+    jogadores = elenco(15)
+    perfis = _perfis_com_velocidade(jogadores)
+
+    def rodar(modo):
+        comp = [{"funcao": "VOL", "tipo": "atributo", "chave": "pace", "modo": modo}] if modo else []
+        return gerar_automatico(jogadores, "J0", 90, perfis=perfis, composicao=comp, tolerancia=10)
+
+    livre, altos, baixos = rodar(None), rodar("altos"), rodar("baixos")
+    assert _media_pace(altos, perfis, "VOL") > _media_pace(livre, perfis, "VOL") - 1e-9
+    assert _media_pace(baixos, perfis, "VOL") < _media_pace(livre, perfis, "VOL") + 1e-9
+    assert _media_pace(altos, perfis, "VOL") > _media_pace(baixos, perfis, "VOL")
+
+    # "Misto": o 1º volante (esquerda) é mais rápido que o 2º na maioria do tempo.
+    misto = rodar("misto")
+    paces = _paces_de(misto, jogadores, perfis, "VOL")
+    assert sum(1 for p in paces if p[0] > p[-1]) > sum(1 for p in paces if p[0] < p[-1])
+
+
+def test_composicao_por_caracteristica():
+    jogadores = elenco(15)
+    perfis = _perfis_com_velocidade(jogadores)
+
+    def tempo_com_canhoto(r):
+        return sum(
+            jan["fim"] - jan["inicio"]
+            for jan in r["janelas"]
+            if any(
+                "canhoto" in perfis[jid]["carac"] for l, jid in jan["lugares"].items() if l[:3] == "LAT"
+            )
+        )
+
+    livre = gerar_automatico(jogadores, "J0", 90, perfis=perfis, tolerancia=10)
+    comp = [{"funcao": "LAT", "tipo": "carac", "chave": "canhoto", "modo": "pelo_menos_um"}]
+    com_regra = gerar_automatico(jogadores, "J0", 90, perfis=perfis, composicao=comp, tolerancia=10)
+    assert tempo_com_canhoto(com_regra) >= tempo_com_canhoto(livre)
+    assert tempo_com_canhoto(com_regra) > 0
+
+
+def test_sem_regras_nada_muda():
+    jogadores = elenco(14)
+    a = gerar_escalacao(jogadores, "J0", 90, 5, 2, composicao=[], perfis=None)
+    b = gerar_escalacao(jogadores, "J0", 90, 5, 2)
+    assert a == b
+
+
+def test_caracteristica_da_bonus_na_tatica():
+    sem = tt.qualidade({}, "ZAG", "defensiva")
+    com = tt.qualidade({}, "ZAG", "defensiva", ["marcador"])
+    assert com > sem
+    assert tt.sugerir_formacoes("defensiva")["mudancas"][0]["formacao"] == "5-4-1"
+    assert tt.sugerir_formacoes("posse")["formacao"] == "4-2-3-1"

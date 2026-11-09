@@ -108,11 +108,17 @@ def _validar(tatica: str, estrategia: str) -> None:
 # ---------------------------------------------------------------------------
 # Qualidade
 # ---------------------------------------------------------------------------
-def qualidade(atributos: Optional[dict], funcao: str, tatica: str = "equilibrada") -> float:
+def qualidade(
+    atributos: Optional[dict],
+    funcao: str,
+    tatica: str = "equilibrada",
+    caracteristicas: Optional[list[str]] = None,
+) -> float:
     """
     Qualidade (aprox. 0–130) de um jogador numa função, sob uma tática.
 
     `atributos`: {"pace": 70, ...}; o que faltar vale 50.
+    `caracteristicas`: ["marcador", ...] — dão um pequeno bônus conforme a tática.
     """
     _validar(tatica, "uniforme")
     config = TATICAS[tatica]
@@ -124,7 +130,8 @@ def qualidade(atributos: Optional[dict], funcao: str, tatica: str = "equilibrada
         valor = atributos.get(atributo)
         total += peso * (PADRAO if valor is None else valor)
         peso_total += peso
-    return total / peso_total * config["funcao"].get(funcao, 1.0)
+    bonus = sum(BONUS_CARACTERISTICA.get(tatica, {}).get(c, 0) for c in caracteristicas or [])
+    return (total / peso_total + bonus) * config["funcao"].get(funcao, 1.0)
 
 
 def qualidade_do_jogador(
@@ -331,4 +338,81 @@ def sugerir_contra_estrategia(perfil: dict, historico: Optional[dict] = None) ->
         "estrategia": estrategia,
         "motivos": motivos,
         "pontuacoes": pontos,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Características (além dos números) e formações sugeridas
+# ---------------------------------------------------------------------------
+CARACTERISTICAS = {
+    "canhoto": "Canhoto",
+    "destro": "Destro",
+    "ambidestro": "Joga com os dois pés",
+    "alto": "Alto",
+    "jogo_aereo": "Bom no jogo aéreo",
+    "marcador": "Bom marcador",
+    "desarme": "Forte no desarme",
+    "passe_longo": "Passe longo",
+    "armador": "Armador (cria jogadas)",
+    "driblador": "Driblador",
+    "finalizador": "Faro de gol",
+    "chute_longe": "Chute de longe",
+    "bola_parada": "Bola parada",
+    "folego": "Muito fôlego",
+    "lider": "Líder",
+    "cabeca_fria": "Cabeça fria",
+}
+
+# Bônus pequeno (em pontos de qualidade) que cada tática dá a quem tem a característica.
+BONUS_CARACTERISTICA: dict[str, dict[str, float]] = {
+    "ofensiva": {"finalizador": 6, "driblador": 4, "chute_longe": 3},
+    "defensiva": {"marcador": 6, "desarme": 5, "jogo_aereo": 4},
+    "posse": {"armador": 6, "passe_longo": 4, "cabeca_fria": 3},
+    "contra_ataque": {"driblador": 4, "finalizador": 4, "folego": 4},
+    "pressao": {"folego": 6, "desarme": 5, "marcador": 3},
+}
+
+MODOS_ATRIBUTO = {
+    "misto": "Um alto e um baixo",
+    "altos": "Todos altos",
+    "baixos": "Todos baixos",
+}
+MODOS_CARACTERISTICA = {
+    "pelo_menos_um": "Pelo menos um com a característica",
+    "todos": "Todos com a característica",
+    "nenhum": "Nenhum com a característica",
+}
+
+# tática -> (formação inicial, mudança durante o jogo ou None, motivo)
+FORMACAO_POR_TATICA: dict[str, tuple[str, Optional[tuple[float, str]], str]] = {
+    "equilibrada": ("4-4-2", None, "4-4-2 é o jeito mais equilibrado e simples de jogar."),
+    "ofensiva": (
+        "4-4-2",
+        (0.67, "4-3-3"),
+        "Começa equilibrado e, no último terço do jogo, vai com 3 atacantes para buscar o resultado.",
+    ),
+    "defensiva": (
+        "4-4-2",
+        (0.67, "5-4-1"),
+        "Começa equilibrado e, no último terço, fecha com 5 na defesa para segurar o resultado.",
+    ),
+    "posse": ("4-2-3-1", None, "Dois volantes protegem a saída e três meias trocam passes à frente."),
+    "contra_ataque": (
+        "4-5-1",
+        (0.67, "4-4-2"),
+        "Espera bem fechado, com 5 no meio, e no fim sobe com mais um atacante.",
+    ),
+    "pressao": ("4-3-3", None, "Três atacantes pressionam a saída de bola do adversário."),
+}
+
+
+def sugerir_formacoes(tatica: Optional[str], duracao: int = 90) -> dict[str, Any]:
+    """Formação inicial e (opcional) mudança durante o jogo para a tática."""
+    inicial, mudanca, motivo = FORMACAO_POR_TATICA.get(tatica or "equilibrada", FORMACAO_POR_TATICA["equilibrada"])
+    return {
+        "formacao": inicial,
+        "mudancas": (
+            [{"minuto": round(duracao * mudanca[0]), "formacao": mudanca[1]}] if mudanca else []
+        ),
+        "motivo": motivo,
     }

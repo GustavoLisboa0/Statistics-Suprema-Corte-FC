@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 import tatica
 from auth import exige_editor
+from escalacao import FORMACOES
 from database import supabase
 
 router = APIRouter(tags=["Escalação (interno)"])
@@ -25,6 +26,7 @@ class AtributosPayload(BaseModel):
     passe: Optional[int] = Field(default=None, ge=1, le=100)
     visao: Optional[int] = Field(default=None, ge=1, le=100)
     nota: Optional[str] = Field(default=None, max_length=1000)
+    caracteristicas: list[str] = []
 
 
 class AdversarioPayload(BaseModel):
@@ -53,6 +55,15 @@ def carregar_atributos() -> dict[str, dict]:
 def catalogo(usuario: dict = Depends(exige_editor)):
     return {
         "atributos": [{"id": a, "nome": tatica.ATRIBUTO_NOMES[a]} for a in tatica.ATRIBUTOS],
+        "caracteristicas": [{"id": k, "nome": v} for k, v in tatica.CARACTERISTICAS.items()],
+        "modos_atributo": [{"id": k, "nome": v} for k, v in tatica.MODOS_ATRIBUTO.items()],
+        "modos_caracteristica": [
+            {"id": k, "nome": v} for k, v in tatica.MODOS_CARACTERISTICA.items()
+        ],
+        "formacoes": [{"id": k, "contagem": v} for k, v in FORMACOES.items()],
+        # Como o sistema calcula a "qualidade" de cada jogador (para você ver e entender).
+        "pesos_funcao": tatica.PESOS_FUNCAO,
+        "bonus_caracteristica": tatica.BONUS_CARACTERISTICA,
         "taticas": [
             {"id": k, "nome": v["nome"], "descricao": v["descricao"]}
             for k, v in tatica.TATICAS.items()
@@ -65,6 +76,16 @@ def catalogo(usuario: dict = Depends(exige_editor)):
 # ---------------------------------------------------------------------------
 # Atributos dos jogadores
 # ---------------------------------------------------------------------------
+@router.get("/escalacao/sugestao-formacao")
+def sugestao_formacao(
+    tatica_id: str = "equilibrada", duracao: int = 90, usuario: dict = Depends(exige_editor)
+):
+    """Formação (e mudança durante o jogo) que o sistema sugere para uma tática."""
+    if tatica_id not in tatica.TATICAS:
+        raise HTTPException(status_code=422, detail="Tática desconhecida")
+    return tatica.sugerir_formacoes(tatica_id, duracao)
+
+
 @router.get("/atributos")
 def listar_atributos(usuario: dict = Depends(exige_editor)):
     """Todos os jogadores ativos com seus atributos (campos vazios = não preenchido)."""
@@ -83,6 +104,7 @@ def listar_atributos(usuario: dict = Depends(exige_editor)):
                 "numero_camisa": j.get("numero_camisa"),
                 **{k: a.get(k) for k in tatica.ATRIBUTOS},
                 "nota": a.get("nota"),
+                "caracteristicas": a.get("caracteristicas") or [],
             }
         )
     return saida
@@ -95,7 +117,10 @@ def salvar_atributos(
     jid = str(jogador_id)
     if not supabase.table("jogadores").select("id").eq("id", jid).execute().data:
         raise HTTPException(status_code=404, detail="Jogador não encontrado")
-    dados = {k: getattr(corpo, k) for k in [*tatica.ATRIBUTOS, "nota"]}
+    desconhecidas = [c for c in corpo.caracteristicas if c not in tatica.CARACTERISTICAS]
+    if desconhecidas:
+        raise HTTPException(status_code=422, detail=f"Característica desconhecida: {desconhecidas[0]}")
+    dados = {k: getattr(corpo, k) for k in [*tatica.ATRIBUTOS, "nota", "caracteristicas"]}
     tabela = supabase.table("atributos_jogador")
     if tabela.select("*").eq("jogador_id", jid).execute().data:
         return (
