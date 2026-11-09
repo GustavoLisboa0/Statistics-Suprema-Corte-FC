@@ -18,39 +18,53 @@ export const FUNCAO_LABELS: Record<FuncaoOuGol, string> = {
   ATA: "Atacante",
 };
 
-/** Lugares do 4-4-2, na ordem usada pelo backend. */
-export const LUGARES = [
-  "GOL",
-  "ZAG1",
-  "ZAG2",
-  "LAT1",
-  "LAT2",
-  "VOL1",
-  "VOL2",
-  "MEI1",
-  "MEI2",
-  "ATA1",
-  "ATA2",
-] as const;
-export type Lugar = (typeof LUGARES)[number];
+/** Um lugar em campo, ex.: "GOL", "ZAG1", "VOL2" (sempre da esquerda para a direita). */
+export type Lugar = string;
+
+/** Formações que o sistema conhece (nome -> quantos em cada função). */
+export const FORMACOES: Record<string, Record<Funcao, number>> = {
+  "4-4-2": { ZAG: 2, LAT: 2, VOL: 2, MEI: 2, ATA: 2 },
+  "4-3-3": { ZAG: 2, LAT: 2, VOL: 1, MEI: 2, ATA: 3 },
+  "4-5-1": { ZAG: 2, LAT: 2, VOL: 2, MEI: 3, ATA: 1 },
+  "4-2-3-1": { ZAG: 2, LAT: 2, VOL: 2, MEI: 3, ATA: 1 },
+  "3-5-2": { ZAG: 3, LAT: 2, VOL: 1, MEI: 2, ATA: 2 },
+  "5-3-2": { ZAG: 3, LAT: 2, VOL: 1, MEI: 2, ATA: 2 },
+  "3-4-3": { ZAG: 3, LAT: 2, VOL: 0, MEI: 2, ATA: 3 },
+  "5-4-1": { ZAG: 3, LAT: 2, VOL: 2, MEI: 2, ATA: 1 },
+};
+
+function espalhar(n: number, de: number, ate: number): number[] {
+  if (n <= 0) return [];
+  if (n === 1) return [(de + ate) / 2];
+  return Array.from({ length: n }, (_, i) => de + ((ate - de) * i) / (n - 1));
+}
 
 /**
- * Posição de cada lugar do 4-4-2 no campinho (coordenadas do viewBox 400x560).
- * Goleiro embaixo, ataque em cima. LAT1/MEI1 ficam à esquerda, LAT2/MEI2 à direita.
+ * Posição de cada lugar da formação no campinho (viewBox 400x560).
+ * Goleiro embaixo, ataque em cima; o número 1 de cada função fica à esquerda.
  */
-export const POSICAO_NO_CAMPO: Record<Lugar, { x: number; y: number }> = {
-  GOL: { x: 200, y: 488 },
-  LAT1: { x: 58, y: 400 },
-  ZAG1: { x: 150, y: 410 },
-  ZAG2: { x: 250, y: 410 },
-  LAT2: { x: 342, y: 400 },
-  MEI1: { x: 58, y: 275 },
-  VOL1: { x: 150, y: 290 },
-  VOL2: { x: 250, y: 290 },
-  MEI2: { x: 342, y: 275 },
-  ATA1: { x: 140, y: 140 },
-  ATA2: { x: 260, y: 140 },
-};
+export function layoutDaFormacao(formacao: string): Record<Lugar, { x: number; y: number }> {
+  const c = FORMACOES[formacao] ?? FORMACOES["4-4-2"];
+  const pos: Record<Lugar, { x: number; y: number }> = { GOL: { x: 200, y: 488 } };
+  const poe = (f: Funcao, xs: number[], y: number) =>
+    xs.forEach((x, i) => (pos[`${f}${i + 1}`] = { x, y }));
+  const tresAtras = formacao.startsWith("3");
+
+  poe("ZAG", espalhar(c.ZAG, c.ZAG === 2 ? 150 : 120, c.ZAG === 2 ? 250 : 280), 410);
+  poe("LAT", [58, 342], tresAtras ? 320 : 400);
+  if (c.VOL === 2 && c.MEI === 2) {
+    // meio-campo em linha: meia, volante, volante, meia
+    pos.MEI1 = { x: 58, y: 275 };
+    pos.VOL1 = { x: 150, y: 290 };
+    pos.VOL2 = { x: 250, y: 290 };
+    pos.MEI2 = { x: 342, y: 275 };
+  } else {
+    poe("VOL", espalhar(c.VOL, 150, 250), 305);
+    poe("MEI", espalhar(c.MEI, c.MEI === 2 ? 110 : 80, c.MEI === 2 ? 290 : 320), c.VOL ? 235 : 275);
+  }
+  poe("ATA", espalhar(c.ATA, c.ATA === 2 ? 140 : 90, c.ATA === 2 ? 260 : 310), 140);
+  return pos;
+}
 
 export type Convocado = {
   id: string;
@@ -83,6 +97,13 @@ export type Restricao = {
   funcao?: Funcao;
 };
 
+export type RegraComposicao = {
+  funcao: Funcao;
+  tipo: "atributo" | "carac";
+  chave: string;
+  modo: string;
+};
+
 export type GerarPayload = {
   goleiro_id: string;
   incluir: string[];
@@ -95,6 +116,16 @@ export type GerarPayload = {
   regras: Record<string, RegraJogador>;
   restricoes: Restricao[];
   semente: number;
+  /** Quanto o computador pode mexer nas trocas (modo automático). */
+  intervalo_minimo: number;
+  tolerancia_minutos: number;
+  max_momentos: number | null;
+  max_trocas_por_vez: number | null;
+  /** Quantos jogadores de linha ficam o jogo inteiro (sem sair). */
+  quantos_fixos: number;
+  formacao: string;
+  mudancas_formacao: { minuto: number; formacao: string }[];
+  composicao: RegraComposicao[];
   /** V2 (só admin): tática e estratégia. */
   tatica: string | null;
   estrategia: string;
@@ -104,6 +135,7 @@ export type GerarPayload = {
 export type Janela = {
   inicio: number;
   fim: number;
+  formacao?: string;
   lugares: Record<Lugar, string>;
 };
 
@@ -137,7 +169,16 @@ export type ResultadoEscalacao = {
   /** Dados públicos de cada convocado, para desenhar sem buscar mais nada. */
   jogadores: Record<string, JogadorResumo>;
   /** Só no modo automático: o que o computador decidiu. */
-  plano?: { n_substituicoes: number; trocas_por_vez: number; cortes: number[] };
+  plano?: { n_substituicoes: number; trocas_por_vez: number; cortes: number[]; fixos?: string[] };
+  mudancas_formacao?: { minuto: number; formacao: string }[];
+  /** Resumo público do plano (vai no PDF): nomes e ideias, sem números de atributos. */
+  plano_de_jogo?: {
+    tatica: string | null;
+    tatica_descricao: string | null;
+    estrategia: string | null;
+    estrategia_descricao: string | null;
+    regras: string[];
+  };
 };
 
 export type PreviaEscalacao = {
@@ -149,6 +190,8 @@ export type PreviaEscalacao = {
   analise?: Analise;
   /** Avisos do sistema para o admin (ex.: tempo igual impossível por causa das posições). */
   avisos?: string[];
+  /** Sugestão de quem poderia jogar o jogo todo para ter menos trocas. */
+  dica_fixos?: { quantos_fixos: number; fixos: string[]; momentos: number; texto: string } | null;
 };
 
 export type EscalacaoSalva = {
@@ -222,7 +265,20 @@ export type Analise = {
 };
 
 export type Catalogo = {
-  taticas: { id: string; nome: string; descricao: string }[];
+  atributos: { id: string; nome: string }[];
+  caracteristicas: { id: string; nome: string }[];
+  modos_atributo: { id: string; nome: string }[];
+  modos_caracteristica: { id: string; nome: string }[];
+  formacoes: { id: string; contagem: Record<Funcao, number> }[];
+  pesos_funcao: Record<string, Record<string, number>>;
+  bonus_caracteristica: Record<string, Record<string, number>>;
+  taticas: {
+    id: string;
+    nome: string;
+    descricao: string;
+    attr: Record<string, number>;
+    funcao: Record<string, number>;
+  }[];
   estrategias: { id: string; nome: string; descricao: string }[];
   estilos: { id: string; nome: string }[];
 };
@@ -233,6 +289,7 @@ export type AtributosJogador = {
   posicoes: string[];
   numero_camisa: number | null;
   nota: string | null;
+  caracteristicas: string[];
 } & Record<AtributoId, number | null>;
 
 export type Adversario = {
@@ -270,7 +327,10 @@ export const fetchCatalogo = () => api.get<Catalogo>("/escalacao/catalogo");
 export const fetchAtributos = () => api.get<AtributosJogador[]>("/atributos");
 export const salvarAtributos = (
   jogadorId: string,
-  corpo: Partial<Record<AtributoId, number | null>> & { nota?: string | null },
+  corpo: Partial<Record<AtributoId, number | null>> & {
+    nota?: string | null;
+    caracteristicas?: string[];
+  },
 ) => api.put(`/atributos/${jogadorId}`, corpo);
 export const fetchNota = (partidaId: string) =>
   api.get<{ texto: string }>(`/partidas/${partidaId}/escalacao/nota`);
@@ -279,3 +339,13 @@ export const salvarNota = (partidaId: string, texto: string) =>
 export const fetchContraEstrategia = (partidaId: string) =>
   api.get<ContraEstrategia>(`/partidas/${partidaId}/escalacao/contra-estrategia`);
 export const salvarAdversario = (corpo: Adversario) => api.put<Adversario>("/adversarios", corpo);
+
+export type SugestaoFormacao = {
+  formacao: string;
+  mudancas: { minuto: number; formacao: string }[];
+  motivo: string;
+};
+export const fetchSugestaoFormacao = (tatica: string, duracao: number) =>
+  api.get<SugestaoFormacao>(
+    `/escalacao/sugestao-formacao?tatica_id=${encodeURIComponent(tatica)}&duracao=${duracao}`,
+  );

@@ -107,6 +107,27 @@ escalação salva.
 - Lógica: `backend/tatica.py`; rotas: `backend/routers/atributos.py`.
 - No Supabase de verdade, rode também `database/migration_010_atributos_taticas.sql`.
 
+### V2.1: formações, trocas sob controle, características e regras de composição
+
+- **Atributos e características** ficam na aba **Jogadores** (menu "⋮" do
+  jogador → Atributos; só administrador). Além das 6 notas, há 16
+  características (canhoto, jogo aéreo, marcador, armador, fôlego…).
+- **Formações:** 4-4-2, 4-3-3, 4-5-1, 4-2-3-1, 3-5-2, 5-3-2, 3-4-3 e 5-4-1, com
+  mudança durante o jogo (ex.: 4-4-2 e aos 60' vai para o 4-3-3). O botão
+  "Sugerir formação" propõe uma conforme a tática.
+- **Trocas sob controle** (modo automático): jogadores que não saem, máximo de
+  momentos de troca, máximo de jogadores por troca, minutos mínimos entre
+  trocas e diferença de tempo aceita. Se compensar, o sistema dá a dica de
+  deixar 1 jogador o jogo todo (menos trocas, tempo parecido).
+- **Regras de composição** (só administrador): por setor, ex. "volantes: um com
+  mais velocidade e outro com menos" ou "pelo menos um canhoto nos laterais".
+  São preferências: o tempo igual para todos continua mandando.
+- O cartão "Como o sistema decide" mostra os pesos usados nas contas.
+- **PDF** com várias páginas: capa com plano de jogo (formação, tática,
+  estratégia), titulares, banco e trocas, mais uma página por momento do jogo.
+  Nunca leva atributos, notas, análise nem regras de composição.
+- No Supabase de verdade, rode também `database/migration_011_caracteristicas.sql`.
+
 ## Setup
 
 ### 1. Banco de dados (Supabase)

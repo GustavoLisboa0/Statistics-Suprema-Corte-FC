@@ -3,7 +3,15 @@ import { isAutenticado } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { HeartPulse, MoreVertical, Pencil, Plus, ShieldAlert, Trash2 } from "lucide-react";
+import {
+  HeartPulse,
+  MoreVertical,
+  Pencil,
+  Plus,
+  ShieldAlert,
+  SlidersHorizontal,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -35,6 +43,7 @@ import {
 } from "@/lib/football";
 import { cn } from "@/lib/utils";
 import { PunicoesDialog } from "@/components/PunicoesDialog";
+import { AtributosJogadorDialog } from "@/components/AtributosJogadorDialog";
 import { LesaoDialog } from "@/components/LesaoDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -131,6 +140,7 @@ function PlayerCard({
   onEditMine,
   onPunicoes,
   onLesoes,
+  onAtributos,
 }: {
   player: Player;
   podeEditar: boolean;
@@ -141,6 +151,7 @@ function PlayerCard({
   onEditMine: () => void;
   onPunicoes: () => void;
   onLesoes: () => void;
+  onAtributos: () => void;
 }) {
   return (
     <Card
@@ -221,6 +232,9 @@ function PlayerCard({
                 <DropdownMenuItem onClick={onLesoes}>
                   <HeartPulse className="mr-2 h-3.5 w-3.5" /> Lesões
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={onAtributos}>
+                  <SlidersHorizontal className="mr-2 h-3.5 w-3.5" /> Atributos
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={onDelete}
@@ -275,6 +289,7 @@ function PlayersPage() {
   const [initialForm, setInitialForm] = useState<FormState>(emptyForm);
   const [toDelete, setToDelete] = useState<Player | null>(null);
   const [punicoesDe, setPunicoesDe] = useState<Player | null>(null);
+  const [atributosDe, setAtributosDe] = useState<Player | null>(null);
   const [lesoesDe, setLesoesDe] = useState<Player | null>(null);
 
   const save = useMutation({
@@ -450,6 +465,7 @@ function PlayersPage() {
                     onEditMine={() => navigate({ to: "/meu-jogador" })}
                     onPunicoes={() => setPunicoesDe(p)}
                     onLesoes={() => setLesoesDe(p)}
+                    onAtributos={() => setAtributosDe(p)}
                   />
                 ))}
               </div>
@@ -608,6 +624,12 @@ function PlayersPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AtributosJogadorDialog
+        player={atributosDe}
+        open={!!atributosDe}
+        onOpenChange={(o) => !o && setAtributosDe(null)}
+      />
 
       <PunicoesDialog
         player={punicoesDe}

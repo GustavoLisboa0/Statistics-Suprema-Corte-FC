@@ -1,21 +1,16 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Lightbulb, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  ATRIBUTOS,
-  fetchAtributos,
   fetchCatalogo,
   fetchContraEstrategia,
   fetchNota,
   salvarAdversario,
-  salvarAtributos,
   salvarNota,
   type Adversario,
   type Analise,
-  type AtributoId,
-  type AtributosJogador,
 } from "@/lib/escalacao";
 import { NumberInput } from "@/components/NumberInput";
 import { Badge } from "@/components/ui/badge";
@@ -289,116 +284,6 @@ function PerfilAdversario({
         </div>
       )}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Atributos dos jogadores
-// ---------------------------------------------------------------------------
-export function CartaoAtributos({ idsDoElenco }: { idsDoElenco: string[] }) {
-  const qc = useQueryClient();
-  const [aberto, setAberto] = useState(false);
-  const { data, isLoading } = useQuery({
-    queryKey: ["atributos"],
-    queryFn: fetchAtributos,
-    enabled: aberto,
-  });
-  const lista = (data ?? []).filter((a) => idsDoElenco.includes(a.jogador_id));
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          Atributos dos jogadores <Badge variant="outline">só administrador</Badge>
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Notas de 1 a 100. Quem não tem nota vale 50. Ninguém além de você vê isto, e nada sai no
-          PDF.
-        </p>
-        <Button variant="link" className="h-auto w-fit p-0" onClick={() => setAberto((v) => !v)}>
-          {aberto ? "Esconder" : "Mostrar e editar"} atributos
-        </Button>
-      </CardHeader>
-      {aberto && (
-        <CardContent className="overflow-x-auto">
-          {isLoading ? (
-            <Skeleton className="h-40 w-full" />
-          ) : (
-            <table className="w-full min-w-[760px] text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase text-muted-foreground">
-                  <th className="py-1 pr-2 font-medium">Jogador</th>
-                  {ATRIBUTOS.map((a) => (
-                    <th key={a.id} className="px-1 font-medium">
-                      {a.nome}
-                    </th>
-                  ))}
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {lista.map((a) => (
-                  <LinhaAtributos
-                    key={a.jogador_id}
-                    a={a}
-                    aoSalvar={() => qc.invalidateQueries({ queryKey: ["atributos"] })}
-                  />
-                ))}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      )}
-    </Card>
-  );
-}
-
-function LinhaAtributos({ a, aoSalvar }: { a: AtributosJogador; aoSalvar: () => void }) {
-  const inicial = () =>
-    Object.fromEntries(ATRIBUTOS.map((x) => [x.id, a[x.id] ? String(a[x.id]) : ""])) as Record<
-      AtributoId,
-      string
-    >;
-  const [valores, setValores] = useState(inicial);
-  const salvar = useMutation({
-    mutationFn: () =>
-      salvarAtributos(
-        a.jogador_id,
-        Object.fromEntries(ATRIBUTOS.map((x) => [x.id, Number(valores[x.id]) || null])),
-      ),
-    onSuccess: () => {
-      toast.success(`Atributos de ${a.nome} salvos.`);
-      aoSalvar();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  return (
-    <tr className="border-t">
-      <td className="py-1 pr-2">{a.nome}</td>
-      {ATRIBUTOS.map((x) => (
-        <td key={x.id} className="px-1">
-          <NumberInput
-            value={valores[x.id]}
-            onChange={(v) => setValores((s) => ({ ...s, [x.id]: v }))}
-            min={1}
-            max={100}
-            maxDigits={3}
-            placeholder="50"
-            className="w-24"
-          />
-        </td>
-      ))}
-      <td className="pl-2">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => salvar.mutate()}
-          disabled={salvar.isPending}
-        >
-          Salvar
-        </Button>
-      </td>
-    </tr>
   );
 }
 

@@ -1,4 +1,4 @@
-import { POSICAO_NO_CAMPO, type JogadorResumo, type Lugar } from "@/lib/escalacao";
+import { layoutDaFormacao, type JogadorResumo, type Lugar } from "@/lib/escalacao";
 
 const ROTULO_CURTO: Record<string, string> = {
   GOL: "GOL",
@@ -16,19 +16,27 @@ function nomeCurto(nome: string): string {
 
 type Props = {
   lugares: Record<Lugar, string>;
+  formacao?: string;
   jogadores: Record<string, JogadorResumo>;
   /** Jogadores a destacar (ex.: quem acabou de entrar). */
   destaque?: Set<string>;
   className?: string;
 };
 
-/** Campinho 4-4-2 em SVG, com cada jogador no seu lugar. */
-export function CampoEscalacao({ lugares, jogadores, destaque, className }: Props) {
+/** Campinho em SVG (qualquer formação), com cada jogador no seu lugar. */
+export function CampoEscalacao({
+  lugares,
+  formacao = "4-4-2",
+  jogadores,
+  destaque,
+  className,
+}: Props) {
+  const posicoes = layoutDaFormacao(formacao);
   return (
     <svg
       viewBox="0 0 400 560"
       role="img"
-      aria-label="Campinho com a escalação em 4-4-2"
+      aria-label={`Campinho com a escalação em ${formacao}`}
       className={className}
     >
       <rect x="0" y="0" width="400" height="560" rx="14" fill="#2f7d3b" />
@@ -48,10 +56,10 @@ export function CampoEscalacao({ lugares, jogadores, destaque, className }: Prop
       </g>
       <circle cx="200" cy="280" r="3" fill="#fff" opacity="0.75" />
 
-      {(Object.keys(POSICAO_NO_CAMPO) as Lugar[]).map((lugar) => {
+      {Object.keys(posicoes).map((lugar) => {
         const id = lugares[lugar];
         const jogador = id ? jogadores[id] : undefined;
-        const { x, y } = POSICAO_NO_CAMPO[lugar];
+        const { x, y } = posicoes[lugar];
         const novo = id ? destaque?.has(id) : false;
         return (
           <g key={lugar} transform={`translate(${x} ${y})`}>

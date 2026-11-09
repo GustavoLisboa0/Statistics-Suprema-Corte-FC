@@ -20,18 +20,22 @@ import {
   type Funcao,
   type GerarPayload,
   type PreviaEscalacao,
+  type RegraComposicao,
   type RegraJogador,
   type Restricao,
   type ResultadoEscalacao,
 } from "@/lib/escalacao";
 import { exportarEscalacaoPdf } from "@/lib/escalacaoPdf";
 import { CampoEscalacao } from "@/components/CampoEscalacao";
+import { CartaoAnalise, CartaoNota, CartaoTatica } from "@/components/EscalacaoInterna";
 import {
-  CartaoAnalise,
-  CartaoAtributos,
-  CartaoNota,
-  CartaoTatica,
-} from "@/components/EscalacaoInterna";
+  CamposTrocas,
+  CartaoComoFunciona,
+  CartaoComposicao,
+  CartaoFormacao,
+  type ControleTrocas,
+  type MudancaFormacaoForm,
+} from "@/components/EscalacaoControles";
 import { NumberInput } from "@/components/NumberInput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,7 +89,7 @@ function EscalacaoPage() {
         <h1 className="font-display text-4xl tracking-wide text-foreground">Escalação</h1>
         <p className="text-sm text-muted-foreground">
           {podeEditar
-            ? "Monte a escalação 4-4-2 do jogo: o sistema divide os minutos e as trocas para você."
+            ? "Monte a escalação do jogo (4-4-2, 4-3-3, 4-5-1…): o sistema divide os minutos e as trocas para você."
             : "Veja a escalação montada para cada jogo."}
         </p>
       </div>
@@ -194,6 +198,13 @@ function VisaoEscalacao({
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle className="font-display text-2xl tracking-wide">
             Escalação {resultado.formacao}
+            {resultado.mudancas_formacao && resultado.mudancas_formacao.length > 0 && (
+              <span className="ml-2 text-base text-muted-foreground">
+                {resultado.mudancas_formacao
+                  .map((m) => `→ ${m.formacao} aos ${m.minuto}'`)
+                  .join(" ")}
+              </span>
+            )}
           </CardTitle>
           <div className="flex flex-wrap gap-2">
             {acoes}
@@ -218,6 +229,7 @@ function VisaoEscalacao({
                 onClick={() => setIndice(i)}
               >
                 {j.inicio}'–{j.fim}'
+                {j.formacao && j.formacao !== resultado.formacao ? ` · ${j.formacao}` : ""}
               </Button>
             ))}
           </div>
@@ -225,6 +237,7 @@ function VisaoEscalacao({
           <div className="grid gap-6 md:grid-cols-[minmax(0,360px)_1fr]">
             <CampoEscalacao
               lugares={janela.lugares}
+              formacao={janela.formacao ?? resultado.formacao}
               jogadores={resultado.jogadores}
               destaque={quemEntrou}
               className="w-full max-w-sm justify-self-center"
@@ -292,7 +305,13 @@ function VisaoEscalacao({
             <p className="text-sm text-muted-foreground">
               O sistema escolheu {resultado.plano.n_substituicoes} momento(s) de troca, com até{" "}
               {resultado.plano.trocas_por_vez} jogador(es) saindo por vez (minutos{" "}
-              {resultado.plano.cortes.join(", ") || "—"}).
+              {resultado.plano.cortes.join(", ") || "—"})
+              {resultado.plano.fixos && resultado.plano.fixos.length > 0
+                ? `; ${resultado.plano.fixos
+                    .map((id) => resultado.jogadores[id]?.nome ?? id)
+                    .join(", ")} joga(m) o jogo todo`
+                : ""}
+              .
             </p>
           )}
         </CardHeader>
@@ -378,6 +397,18 @@ function FormularioAdmin({
   const [tatica, setTatica] = useState<string | null>(cfg?.tatica ?? null);
   const [estrategia, setEstrategia] = useState(cfg?.estrategia ?? "uniforme");
   const [forca, setForca] = useState(cfg?.forca_tatica ?? 50);
+  const [formacao, setFormacao] = useState(cfg?.formacao ?? "4-4-2");
+  const [mudancasForm, setMudancasForm] = useState<MudancaFormacaoForm[]>(
+    (cfg?.mudancas_formacao ?? []).map((m) => ({ minuto: String(m.minuto), formacao: m.formacao })),
+  );
+  const [composicao, setComposicao] = useState<RegraComposicao[]>(cfg?.composicao ?? []);
+  const [ctlTrocas, setCtlTrocas] = useState<ControleTrocas>({
+    intervalo: String(cfg?.intervalo_minimo ?? 10),
+    tolerancia: String(cfg?.tolerancia_minutos ?? 5),
+    maxMomentos: cfg?.max_momentos != null ? String(cfg.max_momentos) : "",
+    maxPorVez: cfg?.max_trocas_por_vez != null ? String(cfg.max_trocas_por_vez) : "",
+    fixos: String(cfg?.quantos_fixos ?? 0),
+  });
   const [nSubs, setNSubs] = useState(String(cfg?.n_substituicoes ?? 5));
   const [trocas, setTrocas] = useState(String(cfg?.trocas_por_vez ?? 2));
   const [regras, setRegras] = useState<Record<string, RegraJogador>>(cfg?.regras ?? {});
@@ -452,6 +483,16 @@ function FormularioAdmin({
     tatica,
     estrategia,
     forca_tatica: forca,
+    formacao,
+    mudancas_formacao: mudancasForm
+      .filter((m) => Number(m.minuto) > 0)
+      .map((m) => ({ minuto: Number(m.minuto), formacao: m.formacao })),
+    composicao,
+    intervalo_minimo: Number(ctlTrocas.intervalo) || 10,
+    tolerancia_minutos: ctlTrocas.tolerancia === "" ? 5 : Number(ctlTrocas.tolerancia),
+    max_momentos: ctlTrocas.maxMomentos === "" ? null : Number(ctlTrocas.maxMomentos),
+    max_trocas_por_vez: Number(ctlTrocas.maxPorVez) || null,
+    quantos_fixos: Number(ctlTrocas.fixos) || 0,
     n_substituicoes: Number(nSubs) || 0,
     trocas_por_vez: Number(trocas) || 1,
     regras: limparRegras(regras, new Set(elenco.map((j) => j.id))),
@@ -672,6 +713,8 @@ function FormularioAdmin({
             </span>
           </label>
 
+          {automatico && <CamposTrocas valores={ctlTrocas} setValores={setCtlTrocas} />}
+
           <Button variant="link" className="h-auto p-0" onClick={() => setMostrarRegras((v) => !v)}>
             {mostrarRegras ? "Esconder" : "Mostrar"} regras opcionais por jogador
           </Button>
@@ -756,6 +799,15 @@ function FormularioAdmin({
         </CardContent>
       </Card>
 
+      <CartaoFormacao
+        formacao={formacao}
+        setFormacao={setFormacao}
+        mudancas={mudancasForm}
+        setMudancas={setMudancasForm}
+        tatica={tatica}
+        duracao={Number(duracao) || 90}
+      />
+
       <CartaoTatica
         partidaId={partida.id}
         tatica={tatica}
@@ -765,7 +817,12 @@ function FormularioAdmin({
         forca={forca}
         setForca={setForca}
       />
-      <CartaoAtributos idsDoElenco={elenco.map((j) => j.id)} />
+      <CartaoComposicao regras={composicao} setRegras={setComposicao} />
+      <CartaoComoFunciona />
+      <p className="text-sm text-muted-foreground">
+        Atributos e características dos jogadores ficam na aba <strong>Jogadores</strong> (menu “⋮”
+        do jogador → Atributos).
+      </p>
 
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => rodar()} disabled={gerar.isPending} size="lg">
@@ -793,6 +850,31 @@ function FormularioAdmin({
                     <li key={a}>{a}</li>
                   ))}
                 </ul>
+              </CardContent>
+            </Card>
+          )}
+          {previa.dica_fixos && (
+            <Card className="border-accent">
+              <CardHeader>
+                <CardTitle className="text-base">Dica para simplificar as trocas</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-wrap items-center gap-3 text-sm">
+                <span>{previa.dica_fixos.texto}</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={gerar.isPending}
+                  onClick={() => {
+                    const novo = { ...ctlTrocas, fixos: String(previa.dica_fixos!.quantos_fixos) };
+                    setCtlTrocas(novo);
+                    gerar.mutate({
+                      ...montarPayload(semente, restricoes),
+                      quantos_fixos: previa.dica_fixos!.quantos_fixos,
+                    });
+                  }}
+                >
+                  Usar esta dica
+                </Button>
               </CardContent>
             </Card>
           )}

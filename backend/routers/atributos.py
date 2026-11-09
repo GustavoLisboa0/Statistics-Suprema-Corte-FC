@@ -65,7 +65,7 @@ def catalogo(usuario: dict = Depends(exige_editor)):
         "pesos_funcao": tatica.PESOS_FUNCAO,
         "bonus_caracteristica": tatica.BONUS_CARACTERISTICA,
         "taticas": [
-            {"id": k, "nome": v["nome"], "descricao": v["descricao"]}
+            {"id": k, "nome": v["nome"], "descricao": v["descricao"], "attr": v["attr"], "funcao": v["funcao"]}
             for k, v in tatica.TATICAS.items()
         ],
         "estrategias": [{"id": k, **v} for k, v in tatica.ESTRATEGIAS.items()],

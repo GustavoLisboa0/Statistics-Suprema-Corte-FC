@@ -1459,7 +1459,11 @@ def sugerir_fixos(
     tolerancia = opcoes.get("tolerancia", 5)
 
     def resumo(res: dict) -> tuple[int, int]:
-        return len(res["janelas"]) - 1, _diferenca_minutos(res, regras, restricoes)
+        # Quem joga o jogo todo de propósito não conta na diferença de tempo.
+        com_fixos = {k: dict(v) for k, v in (regras or {}).items()}
+        for jid in (res.get("plano") or {}).get("fixos", []):
+            com_fixos.setdefault(jid, {})["grupo_fixo"] = True
+        return len(res["janelas"]) - 1, _diferenca_minutos(res, com_fixos, restricoes)
 
     momentos, dif = resumo(atual)
     if momentos <= 3 and dif <= tolerancia:

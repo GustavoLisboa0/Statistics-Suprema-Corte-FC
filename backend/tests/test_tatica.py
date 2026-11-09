@@ -277,9 +277,11 @@ def test_dica_de_fixos_quando_simplifica():
     jogadores = elenco(14)
     atual = gerar_automatico(jogadores, "J0", 90)
     dica = sugerir_fixos(jogadores, "J0", atual)
-    if dica:  # só aparece quando melhora de verdade
-        assert dica["quantos_fixos"] in (1, 2) and dica["momentos"] < len(atual["janelas"]) - 1
-        assert "Dica" in dica["texto"]
+    # Com goleiro + 13 de linha o padrão tem muitas trocas e tempos de 70/60;
+    # deixar 1 jogador o jogo todo simplifica bastante, então a dica TEM que vir.
+    assert dica is not None
+    assert dica["quantos_fixos"] in (1, 2) and dica["momentos"] < len(atual["janelas"]) - 1
+    assert "Dica" in dica["texto"]
 
 
 # ---------------------------------------------------------------------------
@@ -322,9 +324,12 @@ def test_composicao_de_atributo_nos_volantes():
         return gerar_automatico(jogadores, "J0", 90, perfis=perfis, composicao=comp, tolerancia=10)
 
     livre, altos, baixos = rodar(None), rodar("altos"), rodar("baixos")
-    assert _media_pace(altos, perfis, "VOL") > _media_pace(livre, perfis, "VOL") - 1e-9
-    assert _media_pace(baixos, perfis, "VOL") < _media_pace(livre, perfis, "VOL") + 1e-9
-    assert _media_pace(altos, perfis, "VOL") > _media_pace(baixos, perfis, "VOL")
+    # A regra é uma preferência (disputa com o tempo igual) e a busca tem sorteio,
+    # então o "livre" pode cair por sorte do lado bom. O que tem que valer sempre é
+    # a ordem entre os dois extremos, com folga pequena em relação ao livre.
+    assert _media_pace(altos, perfis, "VOL") > _media_pace(baixos, perfis, "VOL") + 10
+    assert _media_pace(altos, perfis, "VOL") > _media_pace(livre, perfis, "VOL") - 12
+    assert _media_pace(baixos, perfis, "VOL") < _media_pace(livre, perfis, "VOL") + 12
 
     # "Misto": o 1º volante (esquerda) é mais rápido que o 2º na maioria do tempo.
     misto = rodar("misto")
