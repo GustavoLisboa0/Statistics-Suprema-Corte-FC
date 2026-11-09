@@ -711,9 +711,88 @@ def validar_plano(plano: Any) -> dict[str, Any]:
                 item[fase] = {"x": round(min(max(x, 14), 386)), "y": round(min(max(y, 14), 546))}
         if item:
             jogadores[lugar] = item
+    jogadas = plano.get("jogadas") or []
+    if not isinstance(jogadas, list) or not all(isinstance(j, str) for j in jogadas):
+        raise ValueError("Lista de jogadas ensaiadas inválida")
     return {
         "formacao": formacao,
         "time": limpo_time,
         "jogadores": jogadores,
+        "notas": (plano.get("notas") or "").strip()[:600],
+        "jogadas": list(dict.fromkeys(jogadas))[:30],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Jogadas ensaiadas: uma jogada combinada para um momento específico (escanteio,
+# falta, saída de bola...). Diferente da tática (como cada um age em geral).
+# Cada jogada tem passos; em cada passo o jogador pode ter uma posição no campo.
+# ---------------------------------------------------------------------------
+SITUACOES_ENSAIADAS = {
+    "escanteio_ataque": "Escanteio a favor",
+    "escanteio_defesa": "Escanteio contra",
+    "falta_ataque": "Falta a favor",
+    "falta_defesa": "Falta contra",
+    "lateral": "Lateral",
+    "saida_de_bola": "Saída de bola",
+    "tiro_de_meta": "Tiro de meta",
+    "outra": "Outra situação",
+}
+MAX_PASSOS = 8
+
+
+def _ponto(pos: Any) -> dict[str, int]:
+    if not isinstance(pos, dict):
+        raise ValueError("Posição inválida")
+    x, y = pos.get("x"), pos.get("y")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (x, y)):
+        raise ValueError("Posição inválida")
+    return {"x": round(min(max(x, 14), 386)), "y": round(min(max(y, 14), 546))}
+
+
+def validar_jogada(plano: Any, situacao: str) -> dict[str, Any]:
+    """Confere e limpa uma jogada ensaiada. Levanta ValueError se algo estiver errado."""
+    from escalacao import FORMACOES, slots_da_formacao
+
+    if situacao not in SITUACOES_ENSAIADAS:
+        raise ValueError("Situação desconhecida")
+    if not isinstance(plano, dict):
+        raise ValueError("Jogada inválida")
+    formacao = plano.get("formacao", "4-4-2")
+    if formacao not in FORMACOES:
+        raise ValueError("Formação desconhecida")
+    lugares = set(slots_da_formacao(formacao)) | {"GOL"}
+
+    passos = plano.get("passos") or []
+    if not isinstance(passos, list) or not 1 <= len(passos) <= MAX_PASSOS:
+        raise ValueError(f"A jogada precisa ter de 1 a {MAX_PASSOS} passos")
+    limpos = []
+    for passo in passos:
+        if not isinstance(passo, dict):
+            raise ValueError("Passo inválido")
+        posicoes = {}
+        for lugar, pos in (passo.get("posicoes") or {}).items():
+            if lugar not in lugares:
+                raise ValueError(f"Lugar desconhecido: {lugar!r}")
+            posicoes[lugar] = _ponto(pos)
+        item: dict[str, Any] = {
+            "texto": (passo.get("texto") or "").strip()[:300],
+            "posicoes": posicoes,
+        }
+        if passo.get("bola"):
+            item["bola"] = _ponto(passo["bola"])
+        limpos.append(item)
+
+    papeis = {}
+    for lugar, texto in (plano.get("papeis") or {}).items():
+        if lugar not in lugares:
+            raise ValueError(f"Lugar desconhecido: {lugar!r}")
+        texto = (texto or "").strip()
+        if texto:
+            papeis[lugar] = texto[:200]
+    return {
+        "formacao": formacao,
+        "passos": limpos,
+        "papeis": papeis,
         "notas": (plano.get("notas") or "").strip()[:600],
     }

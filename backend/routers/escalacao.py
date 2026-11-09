@@ -24,6 +24,8 @@ from escalacao import (
     EscalacaoInviavel,
     FORMACOES,
     avisos_de_igualdade,
+    _diferenca_minutos,
+    avaliar_grupos_de_fixos,
     opcoes_de_trocas,
     gerar_automatico,
     gerar_escalacao,
@@ -97,6 +99,8 @@ class GerarPayload(BaseModel):
     # Compara "todo mundo igual" com "1 ou 2 jogadores o jogo todo" (resposta traz `opcoes`).
     comparar_opcoes: bool = False
     quantos_fixos: int = Field(default=0, ge=0, le=5)  # jogadores que ficam o jogo todo
+    # >0: em vez de gerar, devolve os grupos desse tamanho que podem jogar o jogo todo, com a diferença de tempo de cada um.
+    avaliar_fixos: int = Field(default=0, ge=0, le=3)
     # Formação (4-4-2 por padrão) e mudanças durante o jogo.
     formacao: str = "4-4-2"
     mudancas_formacao: list[MudancaFormacao] = []
@@ -277,6 +281,14 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         max_momentos=payload.max_momentos,
         max_trocas=payload.max_trocas_por_vez,
     )
+    if payload.avaliar_fixos:
+        try:
+            grupos = avaliar_grupos_de_fixos(
+                convocados, goleiro_id, payload.avaliar_fixos, **comuns, **automaticas
+            )
+        except EscalacaoInviavel as erro:
+            raise HTTPException(status_code=422, detail=str(erro))
+        return {"grupos": grupos}
     opcoes = None
     try:
         if payload.automatico and payload.comparar_opcoes:
@@ -337,6 +349,9 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
             }
             for o in opcoes
         ]
+    resposta["diferenca_minutos"] = _diferenca_minutos(
+        resultado, comuns["regras"], comuns["restricoes"]
+    )
     resposta["avisos"] = avisos_de_igualdade(
         convocados,
         goleiro_id,

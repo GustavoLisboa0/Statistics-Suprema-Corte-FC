@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { memo, startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardList, Download, Loader2, RefreshCw, Save, Shuffle, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -26,10 +26,14 @@ import {
   type RegraJogador,
   type Restricao,
   type ResultadoEscalacao,
+  avaliarGrupos,
+  quemJogaTudo,
+  type GrupoDeFixos,
 } from "@/lib/escalacao";
 import { exportarEscalacaoPdf } from "@/lib/escalacaoPdf";
 import { CampoEscalacao } from "@/components/CampoEscalacao";
 import { AbaTatica } from "@/components/EscalacaoInterna";
+import { QuemJogaTudo } from "@/components/QuemJogaTudo";
 import {
   AjudaSistema,
   FormacaoDoJogo,
@@ -370,19 +374,6 @@ function diferencaDeMinutos(res: ResultadoEscalacao, fixos: string[]) {
   return valores.length ? Math.max(...valores) - Math.min(...valores) : 0;
 }
 
-/** Só quem de fato funciona como "jogo todo" naquele lugar (dado o(s) outro(s) fixo(s)). */
-function candidatosDoFixo(o: OpcaoDeTrocas, k: number, linha: Convocado[]): Convocado[] {
-  const permitidos = new Set<string>(o.fixos[k] ? [o.fixos[k]] : []);
-  for (const combo of o.combinacoes ?? []) {
-    const outros = o.fixos.every((f, kk) => kk === k || combo.includes(f));
-    if (outros && combo.length === o.fixos.length) {
-      for (const id of combo)
-        if (!o.fixos.some((f, kk) => kk !== k && f === id)) permitidos.add(id);
-    }
-  }
-  return linha.filter((j) => permitidos.has(j.id));
-}
-
 /** Legendinha com a posição principal do jogador (a segunda, se houver, vai no balãozinho). */
 function Sigla({ posicoes }: { posicoes: string[] }) {
   const sigla = siglaPosicao(posicoes);
@@ -402,10 +393,10 @@ function tituloDaOpcao(o: OpcaoDeTrocas): string {
     const m = o.mudancas_formacao[0];
     return m ? `Muda de formação aos ${m.minuto}'` : "Muda de formação";
   }
-  if (o.tipo === "fixos")
-    return o.quantos_fixos === 1
-      ? "1 jogador joga o jogo todo"
-      : `${o.quantos_fixos} jogadores jogam o jogo todo`;
+  if (o.tipo === "fixos") {
+    const n = Math.max(quemJogaTudo(o.resultado).length, o.quantos_fixos);
+    return n === 1 ? "1 jogador joga o jogo todo" : `${n} jogadores jogam o jogo todo`;
+  }
   return o.aceitavel ? "Todo mundo joga o mesmo tempo" : "Tentativa de tempo igual";
 }
 
@@ -414,6 +405,7 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
   selecionada,
   aoEscolher,
   aoTrocarFixo,
+  avaliar,
   linha,
   refazendo,
 }: {
@@ -421,9 +413,11 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
   selecionada: number;
   aoEscolher: (i: number) => void;
   aoTrocarFixo: (indice: number, fixos: string[]) => void;
+  avaliar: (quantos: number) => Promise<GrupoDeFixos[]>;
   linha: Convocado[];
   refazendo: boolean;
 }) {
+  const [escolhendo, setEscolhendo] = useState<number | null>(null);
   return (
     <section className="space-y-3">
       <div>
@@ -474,41 +468,30 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
                   {!o.aceitavel && " — grande demais, não recomendado"}
                 </span>
               </button>
-              {o.fixos.length > 0 && (
-                <div className="mt-3 space-y-2">
-                  {o.fixos.map((fid, k) => (
-                    <div key={k} className="space-y-1">
-                      <Label className="text-xs">
-                        {o.fixos.length > 1
-                          ? `Jogador ${k + 1} o jogo todo`
-                          : "Quem joga o jogo todo"}
-                      </Label>
-                      <Select
-                        value={fid}
-                        onValueChange={(novo) => {
-                          if (novo === fid) return;
-                          aoEscolher(i);
-                          aoTrocarFixo(
-                            i,
-                            o.fixos.map((x, kk) => (kk === k ? novo : x)),
-                          );
-                        }}
-                        disabled={refazendo}
-                      >
-                        <SelectTrigger className="h-8" aria-label="Quem joga o jogo todo">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {candidatosDoFixo(o, k, linha).map((j) => (
-                            <SelectItem key={j.id} value={j.id}>
-                              {j.nome}
-                              <Sigla posicoes={j.posicoes} />
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
+              {(() => {
+                const todos = quemJogaTudo(o.resultado);
+                if (todos.length === 0) return null;
+                return (
+                  <p className="mt-2 text-xs">
+                    <span className="text-muted-foreground">
+                      {todos.length === 1 ? "Joga o jogo todo: " : "Jogam o jogo todo: "}
+                    </span>
+                    <strong>
+                      {todos.map((id) => o.resultado.jogadores[id]?.nome ?? id).join(", ")}
+                    </strong>
+                  </p>
+                );
+              })()}
+              {o.tipo === "fixos" && o.fixos.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={refazendo}
+                    onClick={() => setEscolhendo(i)}
+                  >
+                    Escolher quem joga o jogo todo
+                  </Button>
                   {refazendo && ativa && (
                     <p className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Loader2 className="h-3 w-3 animate-spin" /> Refazendo as trocas…
@@ -520,6 +503,22 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
           );
         })}
       </div>
+      {escolhendo !== null && opcoes[escolhendo] && (
+        <QuemJogaTudo
+          quantos={opcoes[escolhendo].fixos.length}
+          atuais={opcoes[escolhendo].fixos}
+          tambem={quemJogaTudo(opcoes[escolhendo].resultado)
+            .filter((id) => !opcoes[escolhendo].fixos.includes(id))
+            .map((id) => opcoes[escolhendo].resultado.jogadores[id]?.nome ?? id)}
+          linha={linha}
+          carregar={() => avaliar(opcoes[escolhendo].fixos.length)}
+          aoEscolher={(ids) => {
+            aoEscolher(escolhendo);
+            aoTrocarFixo(escolhendo, ids);
+          }}
+          aoFechar={() => setEscolhendo(null)}
+        />
+      )}
     </section>
   );
 });
@@ -658,6 +657,7 @@ function FormularioAdmin({
   const gerar = useMutation({
     mutationFn: (p: GerarPayload) => gerarEscalacao(partida.id, p),
     onSuccess: (resposta) => {
+      cacheGrupos.current.clear();
       setPrevia(resposta);
       setOpcaoSel((atual) => {
         const antiga = previa?.opcoes?.[atual];
@@ -692,7 +692,8 @@ function FormularioAdmin({
                 fixos_nomes: fixos.map((f) => resposta.resultado.jogadores[f]?.nome ?? f),
                 momentos: resposta.resultado.janelas.length - 1,
                 trocas: resposta.resultado.trocas.length,
-                diferenca_minutos: diferencaDeMinutos(resposta.resultado, fixos),
+                diferenca_minutos:
+                  resposta.diferenca_minutos ?? diferencaDeMinutos(resposta.resultado, fixos),
                 resultado: resposta.resultado,
               }
             : o,
@@ -702,6 +703,24 @@ function FormularioAdmin({
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  // Grupos que podem jogar o jogo todo: guarda o resultado até gerar de novo.
+  const montarRef = useRef(montarPayload);
+  montarRef.current = montarPayload;
+  const cacheGrupos = useRef(new Map<number, GrupoDeFixos[]>());
+  const avaliar = useCallback(
+    async (quantos: number) => {
+      const guardado = cacheGrupos.current.get(quantos);
+      if (guardado) return guardado;
+      const r = await avaliarGrupos(partida.id, {
+        ...montarRef.current(semente, restricoes, { comparar: false }),
+        avaliar_fixos: quantos,
+      });
+      cacheGrupos.current.set(quantos, r.grupos);
+      return r.grupos;
+    },
+    [partida.id, semente, restricoes],
+  );
 
   const escolherOpcao = useCallback((i: number) => startTransition(() => setOpcaoSel(i)), []);
   const aoTrocarFixo = useCallback(
@@ -1102,6 +1121,7 @@ function FormularioAdmin({
                 selecionada={opcaoSel}
                 aoEscolher={escolherOpcao}
                 aoTrocarFixo={aoTrocarFixo}
+                avaliar={avaliar}
                 linha={linha}
                 refazendo={trocarFixo.isPending}
               />

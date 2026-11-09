@@ -1658,7 +1658,68 @@ def _rodar_em_paralelo(trabalhos: list[tuple]) -> list[Optional[dict]]:
     return [_gerar_ou_none(t) for t in trabalhos]
 
 
+MAX_GRUPOS_AVALIADOS = 14
 LIMITE_DIFERENCA = 5  # nenhuma opção "igual" pode passar disso (minutos entre quem mais e quem menos joga)
+
+
+def avaliar_grupos_de_fixos(
+    jogadores: list[dict], goleiro_id: str, quantos: int, **opcoes: Any
+) -> list[dict[str, Any]]:
+    """
+    Para a pessoa decidir QUEM joga o jogo todo: devolve grupos de `quantos`
+    jogadores que funcionam, cada um com a diferença de tempo que sobra no time.
+    Escolhe grupos que cobrem o maior número de jogadores diferentes (no máximo
+    MAX_GRUPOS_AVALIADOS) e gera todos ao mesmo tempo. Ordenados do melhor ao pior.
+    """
+    regras = opcoes.get("regras")
+    restricoes = opcoes.get("restricoes")
+    contexto = {
+        "duracao": opcoes.get("duracao", DURACAO_PADRAO),
+        "regras": regras,
+        "restricoes": restricoes,
+        "formacao": opcoes.get("formacao", "4-4-2"),
+        "mudancas_formacao": opcoes.get("mudancas_formacao") or [],
+    }
+    combos = combinacoes_de_fixos(jogadores, goleiro_id, quantos, **contexto)
+    # Escolhe grupos variados: primeiro os que trazem jogadores ainda não vistos; depois,
+    # os que usam jogadores menos repetidos. Assim cada jogador aparece em algum grupo.
+    uso: dict[str, int] = {}
+    escolhidos: list[list[str]] = []
+    restantes = list(combos)
+    while restantes and len(escolhidos) < MAX_GRUPOS_AVALIADOS:
+        melhor = min(restantes, key=lambda c: (sum(uso.get(i, 0) ** 2 for i in c), restantes.index(c)))
+        restantes.remove(melhor)
+        escolhidos.append(melhor)
+        for i in melhor:
+            uso[i] = uso.get(i, 0) + 1
+    trabalhos = []
+    for combo in escolhidos:
+        regras_k = {a: dict(v) for a, v in (regras or {}).items()}
+        for jid in combo:
+            regras_k.setdefault(jid, {})["grupo_fixo"] = True
+        trabalhos.append((jogadores, goleiro_id, {**opcoes, "regras": regras_k, "quantos_fixos": 0}))
+    resultados = _rodar_em_paralelo(trabalhos) if trabalhos else []
+    avaliados = []
+    for combo, res in zip(escolhidos, resultados):
+        if res is None:
+            continue
+        com_fixos = {a: dict(v) for a, v in (regras or {}).items()}
+        for jid in combo:
+            com_fixos.setdefault(jid, {})["grupo_fixo"] = True
+        dif = _diferenca_minutos(res, com_fixos, restricoes)
+        avaliados.append(
+            {
+                "fixos": list(combo),
+                "diferenca_minutos": dif,
+                "momentos": len(res["janelas"]) - 1,
+                "trocas": len(res["trocas"]),
+                "aceitavel": dif <= LIMITE_DIFERENCA,
+            }
+        )
+    avaliados.sort(key=lambda g: (g["diferenca_minutos"], g["momentos"]))
+    return avaliados
+
+
 
 
 def opcoes_de_trocas(
@@ -1715,7 +1776,7 @@ def opcoes_de_trocas(
 
     # Quais combinações de fixos funcionam (conta rápida) e qual o escalador prefere.
     combos_por_k: dict[int, list[list[str]]] = {}
-    for k in (1, 2):
+    for k in (1, 2, 3):
         combos = combinacoes_de_fixos(jogadores, goleiro_id, k, **contexto)
         if not combos:
             continue

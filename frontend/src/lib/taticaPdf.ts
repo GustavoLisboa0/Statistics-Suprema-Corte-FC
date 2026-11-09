@@ -5,9 +5,12 @@ import {
   layoutDaFormacao,
   type Catalogo,
   type Funcao,
+  type JogadaEnsaiada,
+  type PlanoJogada,
   type PlanoTatico,
 } from "@/lib/escalacao";
 import { FASES, frasesDoTime, nomeDoLugar, posicaoDoLugar, type Fase } from "@/lib/quadroTatico";
+import { SITUACAO_CURTA, bolaNoPasso, posicaoNoPasso } from "@/lib/jogadaEnsaiada";
 
 // ---------------------------------------------------------------------------
 // PDF de táticas: separado da escalação, para mandar para o grupo (ou para cada
@@ -26,7 +29,7 @@ const MARGEM = 15;
 const LARGURA_PAGINA = 210;
 const ALTURA_PAGINA = 297;
 
-export type EscopoPdf = "tudo" | "geral" | { lugar: string };
+export type EscopoPdf = "tudo" | "geral" | "jogadas" | { lugar: string };
 
 type Dados = {
   nome: string;
@@ -34,6 +37,8 @@ type Dados = {
   plano: PlanoTatico;
   catalogo: Catalogo;
   escopo: EscopoPdf;
+  /** Jogadas ensaiadas que fazem parte desta tática (já escolhidas). */
+  jogadas?: JogadaEnsaiada[];
 };
 
 /** Em palavras: para onde o jogador anda em relação ao lugar da formação. */
@@ -126,7 +131,106 @@ function desenharCampo(
   }
 }
 
-export async function exportarTaticaPdf({ nome, descricao, plano, catalogo, escopo }: Dados) {
+/** Campinho de um passo de jogada: jogadores, setas do passo anterior e a bola. */
+function desenharCampoJogada(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  largura: number,
+  plano: PlanoJogada,
+  passo: number,
+) {
+  const k = largura / 400;
+  doc.setFillColor(47, 125, 59);
+  doc.roundedRect(x, y, largura, 560 * k, 2, 2, "F");
+  doc.setFillColor(42, 115, 54);
+  for (const i of [1, 3, 5, 7, 9]) doc.rect(x, y + i * 56 * k, largura, 56 * k, "F");
+  doc.setDrawColor(255, 255, 255);
+  doc.setLineWidth(0.3);
+  doc.rect(x + 14 * k, y + 14 * k, 372 * k, 532 * k);
+  doc.line(x + 14 * k, y + 280 * k, x + 386 * k, y + 280 * k);
+  doc.circle(x + 200 * k, y + 280 * k, 48 * k);
+  doc.rect(x + 100 * k, y + 446 * k, 200 * k, 100 * k);
+  doc.rect(x + 100 * k, y + 14 * k, 200 * k, 100 * k);
+
+  const lugares = Object.keys(layoutDaFormacao(plano.formacao));
+  const seta = (
+    de: { x: number; y: number },
+    para: { x: number; y: number },
+    cor: Cor,
+    folga: number,
+  ) => {
+    const dist = Math.hypot(para.x - de.x, para.y - de.y);
+    if (dist < 18) return;
+    const ux = (para.x - de.x) / dist;
+    const uy = (para.y - de.y) / dist;
+    const fim = { x: para.x - ux * folga, y: para.y - uy * folga };
+    doc.setDrawColor(...cor);
+    doc.setLineWidth(0.45);
+    doc.setLineDashPattern([1.2, 0.9], 0);
+    doc.line(x + de.x * k, y + de.y * k, x + fim.x * k, y + fim.y * k);
+    doc.setLineDashPattern([], 0);
+    const px = -uy;
+    const py = ux;
+    const a = 9;
+    doc.setFillColor(...cor);
+    doc.triangle(
+      x + (fim.x + ux * 2) * k,
+      y + (fim.y + uy * 2) * k,
+      x + (fim.x - ux * a + px * 6) * k,
+      y + (fim.y - uy * a + py * 6) * k,
+      x + (fim.x - ux * a - px * 6) * k,
+      y + (fim.y - uy * a - py * 6) * k,
+      "F",
+    );
+  };
+
+  if (passo > 0) {
+    for (const lugar of lugares)
+      seta(
+        posicaoNoPasso(plano, passo - 1, lugar),
+        posicaoNoPasso(plano, passo, lugar),
+        DOURADO,
+        24,
+      );
+  }
+  const bola = bolaNoPasso(plano, passo);
+  const bolaAntes = passo > 0 ? bolaNoPasso(plano, passo - 1) : null;
+  if (bola && bolaAntes) seta(bolaAntes, bola, [255, 255, 255], 14);
+
+  for (const lugar of lugares) {
+    const pos = posicaoNoPasso(plano, passo, lugar);
+    const cx = x + pos.x * k;
+    const cy = y + pos.y * k;
+    if (lugar === "GOL") doc.setFillColor(...DOURADO);
+    else doc.setFillColor(...ROXO);
+    doc.setDrawColor(...(plano.papeis[lugar] ? DOURADO : ([255, 255, 255] as Cor)));
+    doc.setLineWidth(plano.papeis[lugar] ? 0.9 : 0.4);
+    doc.circle(cx, cy, 22 * k, "FD");
+    doc.setTextColor(...(lugar === "GOL" ? ([30, 20, 50] as Cor) : ([255, 255, 255] as Cor)));
+    doc.setFont("helvetica", "bold");
+    const tam = Math.max(largura * 0.062, 4.5);
+    doc.setFontSize(tam);
+    doc.text(lugar.slice(0, 3), cx, cy + tam * 0.12, { align: "center" });
+  }
+  if (bola) {
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(30, 18, 53);
+    doc.setLineWidth(0.5);
+    doc.circle(x + bola.x * k, y + bola.y * k, 11 * k, "FD");
+    doc.setFillColor(30, 18, 53);
+    doc.circle(x + bola.x * k, y + bola.y * k, 4 * k, "F");
+  }
+}
+
+export async function exportarTaticaPdf({
+  nome,
+  descricao,
+  plano,
+  catalogo,
+  escopo,
+  jogadas = [],
+}: Dados) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const util = LARGURA_PAGINA - 2 * MARGEM;
@@ -299,6 +403,106 @@ export async function exportarTaticaPdf({ nome, descricao, plano, catalogo, esco
       texto("•", MARGEM + 1, y, 10, true, ROXO);
       y = paragrafo(frase, MARGEM + 6, y, util - 6, 9.5);
     }
+    jogadasDoLugar(lugar, y);
+  };
+
+  // ------------------------------------------------- páginas das jogadas ensaiadas
+  const espaco = (y: number, preciso: number) => {
+    if (y + preciso <= ALTURA_PAGINA - 16) return y;
+    doc.addPage();
+    return 20;
+  };
+
+  const paginaJogada = (j: JogadaEnsaiada) => {
+    const pl = j.plano;
+    const n = pl.passos.length;
+    faixa(
+      j.nome,
+      `${SITUACAO_CURTA[j.situacao] ?? "Jogada ensaiada"} · ${pl.formacao}${
+        j.descricao ? " · " + j.descricao : ""
+      }`.slice(0, 95),
+    );
+    texto("JOGADA ENSAIADA", MARGEM, 12, 9, true, DOURADO);
+    let y = 48;
+    y = secao("Passo a passo", y);
+    const colunas = n <= 2 ? 2 : n <= 6 ? 3 : 4;
+    const folga = colunas === 2 ? 8 : colunas === 3 ? 6 : 5;
+    const larg = (util - folga * (colunas - 1)) / colunas;
+    const altura = 560 * (larg / 400);
+    for (let i = 0; i < n; i++) {
+      const col = i % colunas;
+      const linha = Math.floor(i / colunas);
+      const x = MARGEM + col * (larg + folga);
+      const yy = y + linha * (altura + 11);
+      texto(`Passo ${i + 1}`, x + larg / 2, yy, 9.5, true, ROXO, { align: "center" });
+      desenharCampoJogada(doc, x, yy + 2, larg, pl, i);
+    }
+    y += Math.ceil(n / colunas) * (altura + 11) + 2;
+    texto(
+      "Seta dourada: movimento do jogador em relação ao passo anterior. Seta branca: caminho da bola.",
+      MARGEM,
+      y,
+      8,
+      false,
+      CINZA,
+    );
+    y += 7;
+
+    y = espaco(y, 20);
+    pl.passos.forEach((passo, i) => {
+      if (!passo.texto) return;
+      y = espaco(y, 12);
+      doc.setFillColor(...ROXO);
+      doc.circle(MARGEM + 3.5, y - 1.3, 3.2, "F");
+      texto(String(i + 1), MARGEM + 3.5, y - 0.2, 7.5, true, [255, 255, 255], { align: "center" });
+      y = paragrafo(passo.texto, MARGEM + 10, y, util - 10, 10) + 1;
+    });
+
+    const comPapel = Object.keys(layoutDaFormacao(pl.formacao)).filter((l) => pl.papeis[l]);
+    if (comPapel.length) {
+      y = espaco(y + 3, 20);
+      y = secao("Quem faz o quê", y);
+      for (const lugar of comPapel) {
+        y = espaco(y, 8);
+        texto(nomeDoLugar(pl.formacao, lugar), MARGEM, y, 10, true, ROXO);
+        y = paragrafo(pl.papeis[lugar], MARGEM + 48, y, util - 48, 10);
+        y += 1;
+      }
+    }
+    if (pl.notas) {
+      y = espaco(y + 3, 24);
+      doc.setFillColor(...FUNDO_SUAVE);
+      const linhas = doc.splitTextToSize(pl.notas, util - 8) as string[];
+      const alt = linhas.length * 5.2 + 8;
+      doc.roundedRect(MARGEM, y - 3, util, alt, 2, 2, "F");
+      texto("Recado para o grupo", MARGEM + 4, y + 2, 9, true, ROXO);
+      paragrafo(pl.notas, MARGEM + 4, y + 7, util - 8, 10);
+    }
+  };
+
+  /** Na página de cada posição: o que ela faz em cada jogada ensaiada. */
+  const jogadasDoLugar = (lugar: string, yAtual: number) => {
+    if (!jogadas.length) return;
+    let y = espaco(yAtual + 4, 24);
+    y = secao("Nas jogadas ensaiadas", y);
+    for (const j of jogadas) {
+      y = espaco(y, 14);
+      texto(j.nome, MARGEM, y, 10.5, true);
+      texto(SITUACAO_CURTA[j.situacao] ?? "", LARGURA_PAGINA - MARGEM, y, 9, false, CINZA, {
+        align: "right",
+      });
+      y += 5;
+      const papel = j.plano.papeis[lugar];
+      y = paragrafo(
+        papel ?? "Sem função específica: siga o grupo.",
+        MARGEM + 4,
+        y,
+        util - 4,
+        10,
+        papel ? TEXTO : CINZA,
+      );
+      y += 2;
+    }
   };
 
   let primeira = true;
@@ -310,6 +514,12 @@ export async function exportarTaticaPdf({ nome, descricao, plano, catalogo, esco
     novaPagina();
     paginaGeral();
     paginaPapeis();
+  }
+  if (escopo === "tudo" || escopo === "geral" || escopo === "jogadas") {
+    for (const j of jogadas) {
+      novaPagina();
+      paginaJogada(j);
+    }
   }
   if (escopo === "tudo") {
     for (const lugar of lugares) {
@@ -352,6 +562,8 @@ export async function exportarTaticaPdf({ nome, descricao, plano, catalogo, esco
       ? `-${escopo.lugar.toLowerCase()}`
       : escopo === "geral"
         ? "-geral"
-        : "";
+        : escopo === "jogadas"
+          ? "-jogadas"
+          : "";
   doc.save(`tatica-${arquivo || "time"}${sufixo}.pdf`);
 }

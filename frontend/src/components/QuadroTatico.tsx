@@ -2,7 +2,14 @@ import { useMemo, useRef, useState } from "react";
 import { Loader2, RotateCcw, Save } from "lucide-react";
 import { toast } from "sonner";
 
-import { layoutDaFormacao, type Catalogo, type Funcao, type PlanoTatico } from "@/lib/escalacao";
+import {
+  layoutDaFormacao,
+  type Catalogo,
+  type Funcao,
+  type JogadaEnsaiada,
+  type PlanoTatico,
+} from "@/lib/escalacao";
+import { SITUACAO_CURTA } from "@/lib/jogadaEnsaiada";
 import {
   FASES,
   NIVEIS,
@@ -282,11 +289,14 @@ export type RascunhoTatica = {
 export function QuadroTatico({
   catalogo,
   inicial,
+  jogadas = [],
   aoSalvar,
   aoCancelar,
 }: {
   catalogo: Catalogo;
   inicial: RascunhoTatica;
+  /** Jogadas ensaiadas salvas, para escolher quais fazem parte desta tática. */
+  jogadas?: JogadaEnsaiada[];
   aoSalvar: (t: RascunhoTatica) => Promise<unknown>;
   aoCancelar: () => void;
 }) {
@@ -564,6 +574,53 @@ export function QuadroTatico({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Jogadas ensaiadas que fazem parte desta tática */}
+      <div className="space-y-2 rounded-xl border bg-card p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Jogadas ensaiadas desta tática
+        </p>
+        {jogadas.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Você ainda não criou jogadas ensaiadas. Crie na aba “Jogadas ensaiadas” e depois volte
+            aqui para escolher quais entram nesta tática (e no PDF dela).
+          </p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {jogadas.map((j) => {
+              const marcada = (plano.jogadas ?? []).includes(j.id);
+              return (
+                <label
+                  key={j.id}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
+                    marcada ? "border-primary bg-primary/5" : "hover:border-primary/50",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 accent-[#6410c9]"
+                    checked={marcada}
+                    onChange={(e) =>
+                      setPlano((p) => {
+                        const atuais = (p.jogadas ?? []).filter((x) => x !== j.id);
+                        return { ...p, jogadas: e.target.checked ? [...atuais, j.id] : atuais };
+                      })
+                    }
+                  />
+                  <span>
+                    <span className="block font-medium">{j.nome}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {SITUACAO_CURTA[j.situacao] ?? j.situacao} · {j.plano.passos.length} passo
+                      {j.plano.passos.length === 1 ? "" : "s"}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2">

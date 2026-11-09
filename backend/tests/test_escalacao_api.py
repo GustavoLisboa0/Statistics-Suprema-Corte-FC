@@ -302,3 +302,72 @@ def test_quadro_tatico_crud_e_validacao(api):
 
     assert c.delete(f"/taticas/{tid}", headers=api["admin"]).status_code == 204
     assert c.get("/taticas", headers=api["admin"]).json() == []
+
+
+def test_jogadas_ensaiadas_crud_e_validacao(api):
+    c = api["c"]
+    jogada = {
+        "nome": "Escanteio curto",
+        "descricao": "Toca e cruza",
+        "situacao": "escanteio_ataque",
+        "plano": {
+            "formacao": "4-4-2",
+            "passos": [
+                {"texto": "Posicionam na area", "posicoes": {"ATA1": {"x": 180, "y": 60}}, "bola": {"x": 380, "y": 20}},
+                {"texto": "Toque curto e cruza", "posicoes": {"LAT2": {"x": 330, "y": 80}}},
+            ],
+            "papeis": {"LAT2": "Cobra o escanteio", "ATA1": "Ataca a primeira trave"},
+            "notas": "",
+        },
+    }
+    assert c.post("/jogadas-ensaiadas", json=jogada, headers=api["comum"]).status_code == 403
+    assert c.get("/jogadas-ensaiadas", headers=api["comum"]).status_code == 403
+    # situação desconhecida, lugar inexistente, sem passos e passos demais
+    assert c.post("/jogadas-ensaiadas", json={**jogada, "situacao": "x"}, headers=api["admin"]).status_code == 422
+    ruim = {**jogada, "plano": {**jogada["plano"], "papeis": {"ATA9": "x"}}}
+    assert c.post("/jogadas-ensaiadas", json=ruim, headers=api["admin"]).status_code == 422
+    ruim = {**jogada, "plano": {**jogada["plano"], "passos": []}}
+    assert c.post("/jogadas-ensaiadas", json=ruim, headers=api["admin"]).status_code == 422
+    ruim = {**jogada, "plano": {**jogada["plano"], "passos": [{"texto": "a", "posicoes": {}}] * 9}}
+    assert c.post("/jogadas-ensaiadas", json=ruim, headers=api["admin"]).status_code == 422
+
+    criada = c.post("/jogadas-ensaiadas", json=jogada, headers=api["admin"])
+    assert criada.status_code == 201, criada.text
+    jid = criada.json()["id"]
+    assert criada.json()["plano"]["passos"][0]["bola"] == {"x": 380, "y": 20}
+
+    editada = c.put(f"/jogadas-ensaiadas/{jid}", json={**jogada, "nome": "Escanteio longo"}, headers=api["admin"])
+    assert editada.status_code == 200 and editada.json()["nome"] == "Escanteio longo"
+
+    # A tática guarda quais jogadas fazem parte dela.
+    tatica = {
+        "nome": "Com jogadas",
+        "plano": {"formacao": "4-4-2", "time": {"defesa": 3, "pressao": 3, "largura": 3, "saida": "mista"}, "jogadores": {}, "jogadas": [jid]},
+    }
+    t = c.post("/taticas", json=tatica, headers=api["admin"])
+    assert t.status_code == 201 and t.json()["plano"]["jogadas"] == [jid]
+    c.delete(f"/taticas/{t.json()['id']}", headers=api["admin"])
+
+    catalogo = c.get("/escalacao/catalogo", headers=api["admin"]).json()
+    assert any(s["id"] == "escanteio_ataque" for s in catalogo["situacoes_ensaiadas"])
+    assert c.delete(f"/jogadas-ensaiadas/{jid}", headers=api["admin"]).status_code == 204
+    assert c.get("/jogadas-ensaiadas", headers=api["admin"]).json() == []
+
+
+def test_avaliar_grupos_de_quem_joga_o_jogo_todo(api):
+    c, pid = api["c"], api["partida"]
+    r = c.post(
+        f"/partidas/{pid}/escalacao/gerar",
+        json={"goleiro_id": api["goleiro"], "avaliar_fixos": 2, "duracao": 60},
+        headers=api["admin"],
+    )
+    assert r.status_code == 200, r.text
+    grupos = r.json()["grupos"]
+    assert grupos and all(len(g["fixos"]) == 2 for g in grupos)
+    assert all({"diferenca_minutos", "momentos", "trocas", "aceitavel"} <= set(g) for g in grupos)
+    # ordenados do melhor para o pior e ninguém repetido dentro do grupo
+    difs = [g["diferenca_minutos"] for g in grupos]
+    assert difs == sorted(difs)
+    assert all(len(set(g["fixos"])) == 2 for g in grupos)
+    # variedade: nem todo grupo tem o mesmo jogador
+    assert len({i for g in grupos for i in g["fixos"]}) > 3

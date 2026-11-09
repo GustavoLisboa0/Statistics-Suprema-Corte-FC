@@ -198,6 +198,8 @@ export type GerarPayload = {
   /** Quantos jogadores de linha ficam o jogo inteiro (sem sair). */
   quantos_fixos: number;
   comparar_opcoes: boolean;
+  /** Se maior que 0, a resposta traz só os grupos desse tamanho que podem jogar o jogo todo. */
+  avaliar_fixos?: number;
   formacao: string;
   mudancas_formacao: { minuto: number; formacao: string }[];
   composicao: RegraComposicao[];
@@ -312,6 +314,8 @@ export type PreviaEscalacao = {
   /** Avisos do sistema para o admin (ex.: tempo igual impossível por causa das posições). */
   avisos?: string[];
   /** Sugestão de quem poderia jogar o jogo todo para ter menos trocas. */
+  /** Diferença de tempo entre quem mais e quem menos joga, como o sistema conta (sem quem tem regra de tempo própria). */
+  diferenca_minutos?: number;
   dica_fixos?: { quantos_fixos: number; fixos: string[]; momentos: number; texto: string } | null;
 };
 
@@ -326,6 +330,26 @@ export type EscalacaoSalva = {
 
 export function fetchConvocados(partidaId: string) {
   return api.get<ConvocadosResposta>(`/partidas/${partidaId}/escalacao/convocados`);
+}
+
+/** Um grupo de jogadores que pode jogar o jogo todo, e quanto sobra de diferença de tempo no time. */
+export type GrupoDeFixos = {
+  fixos: string[];
+  diferenca_minutos: number;
+  momentos: number;
+  trocas: number;
+  aceitavel: boolean;
+};
+
+export function avaliarGrupos(partidaId: string, payload: GerarPayload) {
+  return api.post<{ grupos: GrupoDeFixos[] }>(`/partidas/${partidaId}/escalacao/gerar`, payload);
+}
+
+/** Quem joga o tempo todo nesta escalação (sem contar o goleiro). */
+export function quemJogaTudo(res: ResultadoEscalacao): string[] {
+  return Object.entries(res.minutos)
+    .filter(([id, m]) => id !== res.goleiro_id && m >= res.duracao)
+    .map(([id]) => id);
 }
 
 export function gerarEscalacao(partidaId: string, payload: GerarPayload) {
@@ -406,6 +430,7 @@ export type Catalogo = {
   papeis: Record<string, { id: string; nome: string; descricao: string }[]>;
   saidas_de_bola: { id: string; nome: string }[];
   modelos: ModeloTatica[];
+  situacoes_ensaiadas: { id: string; nome: string }[];
 };
 
 export type AjustesDoTime = {
@@ -427,6 +452,8 @@ export type PlanoTatico = {
   time: AjustesDoTime;
   jogadores: Record<string, OrientacaoDoLugar>;
   notas: string;
+  /** Ids das jogadas ensaiadas que fazem parte desta tática (saem no mesmo PDF). */
+  jogadas?: string[];
 };
 export type ModeloTatica = {
   id: string;
@@ -448,6 +475,40 @@ export const criarTatica = (corpo: CorpoTatica) => api.post<TaticaSalva>("/tatic
 export const editarTatica = (id: string, corpo: CorpoTatica) =>
   api.put<TaticaSalva>(`/taticas/${id}`, corpo);
 export const apagarTatica = (id: string) => api.del(`/taticas/${id}`);
+
+/** Um passo da jogada: onde cada jogador está (quem não aparece fica onde estava) e a bola. */
+export type PassoDeJogada = {
+  texto: string;
+  posicoes: Record<string, PosicaoNoCampo>;
+  bola?: PosicaoNoCampo;
+};
+/** Jogada ensaiada: combinada para um momento (escanteio, falta, saída de bola...). */
+export type PlanoJogada = {
+  formacao: string;
+  passos: PassoDeJogada[];
+  /** O que cada posição faz nesta jogada. */
+  papeis: Record<string, string>;
+  notas: string;
+};
+export type JogadaEnsaiada = {
+  id: string;
+  nome: string;
+  descricao: string | null;
+  situacao: string;
+  plano: PlanoJogada;
+};
+type CorpoJogada = {
+  nome: string;
+  descricao: string | null;
+  situacao: string;
+  plano: PlanoJogada;
+};
+export const fetchJogadas = () => api.get<JogadaEnsaiada[]>("/jogadas-ensaiadas");
+export const criarJogada = (corpo: CorpoJogada) =>
+  api.post<JogadaEnsaiada>("/jogadas-ensaiadas", corpo);
+export const editarJogada = (id: string, corpo: CorpoJogada) =>
+  api.put<JogadaEnsaiada>(`/jogadas-ensaiadas/${id}`, corpo);
+export const apagarJogada = (id: string) => api.del(`/jogadas-ensaiadas/${id}`);
 
 export type AtributosJogador = {
   jogador_id: string;

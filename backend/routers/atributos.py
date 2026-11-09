@@ -81,6 +81,7 @@ def catalogo(usuario: dict = Depends(exige_editor)):
         "papeis": tatica.PAPEIS,
         "saidas_de_bola": [{"id": k, "nome": v} for k, v in tatica.SAIDAS_DE_BOLA.items()],
         "modelos": [{"id": k, **v} for k, v in tatica.MODELOS_PLANO.items()],
+        "situacoes_ensaiadas": [{"id": k, "nome": v} for k, v in tatica.SITUACOES_ENSAIADAS.items()],
         "estilos": [{"id": k, "nome": v} for k, v in tatica.ESTILOS_ADVERSARIO.items()],
     }
 
@@ -265,3 +266,51 @@ def editar_tatica(tatica_id: UUID, corpo: TaticaPayload, usuario: dict = Depends
 @router.delete("/taticas/{tatica_id}", status_code=204)
 def apagar_tatica(tatica_id: UUID, usuario: dict = Depends(exige_editor)):
     supabase.table("taticas").delete().eq("id", str(tatica_id)).execute()
+
+
+# ---------------------------------------------------------------------------
+# Jogadas ensaiadas (escanteio, falta, saída de bola...): só o administrador.
+# ---------------------------------------------------------------------------
+class JogadaPayload(BaseModel):
+    nome: str = Field(min_length=1, max_length=60)
+    descricao: Optional[str] = Field(default=None, max_length=300)
+    situacao: str
+    plano: dict = {}
+
+
+def _dados_da_jogada(corpo: JogadaPayload) -> dict:
+    try:
+        plano = tatica.validar_jogada(corpo.plano, corpo.situacao)
+    except ValueError as erro:
+        raise HTTPException(status_code=422, detail=str(erro))
+    return {
+        "nome": corpo.nome.strip(),
+        "descricao": (corpo.descricao or "").strip() or None,
+        "situacao": corpo.situacao,
+        "plano": plano,
+    }
+
+
+@router.get("/jogadas-ensaiadas")
+def listar_jogadas(usuario: dict = Depends(exige_editor)):
+    return supabase.table("jogadas_ensaiadas").select("*").order("nome").execute().data or []
+
+
+@router.post("/jogadas-ensaiadas", status_code=201)
+def criar_jogada(corpo: JogadaPayload, usuario: dict = Depends(exige_editor)):
+    return supabase.table("jogadas_ensaiadas").insert(_dados_da_jogada(corpo)).execute().data[0]
+
+
+@router.put("/jogadas-ensaiadas/{jogada_id}")
+def editar_jogada(jogada_id: UUID, corpo: JogadaPayload, usuario: dict = Depends(exige_editor)):
+    jid = str(jogada_id)
+    if not supabase.table("jogadas_ensaiadas").select("id").eq("id", jid).execute().data:
+        raise HTTPException(status_code=404, detail="Jogada não encontrada")
+    return (
+        supabase.table("jogadas_ensaiadas").update(_dados_da_jogada(corpo)).eq("id", jid).execute().data[0]
+    )
+
+
+@router.delete("/jogadas-ensaiadas/{jogada_id}", status_code=204)
+def apagar_jogada(jogada_id: UUID, usuario: dict = Depends(exige_editor)):
+    supabase.table("jogadas_ensaiadas").delete().eq("id", str(jogada_id)).execute()

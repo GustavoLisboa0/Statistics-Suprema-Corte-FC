@@ -4,24 +4,31 @@ import { Copy, FileDown, Lightbulb, Pencil, Plus, Save, Trash2 } from "lucide-re
 import { toast } from "sonner";
 
 import {
+  apagarJogada,
   apagarTatica,
+  criarJogada,
   criarTatica,
+  editarJogada,
   editarTatica,
   fetchCatalogo,
+  fetchJogadas,
   fetchContraEstrategia,
   fetchTaticas,
   layoutDaFormacao,
   salvarAdversario,
   type Adversario,
   type Catalogo,
+  type JogadaEnsaiada,
   type RegraComposicao,
   type TaticaSalva,
 } from "@/lib/escalacao";
+import { SITUACAO_CURTA, jogadaVazia } from "@/lib/jogadaEnsaiada";
 import { frasesDoTime, nomeDoLugar, planoDoModelo, planoVazio } from "@/lib/quadroTatico";
 import { exportarTaticaPdf, type EscopoPdf } from "@/lib/taticaPdf";
 import { CampoFormacao } from "@/components/CampoFormacao";
 import { MontagemDoTime } from "@/components/MontagemTime";
 import { NumberInput } from "@/components/NumberInput";
+import { EditorJogada, type RascunhoJogada } from "@/components/JogadaEnsaiada";
 import { QuadroTatico, type RascunhoTatica } from "@/components/QuadroTatico";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -62,27 +69,33 @@ type PropsAba = {
 function DialogoPdf({
   tatica,
   catalogo,
+  jogadasSalvas,
   aoFechar,
 }: {
   tatica: TaticaSalva;
   catalogo: Catalogo;
+  jogadasSalvas: JogadaEnsaiada[];
   aoFechar: () => void;
 }) {
   const [escolha, setEscolha] = useState("tudo");
   const [gerando, setGerando] = useState(false);
   const lista = lugaresDaFormacao(tatica.plano.formacao);
+  const incluidas = jogadasSalvas.filter((j) => (tatica.plano.jogadas ?? []).includes(j.id));
 
   const gerar = async () => {
     setGerando(true);
     try {
       const escopo: EscopoPdf =
-        escolha === "tudo" || escolha === "geral" ? escolha : { lugar: escolha };
+        escolha === "tudo" || escolha === "geral" || escolha === "jogadas"
+          ? escolha
+          : { lugar: escolha };
       await exportarTaticaPdf({
         nome: tatica.nome,
         descricao: tatica.descricao ?? "",
         plano: tatica.plano,
         catalogo,
         escopo,
+        jogadas: incluidas,
       });
       aoFechar();
     } catch (e) {
@@ -98,8 +111,8 @@ function DialogoPdf({
         <DialogHeader>
           <DialogTitle>PDF da tática “{tatica.nome}”</DialogTitle>
           <DialogDescription>
-            O PDF de táticas é separado da escalação: você escolhe se manda ou não. Não leva
-            atributos nem notas dos jogadores.
+            O PDF de táticas é separado da escalação: você escolhe se manda ou não. Leva as jogadas
+            ensaiadas escolhidas para esta tática, e nada de atributos ou notas dos jogadores.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
@@ -109,8 +122,17 @@ function DialogoPdf({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="tudo">Tudo: geral + uma página por posição</SelectItem>
-              <SelectItem value="geral">Só o geral (para o grupo todo)</SelectItem>
+              <SelectItem value="tudo">
+                Tudo: geral{incluidas.length ? " + jogadas ensaiadas" : ""} + uma página por posição
+              </SelectItem>
+              <SelectItem value="geral">
+                Só o geral{incluidas.length ? " e as jogadas" : ""} (para o grupo todo)
+              </SelectItem>
+              {incluidas.length > 0 && (
+                <SelectItem value="jogadas">
+                  Só as jogadas ensaiadas ({incluidas.length})
+                </SelectItem>
+              )}
               {lista.map((l) => (
                 <SelectItem key={l} value={l}>
                   Só: {nomeDoLugar(tatica.plano.formacao, l)}
@@ -145,6 +167,7 @@ function SecaoTaticas({
   const { data: todas = [] } = useQuery({ queryKey: ["taticas"], queryFn: fetchTaticas });
   // Ignora táticas de versões antigas (sem quadro tático).
   const minhas = todas.filter((t) => t.plano?.formacao);
+  const { data: jogadas = [] } = useQuery({ queryKey: ["jogadas"], queryFn: fetchJogadas });
   const [paraPdf, setParaPdf] = useState<TaticaSalva | null>(null);
 
   const salvar = useMutation({
@@ -176,6 +199,7 @@ function SecaoTaticas({
         key={rascunho.id ?? "nova"}
         catalogo={catalogo}
         inicial={rascunho}
+        jogadas={jogadas}
         aoSalvar={(t) => salvar.mutateAsync(t)}
         aoCancelar={() => setRascunho(null)}
       />
@@ -222,7 +246,15 @@ function SecaoTaticas({
                   {t.plano.formacao}
                   {t.descricao ? ` · ${t.descricao}` : ""}
                 </p>
-                <p className="text-xs text-muted-foreground">{frasesDoTime(t.plano.time)[3]}</p>
+                <p className="text-xs text-muted-foreground">
+                  {frasesDoTime(t.plano.time)[3]}
+                  {(() => {
+                    const n = jogadas.filter((j) => (t.plano.jogadas ?? []).includes(j.id)).length;
+                    return n
+                      ? ` · ${n} jogada${n === 1 ? "" : "s"} ensaiada${n === 1 ? "" : "s"}`
+                      : "";
+                  })()}
+                </p>
                 <div className="flex flex-wrap gap-1 pt-1">
                   <Button
                     size="sm"
@@ -298,7 +330,157 @@ function SecaoTaticas({
       </div>
 
       {paraPdf && (
-        <DialogoPdf tatica={paraPdf} catalogo={catalogo} aoFechar={() => setParaPdf(null)} />
+        <DialogoPdf
+          tatica={paraPdf}
+          catalogo={catalogo}
+          jogadasSalvas={jogadas}
+          aoFechar={() => setParaPdf(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SecaoJogadas({ formacao }: { formacao: string }) {
+  const qc = useQueryClient();
+  const { data: catalogo } = useQuery({ queryKey: ["escalacao-catalogo"], queryFn: fetchCatalogo });
+  const { data: jogadas = [] } = useQuery({ queryKey: ["jogadas"], queryFn: fetchJogadas });
+  const [rascunho, setRascunho] = useState<RascunhoJogada | null>(null);
+
+  const salvar = useMutation({
+    mutationFn: (j: RascunhoJogada) => {
+      const corpo = {
+        nome: j.nome,
+        descricao: j.descricao || null,
+        situacao: j.situacao,
+        plano: j.plano,
+      };
+      return j.id ? editarJogada(j.id, corpo) : criarJogada(corpo);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jogadas"] });
+      setRascunho(null);
+      toast.success("Jogada salva.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const apagar = useMutation({
+    mutationFn: (id: string) => apagarJogada(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jogadas"] });
+      // as táticas guardam só o id; as que usavam esta jogada simplesmente deixam de listá-la
+      toast.success("Jogada apagada.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (!catalogo) return <p className="text-sm text-muted-foreground">Carregando…</p>;
+
+  if (rascunho) {
+    return (
+      <EditorJogada
+        key={rascunho.id ?? "nova"}
+        catalogo={catalogo}
+        inicial={rascunho}
+        aoSalvar={(j) => salvar.mutateAsync(j)}
+        aoCancelar={() => setRascunho(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-xl">
+          <h3 className="text-base font-semibold">Jogadas ensaiadas</h3>
+          <p className="text-sm text-muted-foreground">
+            A tática diz como cada um age em geral. A jogada ensaiada é combinada para um momento
+            específico: escanteio, falta, saída de bola… Monte passo a passo e depois escolha,
+            dentro de cada tática, quais jogadas entram. Elas saem no mesmo PDF da tática.
+          </p>
+        </div>
+        <Button
+          onClick={() =>
+            setRascunho({
+              nome: "",
+              descricao: "",
+              situacao: "escanteio_ataque",
+              plano: jogadaVazia(formacao),
+            })
+          }
+        >
+          <Plus className="mr-1 h-4 w-4" /> Nova jogada
+        </Button>
+      </div>
+
+      {jogadas.length === 0 ? (
+        <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+          Você ainda não criou nenhuma jogada ensaiada. Clique em “Nova jogada” para começar.
+        </p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {jogadas.map((j) => (
+            <div key={j.id} className="flex gap-3 rounded-xl border bg-card p-3">
+              <CampoFormacao
+                formacao={j.plano.formacao}
+                mini
+                className="w-16 shrink-0 self-start"
+              />
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="truncate font-display text-xl leading-tight tracking-wide">
+                  {j.nome}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {SITUACAO_CURTA[j.situacao] ?? j.situacao} · {j.plano.passos.length} passo
+                  {j.plano.passos.length === 1 ? "" : "s"}
+                  {j.descricao ? ` · ${j.descricao}` : ""}
+                </p>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setRascunho({
+                        id: j.id,
+                        nome: j.nome,
+                        descricao: j.descricao ?? "",
+                        situacao: j.situacao,
+                        plano: j.plano,
+                      })
+                    }
+                  >
+                    <Pencil className="mr-1 h-3.5 w-3.5" /> Editar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Duplicar ${j.nome}`}
+                    onClick={() =>
+                      setRascunho({
+                        nome: `${j.nome} (cópia)`,
+                        descricao: j.descricao ?? "",
+                        situacao: j.situacao,
+                        plano: j.plano,
+                      })
+                    }
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    aria-label={`Apagar ${j.nome}`}
+                    onClick={() => {
+                      if (window.confirm(`Apagar a jogada “${j.nome}”?`)) apagar.mutate(j.id);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -327,12 +509,17 @@ export function AbaTatica({
         <Tabs value={aba} onValueChange={setAba} className="space-y-5">
           <TabsList>
             <TabsTrigger value="taticas">Táticas</TabsTrigger>
+            <TabsTrigger value="jogadas">Jogadas ensaiadas</TabsTrigger>
             <TabsTrigger value="montagem">Montagem do time</TabsTrigger>
             <TabsTrigger value="adversario">Adversário</TabsTrigger>
           </TabsList>
 
           <TabsContent value="taticas" className="space-y-4">
             <SecaoTaticas formacao={formacao} rascunho={rascunho} setRascunho={setRascunho} />
+          </TabsContent>
+
+          <TabsContent value="jogadas">
+            <SecaoJogadas formacao={formacao} />
           </TabsContent>
 
           <TabsContent value="montagem">
