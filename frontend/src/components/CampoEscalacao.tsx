@@ -58,7 +58,7 @@ export function CampoEscalacao({ lugares, jogadores, destaque, className }: Prop
             <circle
               r="22"
               fill="#6410c9"
-              stroke={novo ? "#f5b82e" : "#fff"}
+              stroke={novo ? "#f0b411" : "#fff"}
               strokeWidth={novo ? 4 : 2.5}
             />
             <text

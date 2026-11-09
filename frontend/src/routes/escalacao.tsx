@@ -172,7 +172,7 @@ function VisaoEscalacao({
 
   const pdf = async () => {
     try {
-      await exportarEscalacaoPdf({ ...tituloDoJogo(partida), resultado, indiceJanela: 0 });
+      await exportarEscalacaoPdf({ ...tituloDoJogo(partida), resultado });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não foi possível gerar o PDF");
     }

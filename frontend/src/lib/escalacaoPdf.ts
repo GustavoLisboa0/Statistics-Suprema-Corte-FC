@@ -1,138 +1,173 @@
-import { FUNCAO_LABELS, POSICAO_NO_CAMPO, type ResultadoEscalacao } from "@/lib/escalacao";
+import type { jsPDF } from "jspdf";
+
+import {
+  FUNCAO_LABELS,
+  POSICAO_NO_CAMPO,
+  type JogadorResumo,
+  type Lugar,
+  type ResultadoEscalacao,
+} from "@/lib/escalacao";
 
 type Dados = {
   /** Ex.: "Suprema Corte FC × Adversário" */
   titulo: string;
-  /** Ex.: "Sábado, 15/11/2026 · Trieste · 20:00" */
+  /** Ex.: "16/11/2026 · Trieste · 20:00" */
   subtitulo: string;
   resultado: ResultadoEscalacao;
-  /** Qual janela de tempo desenhar no campinho (0 = titulares). */
-  indiceJanela?: number;
 };
 
-function curto(nome: string, max = 13): string {
+const ROXO: [number, number, number] = [100, 16, 201];
+const DOURADO: [number, number, number] = [240, 180, 17];
+
+function curto(nome: string, max = 12): string {
   return nome.length > max ? nome.slice(0, max - 1) + "." : nome;
+}
+
+/** Desenha um campinho 4-4-2 com os jogadores nos seus lugares. */
+function desenharCampo(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  largura: number,
+  lugares: Record<Lugar, string>,
+  jogadores: Record<string, JogadorResumo>,
+  destaque: Set<string>,
+) {
+  const k = largura / 400; // mm por unidade do desenho (400 x 560)
+  doc.setFillColor(47, 125, 59);
+  doc.roundedRect(x, y, largura, 560 * k, 2, 2, "F");
+  doc.setDrawColor(255, 255, 255);
+  doc.setLineWidth(0.35);
+  doc.rect(x + 14 * k, y + 14 * k, 372 * k, 532 * k);
+  doc.line(x + 14 * k, y + 280 * k, x + 386 * k, y + 280 * k);
+  doc.circle(x + 200 * k, y + 280 * k, 48 * k);
+  doc.rect(x + 100 * k, y + 446 * k, 200 * k, 100 * k);
+  doc.rect(x + 100 * k, y + 14 * k, 200 * k, 100 * k);
+
+  for (const [lugar, pos] of Object.entries(POSICAO_NO_CAMPO)) {
+    const id = lugares[lugar as Lugar];
+    const j = id ? jogadores[id] : undefined;
+    const cx = x + pos.x * k;
+    const cy = y + pos.y * k;
+    const entrou = destaque.has(id);
+    doc.setFillColor(...ROXO);
+    if (entrou) doc.setDrawColor(...DOURADO);
+    else doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(entrou ? 0.9 : 0.4);
+    doc.circle(cx, cy, 22 * k, "FD");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(largura * 0.085);
+    doc.text(String(j?.numero_camisa ?? lugar.slice(0, 3)), cx, cy + 22 * k * 0.28, {
+      align: "center",
+    });
+    doc.setFontSize(largura * 0.068);
+    doc.text(curto(j?.nome ?? "-"), cx, cy + 22 * k + 3.2, { align: "center" });
+  }
 }
 
 /**
  * Gera e baixa o PDF da escalação (feito no navegador, nada vai para o servidor).
  *
- * Só entram no PDF: título, dados do jogo, campinho, reservas e tabela de
- * substituições. Nada de notas, atributos ou minutos por jogador.
+ * Mostra o campinho da escalação inicial e um novo campinho a cada
+ * substituição, já com o time como fica depois das trocas (quem entrou tem
+ * o contorno dourado). Só entram título, dados do jogo, campinhos, reservas e
+ * as trocas — nada de notas, atributos ou minutos por jogador.
  */
-export async function exportarEscalacaoPdf({
-  titulo,
-  subtitulo,
-  resultado,
-  indiceJanela = 0,
-}: Dados) {
+export async function exportarEscalacaoPdf({ titulo, subtitulo, resultado }: Dados) {
   // Carregado só no clique: a biblioteca é grande e só roda no navegador.
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const jogadores = resultado.jogadores;
-  const janela = resultado.janelas[indiceJanela] ?? resultado.janelas[0];
 
-  // Cabeçalho
-  doc.setFillColor(100, 16, 201);
-  doc.rect(0, 0, 210, 26, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text(titulo, 15, 12);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  doc.text(subtitulo, 15, 20);
-
-  doc.setTextColor(30, 30, 30);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text(`Escalação ${resultado.formacao}`, 15, 36);
-
-  // Campinho (100 x 140 mm, a partir de x=15, y=40)
-  const ox = 15;
-  const oy = 40;
-  const k = 0.25; // mm por unidade do SVG (400 -> 100mm)
-  doc.setFillColor(47, 125, 59);
-  doc.roundedRect(ox, oy, 100, 140, 3, 3, "F");
-  doc.setDrawColor(255, 255, 255);
-  doc.setLineWidth(0.5);
-  doc.rect(ox + 14 * k, oy + 14 * k, 372 * k, 532 * k);
-  doc.line(ox + 14 * k, oy + 280 * k, ox + 386 * k, oy + 280 * k);
-  doc.circle(ox + 200 * k, oy + 280 * k, 48 * k);
-  doc.rect(ox + 100 * k, oy + 446 * k, 200 * k, 100 * k);
-  doc.rect(ox + 100 * k, oy + 14 * k, 200 * k, 100 * k);
-
-  for (const [lugar, pos] of Object.entries(POSICAO_NO_CAMPO)) {
-    const id = janela.lugares[lugar as keyof typeof janela.lugares];
-    const j = id ? jogadores[id] : undefined;
-    const cx = ox + pos.x * k;
-    const cy = oy + pos.y * k;
-    doc.setFillColor(100, 16, 201);
-    doc.setDrawColor(255, 255, 255);
-    doc.setLineWidth(0.6);
-    doc.circle(cx, cy, 5.2, "FD");
+  const cabecalho = () => {
+    doc.setFillColor(...ROXO);
+    doc.rect(0, 0, 210, 26, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.text(String(j?.numero_camisa ?? lugar.slice(0, 3)), cx, cy + 1.6, { align: "center" });
-    doc.setFontSize(8);
-    doc.text(curto(j?.nome ?? "—"), cx, cy + 9.4, { align: "center" });
-  }
-
-  // Reservas (coluna da direita)
-  doc.setTextColor(30, 30, 30);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("Reservas", 125, 36);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  const emCampo = new Set(Object.values(janela.lugares));
-  const reservas = Object.entries(jogadores)
-    .filter(([id]) => !emCampo.has(id))
-    .map(([, j]) => j);
-  let y = 43;
-  if (reservas.length === 0) {
-    doc.text("—", 125, y);
-  }
-  for (const j of reservas) {
-    const numero = j.numero_camisa != null ? `${j.numero_camisa}  ` : "";
-    doc.text(`${numero}${curto(j.nome, 22)}`, 125, y);
-    y += 6;
-  }
-
-  // Tabela de substituições
-  let ty = 192;
-  const cabecalho = () => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(12);
-    doc.text("Substituições", 15, ty);
-    ty += 6;
-    doc.setFillColor(235, 228, 250);
-    doc.rect(15, ty - 4.5, 180, 7, "F");
-    doc.setFontSize(10);
-    doc.text("Minuto", 17, ty);
-    doc.text("Sai", 45, ty);
-    doc.text("Entra", 100, ty);
-    doc.text("Posição", 155, ty);
-    ty += 7;
+    doc.setFontSize(18);
+    doc.text(titulo, 15, 12);
     doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.text(subtitulo, 15, 20);
   };
   cabecalho();
-  if (resultado.trocas.length === 0) {
-    doc.text("Sem substituições.", 17, ty);
-  }
-  for (const t of resultado.trocas) {
-    if (ty > 280) {
-      doc.addPage();
-      ty = 20;
-      cabecalho();
+
+  const LARGURA = 66;
+  const ALTURA_CAMPO = 560 * (LARGURA / 400);
+  const ALTURA_CELULA = 126;
+  const COLUNAS = [15, 110];
+  const PRIMEIRA_LINHA_Y = 32;
+  const LINHA_Y_PAGINA_NOVA = 14;
+  const LIMITE_Y = 297;
+
+  let coluna = 0;
+  let linhaY = PRIMEIRA_LINHA_Y;
+
+  resultado.janelas.forEach((janela, i) => {
+    // Quebra de coluna/linha/página.
+    if (coluna === COLUNAS.length) {
+      coluna = 0;
+      linhaY += ALTURA_CELULA;
     }
-    doc.text(`${t.minuto}'`, 17, ty);
-    doc.text(curto(t.sai_nome, 28), 45, ty);
-    doc.text(curto(t.entra_nome, 28), 100, ty);
-    doc.text(FUNCAO_LABELS[t.funcao], 155, ty);
-    ty += 6.5;
-  }
+    if (linhaY + ALTURA_CELULA > LIMITE_Y) {
+      doc.addPage();
+      linhaY = LINHA_Y_PAGINA_NOVA;
+      coluna = 0;
+    }
+    const x = COLUNAS[coluna++];
+    const y = linhaY;
+
+    const trocas = resultado.trocas.filter((t) => t.minuto === janela.inicio);
+    const entraram = new Set(trocas.map((t) => t.entra));
+
+    // Título do quadro: "Time 2 - 1ª troca" + o momento (como no esquema do time).
+    const metade = resultado.duracao / 2;
+    const momento =
+      i === 0
+        ? "Início do jogo"
+        : janela.inicio === metade
+          ? "Intervalo"
+          : `${janela.inicio} minutos (${janela.inicio < metade ? "1º" : "2º"} tempo)`;
+    doc.setTextColor(30, 30, 30);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(i === 0 ? "TIME 1 (4-4-2)" : `TIME ${i + 1} (4-4-2) - ${i}ª TROCA`, x, y + 4);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(momento, x, y + 8.5);
+
+    desenharCampo(doc, x, y + 11, LARGURA, janela.lugares, jogadores, entraram);
+
+    // Texto embaixo do campinho
+    let ty = y + 11 + ALTURA_CAMPO + 5;
+    doc.setTextColor(30, 30, 30);
+    doc.setFontSize(8.5);
+    const escrever = (texto: string, negrito = false) => {
+      doc.setFont("helvetica", negrito ? "bold" : "normal");
+      for (const linha of doc.splitTextToSize(texto, 85) as string[]) {
+        if (ty < y + ALTURA_CELULA - 1) doc.text(linha, x, ty);
+        ty += 4;
+      }
+    };
+
+    if (i === 0) {
+      const emCampo = new Set(Object.values(janela.lugares));
+      const reservas = Object.entries(jogadores)
+        .filter(([id]) => !emCampo.has(id))
+        .map(([, j]) => j.nome);
+      escrever(`RESERVAS: ${reservas.length ? reservas.join(", ") : "-"}`);
+    } else {
+      if (trocas.length === 0) escrever("Sem trocas neste momento.");
+      else {
+        escrever(`Saída: ${trocas.map((t) => t.sai_nome).join(", ")}`);
+        escrever(`Entrar: ${trocas.map((t) => t.entra_nome).join(", ")}`);
+      }
+      for (const a of resultado.ajustes_de_posicao.filter((a) => a.minuto === janela.inicio)) {
+        escrever(`${a.nome} passa de ${FUNCAO_LABELS[a.de]} para ${FUNCAO_LABELS[a.para]}`);
+      }
+    }
+  });
 
   const nomeArquivo = titulo
     .normalize("NFD")

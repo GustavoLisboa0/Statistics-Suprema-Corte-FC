@@ -39,7 +39,7 @@ export type Lugar = (typeof LUGARES)[number];
  * Goleiro embaixo, ataque em cima. LAT1/MEI1 ficam à esquerda, LAT2/MEI2 à direita.
  */
 export const POSICAO_NO_CAMPO: Record<Lugar, { x: number; y: number }> = {
-  GOL: { x: 200, y: 505 },
+  GOL: { x: 200, y: 488 },
   LAT1: { x: 58, y: 400 },
   ZAG1: { x: 150, y: 410 },
   ZAG2: { x: 250, y: 410 },
