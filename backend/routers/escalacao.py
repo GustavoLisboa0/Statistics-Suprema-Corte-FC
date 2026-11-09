@@ -22,9 +22,12 @@ from escalacao import (
     SUBSTITUICOES_PADRAO,
     TROCAS_POR_VEZ_PADRAO,
     EscalacaoInviavel,
+    gerar_automatico,
     gerar_escalacao,
 )
 from models import lesao_ativa, punicao_ativa
+import tatica as tt
+from routers.atributos import achar_adversario, carregar_atributos
 
 router = APIRouter(prefix="/partidas", tags=["Escalação"])
 
@@ -58,8 +61,15 @@ class GerarPayload(BaseModel):
     incluir: list[UUID] = []
     remover: list[UUID] = []
     duracao: int = Field(default=DURACAO_PADRAO, ge=10, le=120)
+    # Automático (padrão): o computador escolhe quando trocar e quantos trocam
+    # por vez, para todo mundo jogar o mesmo tempo. Desligado: vale o que veio abaixo.
+    automatico: bool = True
     n_substituicoes: int = Field(default=SUBSTITUICOES_PADRAO, ge=0, le=20)
     trocas_por_vez: int = Field(default=TROCAS_POR_VEZ_PADRAO, ge=1, le=10)
+    # V2 (só admin): tática e estratégia mudam quem joga mais e onde.
+    tatica: Optional[str] = None
+    estrategia: str = "uniforme"
+    forca_tatica: int = Field(default=50, ge=10, le=100)
     regras: dict[UUID, RegraJogador] = {}
     restricoes: list[Restricao] = []
     # Muda a semente para pedir "outra opção" igualmente válida.
@@ -171,17 +181,43 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         raise HTTPException(status_code=422, detail="O goleiro escolhido não está entre os convocados")
 
     convocados = [todos[i] for i in ids]
+
+    if payload.tatica is not None and payload.tatica not in tt.TATICAS:
+        raise HTTPException(status_code=422, detail="Tática desconhecida")
+    if payload.estrategia not in tt.ESTRATEGIAS:
+        raise HTTPException(status_code=422, detail="Estratégia desconhecida")
+    atributos = carregar_atributos() if payload.tatica else {}
+    qualidade = None
+    if payload.tatica:
+        qualidade = {
+            j["id"]: {
+                f: tt.qualidade(atributos.get(j["id"]), f, payload.tatica) / 100
+                for f in tt.PESOS_FUNCAO
+                if f != "GOL"
+            }
+            for j in convocados
+        }
+
+    comuns = dict(
+        duracao=payload.duracao,
+        regras={str(k): v.model_dump(exclude_none=True) for k, v in payload.regras.items()},
+        restricoes=[r.model_dump(mode="json", exclude_none=True) for r in payload.restricoes],
+        semente=payload.semente,
+        qualidade=qualidade,
+        estrategia=payload.estrategia,
+        forca=payload.forca_tatica,
+    )
     try:
-        resultado = gerar_escalacao(
-            convocados,
-            goleiro_id,
-            duracao=payload.duracao,
-            n_substituicoes=payload.n_substituicoes,
-            trocas_por_vez=payload.trocas_por_vez,
-            regras={str(k): v.model_dump(exclude_none=True) for k, v in payload.regras.items()},
-            restricoes=[r.model_dump(mode="json", exclude_none=True) for r in payload.restricoes],
-            semente=payload.semente,
-        )
+        if payload.automatico:
+            resultado = gerar_automatico(convocados, goleiro_id, **comuns)
+        else:
+            resultado = gerar_escalacao(
+                convocados,
+                goleiro_id,
+                n_substituicoes=payload.n_substituicoes,
+                trocas_por_vez=payload.trocas_por_vez,
+                **comuns,
+            )
     except EscalacaoInviavel as erro:
         raise HTTPException(status_code=422, detail=str(erro))
 
@@ -198,11 +234,54 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         for j in convocados
     }
 
-    return {
+    resposta = {
         "partida_id": str(partida_id),
         "convocados": convocados,
         "config": payload.model_dump(mode="json"),
         "resultado": resultado,
+    }
+    if payload.tatica:
+        # Análise interna: só vai nesta resposta do admin; nunca é salva no
+        # resultado nem vai para o PDF.
+        resposta["analise"] = tt.analisar(
+            resultado, {jid: atributos.get(jid) or {} for jid in resultado["jogadores"]}, payload.tatica
+        )
+    return resposta
+
+
+# ---------------------------------------------------------------------------
+# Contra-estratégia (só admin)
+# ---------------------------------------------------------------------------
+@router.get("/{partida_id}/escalacao/contra-estrategia")
+def contra_estrategia(partida_id: UUID, usuario: dict = Depends(exige_editor)):
+    """Sugere tática e estratégia segundo o perfil e o histórico do adversário."""
+    partida = _partida_ou_404(partida_id)
+    nome = partida.get("adversario") or ""
+    perfil = achar_adversario(nome)
+    todas = supabase.table("partidas").select("*").execute().data or []
+    anteriores = [
+        p
+        for p in todas
+        if p["id"] != partida["id"] and (p.get("adversario") or "").strip().lower() == nome.strip().lower()
+    ]
+    historico = tt.resumir_historico(anteriores)
+    if not perfil and not historico["jogos"]:
+        return {
+            "adversario": nome,
+            "perfil": None,
+            "historico": historico,
+            "sugestao": None,
+            "aviso": "Ainda não há dados deste adversário. Cadastre o perfil dele para receber uma sugestão.",
+        }
+    sugestao = tt.sugerir_contra_estrategia(perfil or {}, historico)
+    sugestao["tatica_nome"] = tt.TATICAS[sugestao["tatica"]]["nome"]
+    sugestao["estrategia_nome"] = tt.ESTRATEGIAS[sugestao["estrategia"]]["nome"]
+    return {
+        "adversario": nome,
+        "perfil": perfil,
+        "historico": historico,
+        "sugestao": sugestao,
+        "aviso": None,
     }
 
 
@@ -260,4 +339,7 @@ def obter(partida_id: UUID, usuario: dict = Depends(usuario_atual)):
     salva = _salva_ou_none(partida_id)
     if not salva:
         raise HTTPException(status_code=404, detail="Esta partida ainda não tem escalação salva")
+    if usuario.get("papel") != "editor":
+        # Quem só visualiza não recebe tática/estratégia usadas na geração.
+        salva = {**salva, "config": {}}
     return salva

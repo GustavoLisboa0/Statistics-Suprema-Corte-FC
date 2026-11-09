@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import (
+    atributos,
     auth,
     escalacao,
     estatisticas,
@@ -38,6 +39,7 @@ app.include_router(partidas.router)
 # subrotas de presença e estatísticas da partida.
 app.include_router(presenca.router)
 app.include_router(escalacao.router)
+app.include_router(atributos.router)
 app.include_router(estatisticas.router)
 
 

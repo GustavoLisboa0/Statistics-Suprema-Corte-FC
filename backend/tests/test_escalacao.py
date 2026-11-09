@@ -101,7 +101,7 @@ def test_trocas_em_ordem_cronologica_e_coerentes():
 
 
 def test_goleiro_nunca_troca():
-    r = gerar_escalacao(jogadores(), "G2", n_substituicoes=8, trocas_por_vez=4)
+    r = gerar_escalacao(jogadores(), "G2", duracao=60, n_substituicoes=8, trocas_por_vez=4)
     assert r["minutos"]["G2"] == 60 and r["minutos"]["G1"] == 0
     assert all("G2" not in (t["sai"], t["entra"]) for t in r["trocas"])
     assert any(b["jogador_id"] == "G1" for b in r["banco"])
@@ -109,7 +109,7 @@ def test_goleiro_nunca_troca():
 
 def test_grupo_fixo_nao_troca():
     regras = {nome: {"grupo_fixo": True} for nome in ("Z1", "V1", "M1", "A1")}
-    r = gerar_escalacao(jogadores(), "G1", n_substituicoes=6, trocas_por_vez=3, regras=regras)
+    r = gerar_escalacao(jogadores(), "G1", duracao=60, n_substituicoes=6, trocas_por_vez=3, regras=regras)
     for nome in regras:
         assert r["minutos"][nome] == 60
         assert all(nome not in (t["sai"], t["entra"]) for t in r["trocas"])
