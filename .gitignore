@@ -10,3 +10,6 @@ __pycache__/
 **/.env.test
 **/.env.*.local
 **/.env.example
+
+backend/local.db
+backend/local.db-journal

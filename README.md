@@ -36,6 +36,43 @@ Statistics-Suprema-Corte-FC/
 Stack do frontend: TanStack Start (React 19 + Vite + SSR) + TypeScript +
 Tailwind CSS v4 + shadcn/ui. Detalhes em `frontend/README.md`.
 
+## Rodar localmente (Windows, sem Supabase)
+
+Dá para testar tudo no seu computador, sem criar conta no Supabase: com
+`LOCAL_DB=1` o backend usa um banco SQLite (arquivo `backend/local.db`) e um
+login próprio. Precisa de **Python 3.12** e **Node.js** instalados.
+
+**Terminal 1 — backend** (PowerShell):
+
+```powershell
+cd backend
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt -r requirements-dev.txt
+$env:LOCAL_DB=1
+python seed_local.py        # cria dados de teste (apaga o banco local antes!)
+uvicorn main:app --reload
+```
+
+**Terminal 2 — frontend**:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Abra o endereço que o `npm run dev` mostrar (normalmente `http://localhost:3000`).
+Logins de teste criados pelo `seed_local.py`:
+
+| Papel               | Email                 | Senha         |
+|---------------------|-----------------------|---------------|
+| Admin (editor)      | `admin@suprema.com`   | `admin123`    |
+| Usuário comum       | `jogador@suprema.com` | `jogador123`  |
+
+Para rodar os testes do backend: `cd backend; $env:LOCAL_DB=1; pytest`.
+O arquivo `backend/env.example` mostra as variáveis de ambiente possíveis.
+
 ## Setup
 
 ### 1. Banco de dados (Supabase)

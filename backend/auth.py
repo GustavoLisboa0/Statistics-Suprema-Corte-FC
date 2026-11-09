@@ -4,7 +4,10 @@ import os
 import httpx
 from fastapi import Depends, Header, HTTPException
 
-from database import supabase
+from database import LOCAL_DB, supabase
+
+if LOCAL_DB:
+    import local_auth
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -19,6 +22,8 @@ def _auth_headers(access_token: str | None = None) -> dict:
 
 def login(email: str, password: str) -> dict:
     """Autentica no Supabase Auth com email/senha."""
+    if LOCAL_DB:
+        return local_auth.login(email, password)
     resposta = httpx.post(
         f"{SUPABASE_URL}/auth/v1/token",
         params={"grant_type": "password"},
@@ -46,6 +51,9 @@ def criar_conta(
     Devolve o corpo do Supabase como veio: dependendo de o projeto exigir
     confirmação de email, pode ou não vir uma sessão junto.
     """
+    if LOCAL_DB:
+        return local_auth.criar_conta(email, password, nome, telefone)
+
     corpo: dict = {"email": email, "password": password}
     metadata = {k: v for k, v in {"nome": nome, "telefone": telefone}.items() if v}
     if metadata:
@@ -70,6 +78,8 @@ def criar_conta(
 
 def refresh(refresh_token: str) -> dict:
     """Troca um refresh_token por um novo access_token."""
+    if LOCAL_DB:
+        return local_auth.refresh(refresh_token)
     resposta = httpx.post(
         f"{SUPABASE_URL}/auth/v1/token",
         params={"grant_type": "refresh_token"},
@@ -84,6 +94,8 @@ def refresh(refresh_token: str) -> dict:
 
 def _validar_token(access_token: str) -> dict:
     """Pergunta pro próprio Supabase Auth se o token ainda é válido."""
+    if LOCAL_DB:
+        return local_auth.validar_token(access_token)
     resposta = httpx.get(
         f"{SUPABASE_URL}/auth/v1/user",
         headers=_auth_headers(access_token),
