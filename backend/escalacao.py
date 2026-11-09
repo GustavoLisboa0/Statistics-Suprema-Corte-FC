@@ -44,6 +44,11 @@ FORMACOES: dict[str, dict[str, int]] = {
     "5-3-2": {"ZAG": 3, "LAT": 2, "VOL": 1, "MEI": 2, "ATA": 2},
     "3-4-3": {"ZAG": 3, "LAT": 2, "VOL": 0, "MEI": 2, "ATA": 3},
     "5-4-1": {"ZAG": 3, "LAT": 2, "VOL": 2, "MEI": 2, "ATA": 1},
+    # Variações com o mesmo "número" mas jeito diferente de organizar o time.
+    "4-4-2 losango": {"ZAG": 2, "LAT": 2, "VOL": 1, "MEI": 3, "ATA": 2},
+    "4-1-4-1": {"ZAG": 2, "LAT": 2, "VOL": 1, "MEI": 4, "ATA": 1},
+    "4-3-3 duplo volante": {"ZAG": 2, "LAT": 2, "VOL": 2, "MEI": 1, "ATA": 3},
+    "3-4-1-2": {"ZAG": 3, "LAT": 2, "VOL": 2, "MEI": 1, "ATA": 2},
 }
 
 
@@ -1166,9 +1171,27 @@ def _registrar_trocas(
 # Modo automático: o computador escolhe quando trocar e quantos trocam
 # ---------------------------------------------------------------------------
 def _cortes_uniformes(duracao: int, n_janelas: int) -> list[int]:
-    """Janelas iguais, com o tamanho arredondado PARA CIMA (sobra um pedaço no fim)."""
-    tamanho = -(-duracao // n_janelas)  # teto
-    return [c for c in range(tamanho, duracao, tamanho)]
+    """
+    Janelas quase iguais (diferem no máximo 1 minuto). Cada corte é arredondado
+    PARA CIMA (por causa do acréscimo).
+    """
+    cortes = {math.ceil(duracao * i / n_janelas - 1e-9) for i in range(1, n_janelas)}
+    return sorted(c for c in cortes if 0 < c < duracao)
+
+
+def _encaixar_mudancas(mudancas: Optional[list[dict]], cortes: list[int]) -> list[dict]:
+    """
+    A mudança de formação acontece junto com uma troca de jogadores (não faz
+    sentido parar o jogo só para mudar o desenho do time): leva cada mudança
+    para o momento de troca mais próximo.
+    """
+    if not mudancas or not cortes:
+        return list(mudancas or [])
+    saida: dict[int, dict] = {}
+    for m in sorted(mudancas, key=lambda m: m["minuto"]):
+        alvo = min(cortes, key=lambda c: (abs(c - m["minuto"]), c))
+        saida[alvo] = {"minuto": alvo, "formacao": m["formacao"]}
+    return [saida[k] for k in sorted(saida)]
 
 
 def _cortes_ciclicos(n_linha: int, duracao: int) -> list[int]:
@@ -1242,7 +1265,7 @@ def _escolher_fixos(
     return [j.id for j in livres[:quantos]]
 
 
-def gerar_automatico(
+def _gerar_automatico_base(
     jogadores: list[dict],
     goleiro_id: str,
     duracao: int = DURACAO_PADRAO,
@@ -1294,7 +1317,7 @@ def gerar_automatico(
         candidatos_cortes = []
         vistos = set()
         for cortes in opcoes:
-            efetivos = sorted(set(cortes) | mud_minutos)
+            efetivos = sorted(set(cortes) | (mud_minutos if not cortes else set()))
             lacunas = [y - x for x, y in zip([0] + cortes, cortes + [duracao])]
             if not cortes or tuple(cortes) in vistos:
                 continue
@@ -1308,15 +1331,17 @@ def gerar_automatico(
             # Nenhum jeito respeita os limites: tenta o mais simples possível.
             candidatos_cortes = [_cortes_uniformes(duracao, 2), _cortes_uniformes(duracao, 3)]
     maximos = [max_trocas] if max_trocas else list(range(1, min(max(banco, 1), 4) + 1))
-    comuns = dict(
+    comuns_base = dict(
         qualidade=qualidade,
         estrategia=estrategia,
         forca=forca,
         formacao=formacao,
-        mudancas_formacao=mudancas_formacao,
         perfis=perfis,
         composicao=composicao,
     )
+
+    def comuns_de(cortes: list[int]) -> dict:
+        return dict(comuns_base, mudancas_formacao=_encaixar_mudancas(mudancas_formacao, cortes))
 
     def chave(res: dict) -> tuple:
         diferenca = _diferenca_minutos(res, regras, restricoes)
@@ -1344,7 +1369,7 @@ def gerar_automatico(
             try:
                 res = _gerar_uma(
                     jogadores, goleiro_id, duracao, len(cortes), maximo, regras, restricoes,
-                    None, cortes=cortes, tentativas_busca=300, **comuns,
+                    None, cortes=cortes, tentativas_busca=300, **comuns_de(cortes),
                 )
             except EscalacaoInviavel as erro:
                 ultimo_erro = erro
@@ -1361,7 +1386,7 @@ def gerar_automatico(
         try:
             res = gerar_escalacao(
                 jogadores, goleiro_id, duracao, len(cortes), maximo, regras, restricoes,
-                semente, cortes=cortes, **comuns,
+                semente, cortes=cortes, **comuns_de(cortes),
             )
         except EscalacaoInviavel:
             continue
@@ -1377,6 +1402,42 @@ def gerar_automatico(
     if melhor is None:
         raise ultimo_erro or EscalacaoInviavel("Não foi possível montar a escalação.")
     return melhor
+
+
+def gerar_automatico(
+    jogadores: list[dict],
+    goleiro_id: str,
+    duracao: int = DURACAO_PADRAO,
+    **opcoes: Any,
+) -> dict[str, Any]:
+    """
+    Gera a escalação automática. O tempo igual vem PRIMEIRO: se a tática ou as
+    regras de composição impedirem que todo mundo jogue quase o mesmo tempo, o
+    sistema refaz sem elas e avisa (`plano["aviso"]`).
+    """
+    res = _gerar_automatico_base(jogadores, goleiro_id, duracao, **opcoes)
+    tolerancia = opcoes.get("tolerancia", 5)
+
+    def dif(r: dict) -> int:
+        com_fixos = {k: dict(v) for k, v in (opcoes.get("regras") or {}).items()}
+        for jid in (r.get("plano") or {}).get("fixos", []):
+            com_fixos.setdefault(jid, {})["grupo_fixo"] = True
+        return _diferenca_minutos(r, com_fixos, opcoes.get("restricoes"))
+
+    if dif(res) <= tolerancia or not (opcoes.get("qualidade") or opcoes.get("composicao")):
+        return res
+    simples = dict(opcoes, qualidade=None, composicao=None)
+    try:
+        alt = _gerar_automatico_base(jogadores, goleiro_id, duracao, **simples)
+    except EscalacaoInviavel:
+        return res
+    if dif(alt) < dif(res):
+        alt["plano"]["aviso"] = (
+            "Para todo mundo jogar o mesmo tempo, a tática e as regras de composição "
+            "foram deixadas de lado nesta opção."
+        )
+        return alt
+    return res
 
 
 def avisos_de_igualdade(
@@ -1495,3 +1556,45 @@ def sugerir_fixos(
             f"{momentos} para {m2} momento(s) e ficam mais simples."
         ),
     }
+
+
+def opcoes_de_trocas(
+    jogadores: list[dict], goleiro_id: str, **opcoes: Any
+) -> list[dict[str, Any]]:
+    """
+    Compara jeitos de dividir o tempo, para o administrador escolher:
+    todo mundo igual, ou 1 (ou 2) jogador(es) jogando o jogo todo com menos trocas.
+    Cada opção traz o resultado completo. `opcoes` = argumentos de `gerar_automatico`.
+    """
+    regras = opcoes.get("regras")
+    restricoes = opcoes.get("restricoes")
+    saida: list[dict[str, Any]] = []
+    for k in (0, 1, 2):
+        if k == 2 and saida and saida[-1]["momentos"] <= 3:
+            break  # com 1 fixo já está simples: não precisa de mais
+        try:
+            res = gerar_automatico(jogadores, goleiro_id, quantos_fixos=k, **opcoes)
+        except EscalacaoInviavel:
+            if k == 0:
+                raise
+            continue
+        fixos = list((res.get("plano") or {}).get("fixos", []))
+        if k > 0 and not fixos:
+            continue
+        com_fixos = {a: dict(v) for a, v in (regras or {}).items()}
+        for jid in fixos:
+            com_fixos.setdefault(jid, {})["grupo_fixo"] = True
+        momentos = len(res["janelas"]) - 1
+        if saida and momentos >= saida[-1]["momentos"] and k > 0:
+            continue  # não simplifica nada: não vale como opção
+        saida.append(
+            {
+                "quantos_fixos": k,
+                "momentos": momentos,
+                "trocas": len(res["trocas"]),
+                "diferenca_minutos": _diferenca_minutos(res, com_fixos, restricoes),
+                "fixos": fixos,
+                "resultado": res,
+            }
+        )
+    return saida

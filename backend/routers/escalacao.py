@@ -24,6 +24,7 @@ from escalacao import (
     EscalacaoInviavel,
     FORMACOES,
     avisos_de_igualdade,
+    opcoes_de_trocas,
     gerar_automatico,
     gerar_escalacao,
     sugerir_fixos,
@@ -89,10 +90,12 @@ class GerarPayload(BaseModel):
     n_substituicoes: int = Field(default=SUBSTITUICOES_PADRAO, ge=0, le=20)
     trocas_por_vez: int = Field(default=TROCAS_POR_VEZ_PADRAO, ge=1, le=10)
     # Quanto o computador pode mexer nas trocas (modo automático).
-    intervalo_minimo: int = Field(default=10, ge=3, le=45)  # minutos entre uma troca e outra
-    tolerancia_minutos: int = Field(default=5, ge=0, le=30)  # diferença de tempo aceita
+    intervalo_minimo: int = Field(default=3, ge=3, le=45)  # minutos entre uma troca e outra
+    tolerancia_minutos: int = Field(default=1, ge=0, le=30)  # diferença de tempo aceita
     max_momentos: Optional[int] = Field(default=None, ge=0, le=20)
     max_trocas_por_vez: Optional[int] = Field(default=None, ge=1, le=10)
+    # Compara "todo mundo igual" com "1 ou 2 jogadores o jogo todo" (resposta traz `opcoes`).
+    comparar_opcoes: bool = False
     quantos_fixos: int = Field(default=0, ge=0, le=5)  # jogadores que ficam o jogo todo
     # Formação (4-4-2 por padrão) e mudanças durante o jogo.
     formacao: str = "4-4-2"
@@ -273,8 +276,12 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         max_momentos=payload.max_momentos,
         max_trocas=payload.max_trocas_por_vez,
     )
+    opcoes = None
     try:
-        if payload.automatico:
+        if payload.automatico and payload.comparar_opcoes:
+            opcoes = opcoes_de_trocas(convocados, goleiro_id, **comuns, **automaticas)
+            resultado = opcoes[0]["resultado"]
+        elif payload.automatico:
             resultado = gerar_automatico(
                 convocados, goleiro_id, quantos_fixos=payload.quantos_fixos, **comuns, **automaticas
             )
@@ -292,7 +299,7 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
     # Dados públicos de cada convocado (nome, camisa, posições) vão junto no
     # resultado: assim a tela e o PDF mostram a escalação salva sem buscar
     # mais nada — e quem só visualiza não depende de outras rotas.
-    resultado["jogadores"] = {
+    jogadores_publicos = {
         j["id"]: {
             "nome": j["nome"],
             "nome_completo": j["nome_completo"],
@@ -302,12 +309,6 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         for j in convocados
     }
 
-    resposta = {
-        "partida_id": str(partida_id),
-        "convocados": convocados,
-        "config": payload.model_dump(mode="json"),
-        "resultado": resultado,
-    }
     # Informações do plano de jogo que VÃO para o PDF (só nomes e ideias, sem
     # notas de atributos nem a análise interna).
     plano_de_jogo = {
@@ -319,8 +320,24 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         ),
         "regras": [_texto_regra(r) for r in payload.composicao],
     }
-    resultado["plano_de_jogo"] = plano_de_jogo
-    resposta["resultado"] = resultado
+    for alvo in [resultado, *[o["resultado"] for o in (opcoes or [])]]:
+        alvo["jogadores"] = jogadores_publicos
+        alvo["plano_de_jogo"] = plano_de_jogo
+    resposta = {
+        "partida_id": str(partida_id),
+        "convocados": convocados,
+        "config": payload.model_dump(mode="json"),
+        "resultado": resultado,
+    }
+    if opcoes is not None:
+        resposta["opcoes"] = [
+            {
+                **{k: v for k, v in o.items() if k != "resultado"},
+                "fixos_nomes": [jogadores_publicos[f]["nome"] for f in o["fixos"]],
+                "resultado": o["resultado"],
+            }
+            for o in opcoes
+        ]
     resposta["avisos"] = avisos_de_igualdade(
         convocados,
         goleiro_id,
@@ -330,7 +347,7 @@ def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige
         payload.formacao,
         comuns["mudancas_formacao"],
     )
-    if payload.automatico and payload.quantos_fixos == 0:
+    if payload.automatico and payload.quantos_fixos == 0 and opcoes is None:
         try:
             dica = sugerir_fixos(convocados, goleiro_id, resultado, **comuns, **automaticas)
         except EscalacaoInviavel:

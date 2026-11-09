@@ -233,12 +233,13 @@ def test_mudanca_de_formacao_no_meio_do_jogo():
         elenco(15), "J0", 90, formacao="4-4-2",
         mudancas_formacao=[{"minuto": 60, "formacao": "4-5-1"}], tolerancia=8,
     )
-    assert r["mudancas_formacao"] == [{"minuto": 60, "formacao": "4-5-1"}]
+    assert len(r["mudancas_formacao"]) == 1 and r["mudancas_formacao"][0]["formacao"] == "4-5-1"
+    minuto = r["mudancas_formacao"][0]["minuto"]
+    assert abs(minuto - 60) <= 10 and minuto in r["plano"]["cortes"]  # junto com uma troca
     for jan in r["janelas"]:
-        esperado = "4-5-1" if jan["inicio"] >= 60 else "4-4-2"
+        esperado = "4-5-1" if jan["inicio"] >= minuto else "4-4-2"
         assert jan["formacao"] == esperado
         assert _funcoes_na_janela(jan)["MEI"] == (3 if esperado == "4-5-1" else 2)
-    assert any(j["inicio"] == 60 for j in r["janelas"])  # o minuto virou momento de troca
 
 
 def test_formacao_desconhecida_e_minuto_invalido():
@@ -370,3 +371,34 @@ def test_caracteristica_da_bonus_na_tatica():
     assert com > sem
     assert tt.sugerir_formacoes("defensiva")["mudancas"][0]["formacao"] == "5-4-1"
     assert tt.sugerir_formacoes("posse")["formacao"] == "4-2-3-1"
+
+
+# ---------------------------------------------------------------------------
+# Opções de trocas e mudança de formação junto com a troca
+# ---------------------------------------------------------------------------
+def test_opcoes_de_trocas_igual_ou_um_fixo():
+    from escalacao import opcoes_de_trocas
+
+    ops = opcoes_de_trocas(elenco(14), "J0", duracao=90, intervalo_minimo=3, tolerancia=1)
+    assert ops[0]["quantos_fixos"] == 0 and ops[0]["diferenca_minutos"] <= 1
+    um = next(o for o in ops if o["quantos_fixos"] == 1)
+    assert um["momentos"] < ops[0]["momentos"] and um["diferenca_minutos"] <= 1
+    assert len(um["fixos"]) == 1 and um["resultado"]["minutos"][um["fixos"][0]] == 90
+
+
+def test_mudanca_de_formacao_cai_num_momento_de_troca():
+    r = gerar_automatico(
+        elenco(14), "J0", 90, intervalo_minimo=3, tolerancia=1, quantos_fixos=1,
+        mudancas_formacao=[{"minuto": 60, "formacao": "4-3-3"}],
+    )
+    cortes = set(r["plano"]["cortes"])
+    assert r["mudancas_formacao"], "a formação tem que mudar"
+    assert all(m["minuto"] in cortes for m in r["mudancas_formacao"])
+    assert len(r["janelas"]) - 1 == len(cortes)  # a mudança não criou momento extra
+
+
+def test_novas_formacoes_tem_dez_de_linha():
+    from escalacao import FORMACOES
+
+    assert "4-4-2 losango" in FORMACOES
+    assert all(sum(c.values()) == 10 for c in FORMACOES.values())

@@ -115,14 +115,18 @@ escalação salva.
 - **Formações:** 4-4-2, 4-3-3, 4-5-1, 4-2-3-1, 3-5-2, 5-3-2, 3-4-3 e 5-4-1, com
   mudança durante o jogo (ex.: 4-4-2 e aos 60' vai para o 4-3-3). O botão
   "Sugerir formação" propõe uma conforme a tática.
-- **Trocas sob controle** (modo automático): jogadores que não saem, máximo de
-  momentos de troca, máximo de jogadores por troca, minutos mínimos entre
-  trocas e diferença de tempo aceita. Se compensar, o sistema dá a dica de
-  deixar 1 jogador o jogo todo (menos trocas, tempo parecido).
-- **Regras de composição** (só administrador): por setor, ex. "volantes: um com
-  mais velocidade e outro com menos" ou "pelo menos um canhoto nos laterais".
-  São preferências: o tempo igual para todos continua mandando.
-- O cartão "Como o sistema decide" mostra os pesos usados nas contas.
+- **Trocas:** o computador decide sozinho, com todo mundo jogando o mesmo tempo
+  (no máximo 1 minuto de diferença). Ao gerar, ele compara opções — "todo mundo
+  joga o mesmo tempo" (mais trocas) e "1 jogador joga o jogo todo" (menos
+  trocas) — e você escolhe, podendo trocar quem é o jogador que fica o jogo
+  todo. A tática e as regras de composição nunca quebram o tempo igual.
+- **Formação** escolhida num seletor visual (campinhos com bolinhas), com
+  variações do mesmo número (ex.: 4-4-2 e 4-4-2 losango). Mudança de formação
+  no jogo acontece junto com uma troca de jogadores, não cria momento extra.
+- **Aba "Tática e estratégia"** (só administrador): tática, estratégia, peso e o
+  campinho clicável: clique numa bolinha para definir a regra de composição do
+  setor (ex.: volantes, um rápido e um lento).
+- O botão "?" no topo da página mostra os pesos usados nas contas.
 - **PDF** com várias páginas: capa com plano de jogo (formação, tática,
   estratégia), titulares, banco e trocas, mais uma página por momento do jogo.
   Nunca leva atributos, notas, análise nem regras de composição.

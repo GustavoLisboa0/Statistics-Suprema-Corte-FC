@@ -24,13 +24,33 @@ export type Lugar = string;
 /** Formações que o sistema conhece (nome -> quantos em cada função). */
 export const FORMACOES: Record<string, Record<Funcao, number>> = {
   "4-4-2": { ZAG: 2, LAT: 2, VOL: 2, MEI: 2, ATA: 2 },
+  "4-4-2 losango": { ZAG: 2, LAT: 2, VOL: 1, MEI: 3, ATA: 2 },
   "4-3-3": { ZAG: 2, LAT: 2, VOL: 1, MEI: 2, ATA: 3 },
+  "4-3-3 duplo volante": { ZAG: 2, LAT: 2, VOL: 2, MEI: 1, ATA: 3 },
   "4-5-1": { ZAG: 2, LAT: 2, VOL: 2, MEI: 3, ATA: 1 },
   "4-2-3-1": { ZAG: 2, LAT: 2, VOL: 2, MEI: 3, ATA: 1 },
+  "4-1-4-1": { ZAG: 2, LAT: 2, VOL: 1, MEI: 4, ATA: 1 },
   "3-5-2": { ZAG: 3, LAT: 2, VOL: 1, MEI: 2, ATA: 2 },
-  "5-3-2": { ZAG: 3, LAT: 2, VOL: 1, MEI: 2, ATA: 2 },
+  "3-4-1-2": { ZAG: 3, LAT: 2, VOL: 2, MEI: 1, ATA: 2 },
   "3-4-3": { ZAG: 3, LAT: 2, VOL: 0, MEI: 2, ATA: 3 },
+  "5-3-2": { ZAG: 3, LAT: 2, VOL: 1, MEI: 2, ATA: 2 },
   "5-4-1": { ZAG: 3, LAT: 2, VOL: 2, MEI: 2, ATA: 1 },
+};
+
+/** Uma frase curta explicando o desenho de cada formação (aparece no seletor). */
+export const FORMACAO_DESCRICAO: Record<string, string> = {
+  "4-4-2": "Dois volantes, dois meias abertos e dois atacantes.",
+  "4-4-2 losango": "Um volante, dois meias abertos, um 10 e dois atacantes.",
+  "4-3-3": "Um volante, dois meias e três atacantes.",
+  "4-3-3 duplo volante": "Dois volantes, um meia e três atacantes.",
+  "4-5-1": "Cinco no meio e um atacante isolado.",
+  "4-2-3-1": "Dois volantes, três meias atrás de um atacante.",
+  "4-1-4-1": "Um volante, quatro meias e um atacante.",
+  "3-5-2": "Três zagueiros, laterais como alas e dois atacantes.",
+  "3-4-1-2": "Três zagueiros, alas, dois volantes, um 10 e dois atacantes.",
+  "3-4-3": "Três zagueiros, alas, dois meias e três atacantes.",
+  "5-3-2": "Cinco na defesa, três no meio e dois atacantes.",
+  "5-4-1": "Cinco na defesa, quatro no meio e um atacante.",
 };
 
 function espalhar(n: number, de: number, ate: number): number[] {
@@ -52,17 +72,65 @@ export function layoutDaFormacao(formacao: string): Record<Lugar, { x: number; y
 
   poe("ZAG", espalhar(c.ZAG, c.ZAG === 2 ? 150 : 120, c.ZAG === 2 ? 250 : 280), 410);
   poe("LAT", [58, 342], tresAtras ? 320 : 400);
-  if (c.VOL === 2 && c.MEI === 2) {
-    // meio-campo em linha: meia, volante, volante, meia
-    pos.MEI1 = { x: 58, y: 275 };
-    pos.VOL1 = { x: 150, y: 290 };
-    pos.VOL2 = { x: 250, y: 290 };
-    pos.MEI2 = { x: 342, y: 275 };
-  } else {
-    poe("VOL", espalhar(c.VOL, 150, 250), 305);
-    poe("MEI", espalhar(c.MEI, c.MEI === 2 ? 110 : 80, c.MEI === 2 ? 290 : 320), c.VOL ? 235 : 275);
-  }
   poe("ATA", espalhar(c.ATA, c.ATA === 2 ? 140 : 90, c.ATA === 2 ? 260 : 310), 140);
+
+  switch (formacao) {
+    case "4-4-2": // meia, volante, volante, meia
+      pos.MEI1 = { x: 58, y: 275 };
+      pos.VOL1 = { x: 150, y: 290 };
+      pos.VOL2 = { x: 250, y: 290 };
+      pos.MEI2 = { x: 342, y: 275 };
+      break;
+    case "5-4-1":
+      pos.MEI1 = { x: 58, y: 255 };
+      pos.VOL1 = { x: 150, y: 285 };
+      pos.VOL2 = { x: 250, y: 285 };
+      pos.MEI2 = { x: 342, y: 255 };
+      break;
+    case "4-4-2 losango":
+      poe("VOL", [200], 330);
+      pos.MEI1 = { x: 70, y: 265 };
+      pos.MEI2 = { x: 200, y: 215 };
+      pos.MEI3 = { x: 330, y: 265 };
+      break;
+    case "4-5-1": // cinco em linha
+      pos.MEI1 = { x: 55, y: 275 };
+      pos.VOL1 = { x: 130, y: 292 };
+      pos.MEI2 = { x: 200, y: 262 };
+      pos.VOL2 = { x: 270, y: 292 };
+      pos.MEI3 = { x: 345, y: 275 };
+      break;
+    case "4-1-4-1":
+      poe("VOL", [200], 335);
+      poe("MEI", [55, 150, 250, 345], 255);
+      break;
+    case "4-3-3 duplo volante":
+      poe("VOL", [150, 250], 320);
+      poe("MEI", [200], 240);
+      break;
+    case "3-4-1-2":
+      poe("VOL", [150, 250], 320);
+      poe("MEI", [200], 235);
+      break;
+    case "4-2-3-1":
+      poe("VOL", [150, 250], 320);
+      poe("MEI", [80, 200, 320], 235);
+      break;
+    default:
+      if (c.VOL === 2 && c.MEI === 2) {
+        pos.MEI1 = { x: 58, y: 275 };
+        pos.VOL1 = { x: 150, y: 290 };
+        pos.VOL2 = { x: 250, y: 290 };
+        pos.MEI2 = { x: 342, y: 275 };
+      } else {
+        poe("VOL", espalhar(c.VOL, 150, 250), 305);
+        poe(
+          "MEI",
+          espalhar(c.MEI, c.MEI === 2 ? 110 : 80, c.MEI === 2 ? 290 : 320),
+          c.VOL ? 235 : 275,
+        );
+      }
+  }
   return pos;
 }
 
@@ -123,6 +191,7 @@ export type GerarPayload = {
   max_trocas_por_vez: number | null;
   /** Quantos jogadores de linha ficam o jogo inteiro (sem sair). */
   quantos_fixos: number;
+  comparar_opcoes: boolean;
   formacao: string;
   mudancas_formacao: { minuto: number; formacao: string }[];
   composicao: RegraComposicao[];
@@ -169,7 +238,13 @@ export type ResultadoEscalacao = {
   /** Dados públicos de cada convocado, para desenhar sem buscar mais nada. */
   jogadores: Record<string, JogadorResumo>;
   /** Só no modo automático: o que o computador decidiu. */
-  plano?: { n_substituicoes: number; trocas_por_vez: number; cortes: number[]; fixos?: string[] };
+  plano?: {
+    n_substituicoes: number;
+    trocas_por_vez: number;
+    cortes: number[];
+    fixos?: string[];
+    aviso?: string;
+  };
   mudancas_formacao?: { minuto: number; formacao: string }[];
   /** Resumo público do plano (vai no PDF): nomes e ideias, sem números de atributos. */
   plano_de_jogo?: {
@@ -181,7 +256,19 @@ export type ResultadoEscalacao = {
   };
 };
 
+export type OpcaoDeTrocas = {
+  quantos_fixos: number;
+  momentos: number;
+  trocas: number;
+  diferenca_minutos: number;
+  fixos: string[];
+  fixos_nomes: string[];
+  resultado: ResultadoEscalacao;
+};
+
 export type PreviaEscalacao = {
+  /** Só quando se pediu para comparar: todo mundo igual x 1 ou 2 jogadores o jogo todo. */
+  opcoes?: OpcaoDeTrocas[];
   partida_id: string;
   convocados: Convocado[];
   config: GerarPayload;

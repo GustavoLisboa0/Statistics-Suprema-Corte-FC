@@ -1,23 +1,25 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Lightbulb, Save } from "lucide-react";
+import { Lightbulb, Plus, Save, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
+  FUNCAO_LABELS,
   fetchCatalogo,
   fetchContraEstrategia,
-  fetchNota,
   salvarAdversario,
-  salvarNota,
   type Adversario,
-  type Analise,
+  type Funcao,
+  type RegraComposicao,
 } from "@/lib/escalacao";
+import { CampoFormacao } from "@/components/CampoFormacao";
+import { SeletorFormacao } from "@/components/EscalacaoControles";
 import { NumberInput } from "@/components/NumberInput";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -27,32 +29,78 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
-// Tudo aqui é INTERNO do admin: só é renderizado para quem é editor e nada
-// disto entra no PDF nem na escalação que os outros usuários enxergam.
+// Aba "Tática e estratégia" — só administrador.
+// Nada daqui entra no PDF nem aparece para usuário comum.
 // ---------------------------------------------------------------------------
 
-type PropsTatica = {
+type PropsAba = {
   partidaId: string;
+  formacao: string;
+  setFormacao: (v: string) => void;
   tatica: string | null;
   setTatica: (v: string | null) => void;
   estrategia: string;
   setEstrategia: (v: string) => void;
   forca: number;
   setForca: (v: number) => void;
+  composicao: RegraComposicao[];
+  setComposicao: (v: RegraComposicao[]) => void;
 };
 
-/** Escolha de tática/estratégia + sugestão contra o adversário. */
-export function CartaoTatica({
+/** Pílulas de escolha (uma só selecionada). */
+function Pilulas({
+  opcoes,
+  valor,
+  onChange,
+  desabilitado,
+  rotulo,
+}: {
+  opcoes: { id: string; nome: string }[];
+  valor: string;
+  onChange: (v: string) => void;
+  desabilitado?: boolean;
+  rotulo: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={rotulo} className="flex flex-wrap gap-2">
+      {opcoes.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="radio"
+          aria-checked={valor === o.id}
+          disabled={desabilitado}
+          onClick={() => onChange(o.id)}
+          className={cn(
+            "rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+            valor === o.id
+              ? "border-primary bg-primary text-primary-foreground"
+              : "bg-card hover:border-primary",
+          )}
+        >
+          {o.nome}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function AbaTatica({
   partidaId,
+  formacao,
+  setFormacao,
   tatica,
   setTatica,
   estrategia,
   setEstrategia,
   forca,
   setForca,
-}: PropsTatica) {
+  composicao,
+  setComposicao,
+}: PropsAba) {
   const { data: catalogo } = useQuery({ queryKey: ["escalacao-catalogo"], queryFn: fetchCatalogo });
   const [verSugestao, setVerSugestao] = useState(false);
   const sugestao = useQuery({
@@ -60,65 +108,50 @@ export function CartaoTatica({
     queryFn: () => fetchContraEstrategia(partidaId),
     enabled: verSugestao,
   });
+  const [seletorAberto, setSeletorAberto] = useState(false);
+  const [setor, setSetor] = useState<Funcao | null>(null);
 
   const taticaAtual = catalogo?.taticas.find((t) => t.id === tatica);
   const estrategiaAtual = catalogo?.estrategias.find((e) => e.id === estrategia);
+  const comRegra = new Set(composicao.map((r) => r.funcao as string));
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          Tática e estratégia <Badge variant="outline">só administrador</Badge>
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          A tática muda quem o sistema prefere em campo (usa os atributos dos jogadores). O tempo de
-          cada um continua igual — a tática decide só <strong>quem</strong> joga em cada momento.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="space-y-1">
-            <Label>Tática</Label>
-            <Select
-              value={tatica ?? "nenhuma"}
-              onValueChange={(v) => setTatica(v === "nenhuma" ? null : v)}
-            >
-              <SelectTrigger aria-label="Tática">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="nenhuma">Sem tática</SelectItem>
-                {catalogo?.taticas.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {taticaAtual && (
-              <p className="text-xs text-muted-foreground">{taticaAtual.descricao}</p>
+      <CardContent className="space-y-6 pt-6">
+        <div className="space-y-3">
+          <Label className="text-base">Tática</Label>
+          <Pilulas
+            rotulo="Tática"
+            valor={tatica ?? "nenhuma"}
+            onChange={(v) => setTatica(v === "nenhuma" ? null : v)}
+            opcoes={[
+              { id: "nenhuma", nome: "Sem tática" },
+              ...(catalogo?.taticas.map((t) => ({ id: t.id, nome: t.nome })) ?? []),
+            ]}
+          />
+          <p className="min-h-5 text-sm text-muted-foreground">
+            {taticaAtual
+              ? taticaAtual.descricao
+              : "Sem tática, o sistema só se preocupa em dividir o tempo igual."}
+          </p>
+        </div>
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-3">
+            <Label className="text-base">Estratégia (quando os melhores jogam)</Label>
+            <Pilulas
+              rotulo="Estratégia"
+              valor={estrategia}
+              onChange={setEstrategia}
+              desabilitado={!tatica}
+              opcoes={catalogo?.estrategias.map((e) => ({ id: e.id, nome: e.nome })) ?? []}
+            />
+            {estrategiaAtual && tatica && (
+              <p className="text-sm text-muted-foreground">{estrategiaAtual.descricao}</p>
             )}
           </div>
-          <div className="space-y-1">
-            <Label>Estratégia</Label>
-            <Select value={estrategia} onValueChange={setEstrategia} disabled={!tatica}>
-              <SelectTrigger aria-label="Estratégia">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {catalogo?.estrategias.map((e) => (
-                  <SelectItem key={e.id} value={e.id}>
-                    {e.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {estrategiaAtual && (
-              <p className="text-xs text-muted-foreground">{estrategiaAtual.descricao}</p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label>Quanto a tática pesa: {forca}%</Label>
+          <div className="space-y-3">
+            <Label className="text-base">Quanto a tática pesa: {forca}%</Label>
             <Slider
               min={10}
               max={100}
@@ -128,10 +161,70 @@ export function CartaoTatica({
               disabled={!tatica}
               aria-label="Quanto a tática pesa"
             />
+            <p className="text-xs text-muted-foreground">
+              Quanto mais peso, mais a tática manda em quem joga onde. O tempo igual continua
+              valendo.
+            </p>
           </div>
         </div>
 
-        <div className="space-y-3 rounded-md border border-dashed p-3">
+        <Separator />
+
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <Label className="text-base">Montagem do time</Label>
+              <p className="text-sm text-muted-foreground">
+                Clique em uma bolinha para definir como aquele setor deve ser formado (ex.: um
+                volante rápido e um lento).
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setSeletorAberto(true)}>
+              Formação: {formacao}
+            </Button>
+          </div>
+          <SeletorFormacao
+            aberto={seletorAberto}
+            onAbertoChange={setSeletorAberto}
+            valor={formacao}
+            onEscolher={setFormacao}
+          />
+
+          <div className="grid gap-6 md:grid-cols-[minmax(0,320px)_1fr]">
+            <CampoFormacao
+              formacao={formacao}
+              comRegra={comRegra}
+              selecionada={setor}
+              onClickFuncao={setSetor}
+              className="w-full max-w-xs justify-self-center"
+            />
+            <div className="space-y-4">
+              {setor ? (
+                <EditorRegra
+                  setor={setor}
+                  regras={composicao}
+                  setRegras={setComposicao}
+                  aoFechar={() => setSetor(null)}
+                />
+              ) : (
+                <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  Escolha um setor no campinho para editar as regras dele. Bolinhas com contorno
+                  dourado já têm regra.
+                </p>
+              )}
+              <ListaRegras regras={composicao} setRegras={setComposicao} />
+              <p className="text-xs text-muted-foreground">
+                As regras são preferências: o sistema tenta respeitar, mas o tempo igual para todos
+                continua mandando. Dependem dos atributos e características preenchidos na aba
+                Jogadores.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <Button variant="secondary" size="sm" onClick={() => setVerSugestao(true)}>
               <Lightbulb className="mr-1 h-4 w-4" /> Sugerir contra o adversário
@@ -168,7 +261,7 @@ export function CartaoTatica({
                 onClick={() => {
                   setTatica(sugestao.data!.sugestao!.tatica);
                   setEstrategia(sugestao.data!.sugestao!.estrategia);
-                  toast.success("Sugestão aplicada. Clique em Gerar.");
+                  toast.success("Sugestão aplicada. Volte e clique em Gerar.");
                 }}
               >
                 Usar esta sugestão
@@ -183,6 +276,136 @@ export function CartaoTatica({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function useNomes() {
+  const { data: c } = useQuery({ queryKey: ["escalacao-catalogo"], queryFn: fetchCatalogo });
+  return {
+    c,
+    chave: (r: RegraComposicao) =>
+      (r.tipo === "atributo" ? c?.atributos : c?.caracteristicas)?.find((a) => a.id === r.chave)
+        ?.nome ?? r.chave,
+    modo: (r: RegraComposicao) =>
+      (r.tipo === "atributo" ? c?.modos_atributo : c?.modos_caracteristica)?.find(
+        (m) => m.id === r.modo,
+      )?.nome ?? r.modo,
+  };
+}
+
+function ListaRegras({
+  regras,
+  setRegras,
+}: {
+  regras: RegraComposicao[];
+  setRegras: (v: RegraComposicao[]) => void;
+}) {
+  const n = useNomes();
+  if (regras.length === 0)
+    return <p className="text-sm text-muted-foreground">Nenhuma regra definida.</p>;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {regras.map((r, i) => (
+        <Badge key={i} variant="secondary" className="gap-1 py-1">
+          {FUNCAO_LABELS[r.funcao]}s · {n.chave(r)}: {n.modo(r)}
+          <button
+            type="button"
+            aria-label="Remover regra"
+            onClick={() => setRegras(regras.filter((_, k) => k !== i))}
+            className="rounded-full hover:text-destructive"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+/** Editor da regra do setor clicado no campinho. */
+function EditorRegra({
+  setor,
+  regras,
+  setRegras,
+  aoFechar,
+}: {
+  setor: Funcao;
+  regras: RegraComposicao[];
+  setRegras: (v: RegraComposicao[]) => void;
+  aoFechar: () => void;
+}) {
+  const n = useNomes();
+  const [tipo, setTipo] = useState<"atributo" | "carac">("atributo");
+  const [chave, setChave] = useState("pace");
+  const [modo, setModo] = useState("misto");
+
+  const mudarTipo = (t: "atributo" | "carac") => {
+    setTipo(t);
+    setChave(t === "atributo" ? "pace" : (n.c?.caracteristicas[0]?.id ?? "canhoto"));
+    setModo(t === "atributo" ? "misto" : "pelo_menos_um");
+  };
+  const adicionar = () => {
+    const nova: RegraComposicao = { funcao: setor, tipo, chave, modo };
+    if (regras.some((r) => JSON.stringify(r) === JSON.stringify(nova))) return;
+    setRegras([...regras, nova]);
+  };
+
+  return (
+    <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+      <div className="flex items-center justify-between">
+        <p className="font-semibold">{FUNCAO_LABELS[setor]}s</p>
+        <Button variant="ghost" size="icon" onClick={aoFechar} aria-label="Fechar editor">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-1">
+          <Label>Baseada em</Label>
+          <Select value={tipo} onValueChange={(v) => mudarTipo(v as "atributo" | "carac")}>
+            <SelectTrigger aria-label="Tipo de regra">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="atributo">Um atributo</SelectItem>
+              <SelectItem value="carac">Uma característica</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>{tipo === "atributo" ? "Atributo" : "Característica"}</Label>
+          <Select value={chave} onValueChange={setChave}>
+            <SelectTrigger aria-label="Atributo ou característica">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(tipo === "atributo" ? n.c?.atributos : n.c?.caracteristicas)?.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>Como</Label>
+          <Select value={modo} onValueChange={setModo}>
+            <SelectTrigger aria-label="Modo da regra">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(tipo === "atributo" ? n.c?.modos_atributo : n.c?.modos_caracteristica)?.map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <Button size="sm" onClick={adicionar}>
+        <Plus className="mr-1 h-4 w-4" /> Adicionar regra
+      </Button>
+    </div>
   );
 }
 
@@ -284,103 +507,5 @@ function PerfilAdversario({
         </div>
       )}
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Análise e nota interna da escalação
-// ---------------------------------------------------------------------------
-export function CartaoAnalise({ analise }: { analise: Analise }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          Força do time nesta escalação <Badge variant="outline">só administrador</Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 text-sm">
-        <p>
-          Nota geral: <strong className="text-lg">{analise.nota_geral}</strong> / 100
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[420px]">
-            <thead>
-              <tr className="text-left text-xs uppercase text-muted-foreground">
-                <th className="py-1 font-medium">Momento</th>
-                <th className="font-medium">Time</th>
-                <th className="font-medium">Defesa</th>
-                <th className="font-medium">Meio</th>
-                <th className="font-medium">Ataque</th>
-              </tr>
-            </thead>
-            <tbody>
-              {analise.janelas.map((j) => (
-                <tr key={j.inicio} className="border-t">
-                  <td className="py-1">
-                    {j.inicio}' – {j.fim}'
-                  </td>
-                  <td className="font-medium">{j.nota}</td>
-                  <td>{j.setores.defesa}</td>
-                  <td>{j.setores.meio}</td>
-                  <td>{j.setores.ataque}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {analise.pontos_de_atencao.length > 0 && (
-          <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-            {analise.pontos_de_atencao.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-export function CartaoNota({ partidaId }: { partidaId: string }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["escalacao-nota", partidaId],
-    queryFn: () => fetchNota(partidaId),
-  });
-  const [texto, setTexto] = useState("");
-  useEffect(() => {
-    if (data) setTexto(data.texto);
-  }, [data]);
-  const salvar = useMutation({
-    mutationFn: () => salvarNota(partidaId, texto),
-    onSuccess: () => toast.success("Nota salva (fica só para você)."),
-    onError: (e: Error) => toast.error(e.message),
-  });
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          Nota interna do time <Badge variant="outline">só administrador</Badge>
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Anotações suas sobre esta escalação. Não aparece para os jogadores nem no PDF.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {isLoading ? (
-          <Skeleton className="h-24 w-full" />
-        ) : (
-          <Textarea
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            placeholder="Ex.: cuidado com o lado esquerdo deles; o Kaique está voltando de lesão…"
-            maxLength={4000}
-            rows={4}
-            aria-label="Nota interna do time"
-          />
-        )}
-        <Button size="sm" onClick={() => salvar.mutate()} disabled={salvar.isPending}>
-          <Save className="mr-1 h-4 w-4" /> Salvar nota
-        </Button>
-      </CardContent>
-    </Card>
   );
 }
