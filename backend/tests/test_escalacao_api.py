@@ -71,12 +71,23 @@ def test_usuario_comum_nao_gera_nem_salva(api):
 
 def test_remover_jogadores_gera_erro_claro(api):
     c, pid = api["c"], api["partida"]
-    atacantes = [
-        j["id"] for j in api["jogadores"] if set(j["posicoes"]) & {"atacante", "centro_avante", "ponta_direita", "ponta_esquerda"}
+    # Tira todo mundo que joga de atacante/ponta: sobra gente, mas ninguém para o ataque.
+    sem_ataque = [
+        j["id"]
+        for j in api["jogadores"]
+        if set(j["posicoes"]) & {"atacante", "centro_avante", "ponta_direita", "ponta_esquerda"}
     ]
+    # Repõe jogadores de outras funções para não cair no erro de "poucos jogadores".
+    extras = [
+        {"nome": f"Extra {i}", "telefone": f"(41) 98888-000{i}", "posicoes": ["zagueiro"]}
+        for i in range(4)
+    ]
+    for e in extras:
+        assert c.post("/jogadores/", json=e, headers=api["admin"]).status_code == 201
+    novos = [j["id"] for j in c.get("/jogadores/", headers=api["admin"]).json() if j["nome"].startswith("Extra")]
     r = c.post(
         f"/partidas/{pid}/escalacao/gerar",
-        json={"goleiro_id": api["goleiro"], "remover": atacantes},
+        json={"goleiro_id": api["goleiro"], "remover": sem_ataque, "incluir": novos},
         headers=api["admin"],
     )
     assert r.status_code == 422
