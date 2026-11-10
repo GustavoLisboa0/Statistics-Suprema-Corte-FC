@@ -66,7 +66,7 @@ export function CampoEscalacao({
             <circle
               r="22"
               fill="#6410c9"
-              stroke={novo ? "#f0b411" : "#fff"}
+              stroke={novo ? "#d49c10" : "#fff"}
               strokeWidth={novo ? 4 : 2.5}
             />
             <text

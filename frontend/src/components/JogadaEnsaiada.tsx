@@ -121,7 +121,7 @@ function CampoJogada({
     >
       <defs>
         {[
-          ["j", "#f0b411"],
+          ["j", "#d49c10"],
           ["b", "#ffffff"],
         ].map(([id, cor]) => (
           <marker
@@ -157,7 +157,7 @@ function CampoJogada({
           seta(
             posicaoNoPasso(plano, passo - 1, lugar),
             posicaoNoPasso(plano, passo, lugar),
-            "#f0b411",
+            "#d49c10",
             26,
             `s-${lugar}`,
           ),
@@ -200,12 +200,12 @@ function CampoJogada({
             }}
           >
             {ativo && (
-              <circle r="34" fill="none" stroke="#f0b411" strokeWidth="3" strokeOpacity="0.9" />
+              <circle r="34" fill="none" stroke="#d49c10" strokeWidth="3" strokeOpacity="0.9" />
             )}
             <circle
               r="25"
-              fill={goleiro ? "#f0b411" : "#6410c9"}
-              stroke={ativo || temPapel ? "#f0b411" : "#fff"}
+              fill={goleiro ? "#d49c10" : "#6410c9"}
+              stroke={ativo || temPapel ? "#d49c10" : "#fff"}
               strokeWidth={ativo ? 4 : temPapel ? 3.5 : 2.5}
             />
             <text

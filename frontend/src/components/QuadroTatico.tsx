@@ -111,7 +111,7 @@ function CampoTatico({
           markerHeight="5"
           orient="auto"
         >
-          <path d="M0 0 L10 5 L0 10 z" fill="#f0b411" />
+          <path d="M0 0 L10 5 L0 10 z" fill="#d49c10" />
         </marker>
       </defs>
       <rect x="0" y="0" width="400" height="560" rx="14" fill="#2f7d3b" />
@@ -142,7 +142,7 @@ function CampoTatico({
               y1={de.y}
               x2={de.x + (para.x - de.x) * k}
               y2={de.y + (para.y - de.y) * k}
-              stroke="#f0b411"
+              stroke="#d49c10"
               strokeWidth="3"
               strokeDasharray="7 5"
               strokeOpacity="0.85"
@@ -192,12 +192,12 @@ function CampoTatico({
             }}
           >
             {ativo && (
-              <circle r="34" fill="none" stroke="#f0b411" strokeWidth="3" strokeOpacity="0.9" />
+              <circle r="34" fill="none" stroke="#d49c10" strokeWidth="3" strokeOpacity="0.9" />
             )}
             <circle
               r="25"
-              fill={goleiro ? "#f0b411" : "#6410c9"}
-              stroke={ativo ? "#f0b411" : "#fff"}
+              fill={goleiro ? "#d49c10" : "#6410c9"}
+              stroke={ativo ? "#d49c10" : "#fff"}
               strokeWidth={ativo ? 4 : 2.5}
             />
             <text

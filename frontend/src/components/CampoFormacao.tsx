@@ -72,8 +72,8 @@ export function CampoFormacao({
           >
             <circle
               r={mini ? 26 : 24}
-              fill={lugar === "GOL" ? "#f0b411" : "#6410c9"}
-              stroke={ativa ? "#f0b411" : regra ? "#f0b411" : "#fff"}
+              fill={lugar === "GOL" ? "#d49c10" : "#6410c9"}
+              stroke={ativa ? "#d49c10" : regra ? "#d49c10" : "#fff"}
               strokeWidth={mini ? 7 : ativa ? 5 : regra ? 4 : 2.5}
             />
             {!mini && marcas?.[funcao] && lugar !== "GOL" && (
