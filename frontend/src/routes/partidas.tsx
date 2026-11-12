@@ -15,6 +15,7 @@ import {
   CloudSun,
   CloudOff,
   RefreshCw,
+  MoreVertical,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,9 +57,10 @@ import {
   type MatchInput,
   type Position,
   type Presence,
+  type Status,
 } from "@/lib/football";
 import { cn } from "@/lib/utils";
-import { ResultBadge } from "@/components/ResultBadge";
+import { ResultChip } from "@/components/ResultBadge";
 import { ConfirmarPresenca, PresenceBadge } from "@/components/ConfirmarPresenca";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,8 +68,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { DatePicker } from "@/components/DatePicker";
 import { NumberInput } from "@/components/NumberInput";
@@ -176,8 +183,168 @@ const emptyStat: StatRow = {
   goals_conceded: 0,
 };
 
-const statusVariant = (s: string) =>
-  s === "realizada" ? "default" : s === "cancelada" ? "destructive" : "secondary";
+type Filtro = "todos" | Status;
+
+/** "Sábado, 14/11/2026 às 20:00" — dia da semana + data + horário (se houver). */
+function dataHora(m: Match) {
+  const [y, mo, d] = m.match_date.split("-").map(Number);
+  const dia = new Date(y, (mo ?? 1) - 1, d ?? 1);
+  const semana = Number.isNaN(dia.getTime())
+    ? ""
+    : dia.toLocaleDateString("pt-BR", { weekday: "long" });
+  const prefixo = semana ? `${semana.charAt(0).toUpperCase()}${semana.slice(1)}, ` : "";
+  return `${prefixo}${formatDate(m.match_date)}${m.kickoff_time ? ` às ${m.kickoff_time.slice(0, 5)}` : ""}`;
+}
+
+function localLabel(m: Match) {
+  return `${VENUE_LABELS[m.venue]}${m.venue === "outro" && m.venue_detail ? ` (${m.venue_detail})` : ""}`;
+}
+
+function tipoLabel(m: Match) {
+  return m.kind === "amistoso" ? "Amistoso" : "Campeonato";
+}
+
+/** Etiqueta quadrada de status. `destaque` = dourado, usado no próximo jogo. */
+function StatusTag({ status, destaque = false }: { status: Status; destaque?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md border px-2 py-1 text-xs font-extrabold uppercase tracking-[0.06em]",
+        destaque
+          ? "border-accent bg-accent text-accent-foreground"
+          : status === "cancelada"
+            ? "border-destructive/40 bg-transparent text-destructive"
+            : "bg-raised text-foreground",
+      )}
+    >
+      {STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+const chipClass = "inline-flex items-center rounded-full border bg-raised px-2.5 py-1 text-[13px]";
+
+/** Badge de clima + botão de atualizar (só editor). Some se a partida não tem horário. */
+function WeatherChip({
+  match: m,
+  podeEditar,
+  refreshing,
+  onRefresh,
+}: {
+  match: Match;
+  podeEditar: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
+}) {
+  if (!m.kickoff_time) return null;
+  return (
+    <span className="inline-flex items-center gap-1">
+      {m.weather ? (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-border bg-sky px-2.5 py-1 text-[13px] text-sky-foreground">
+          <CloudSun aria-hidden="true" className="h-4 w-4" />
+          {Math.round(m.weather.temperature)}°C · {m.weather.condition}
+          {m.weather.source === "previsao" && m.weather.rain_chance !== null
+            ? ` · ${m.weather.rain_chance}% chuva`
+            : m.weather.source === "historico" && m.weather.rain_mm !== null
+              ? ` · ${m.weather.rain_mm} mm`
+              : ""}
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[13px] text-muted-foreground">
+          <CloudOff aria-hidden="true" className="h-4 w-4" />
+          Clima indisponível
+        </span>
+      )}
+      {podeEditar && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 rounded-full text-muted-foreground"
+          aria-label="Atualizar clima"
+          title="Atualizar clima"
+          disabled={refreshing}
+          onClick={onRefresh}
+        >
+          <RefreshCw aria-hidden="true" className={cn("h-4 w-4", refreshing && "animate-spin")} />
+        </Button>
+      )}
+    </span>
+  );
+}
+
+/**
+ * Ações de um card de partida. Editor: lápis + menu "⋯" (excluir).
+ * Visualizador: só o olho, que abre a partida em modo leitura.
+ */
+function MatchActions({
+  podeEditar,
+  showEdit = true,
+  onEdit,
+  onDelete,
+}: {
+  podeEditar: boolean;
+  showEdit?: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  if (!podeEditar) {
+    return showEdit ? (
+      <Button
+        size="icon"
+        variant="outline"
+        className="h-11 w-11 rounded-[10px] bg-transparent"
+        aria-label="Ver partida"
+        onClick={onEdit}
+      >
+        <Eye aria-hidden="true" className="h-[18px] w-[18px]" />
+      </Button>
+    ) : null;
+  }
+  return (
+    <div className="flex gap-1.5">
+      {showEdit && (
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-11 w-11 rounded-[10px] bg-transparent"
+          aria-label="Editar partida"
+          onClick={onEdit}
+        >
+          <Pencil aria-hidden="true" className="h-[18px] w-[18px]" />
+        </Button>
+      )}
+      {/* modal={false}: o item abre outro diálogo; com o menu modal o Radix
+        pode deixar `pointer-events: none` preso no body ao trocar de camada. */}
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="outline"
+            className="h-11 w-11 rounded-[10px] bg-transparent"
+            aria-label="Mais ações"
+          >
+            <MoreVertical aria-hidden="true" className="h-[18px] w-[18px]" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {!showEdit && (
+            <DropdownMenuItem onSelect={onEdit}>
+              <Pencil aria-hidden="true" />
+              Editar partida
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            onSelect={onDelete}
+            className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
+          >
+            <Trash2 aria-hidden="true" />
+            Excluir partida
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
 
 function MatchesPage() {
   const qc = useQueryClient();
@@ -186,7 +353,7 @@ function MatchesPage() {
   const { data, isLoading } = useQuery({ queryKey: ["matches"], queryFn: fetchMatches });
   const { data: players } = useQuery({ queryKey: ["players"], queryFn: fetchPlayers });
 
-  const [status, setStatus] = useState("todos");
+  const [status, setStatus] = useState<Filtro>("todos");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Match | null>(null);
   const [form, setForm] = useState<MatchForm>(emptyMatch);
@@ -213,6 +380,15 @@ function MatchesPage() {
     queryKey: ["presences", partidaComPresenca?.id],
     queryFn: () => fetchPresences(partidaComPresenca!.id),
     enabled: !!partidaComPresenca,
+  });
+
+  // Próximo jogo = primeira agendada (fetchMatches já ordena: próximas
+  // primeiro, da mais perto de hoje). Alimenta o card destacado e o "Quem vai".
+  const proximoJogo = (data ?? []).find((m) => m.status === "agendada") ?? null;
+  const { data: presencasProximo, isLoading: carregandoProximo } = useQuery({
+    queryKey: ["presences", proximoJogo?.id],
+    queryFn: () => fetchPresences(proximoJogo!.id),
+    enabled: !!proximoJogo,
   });
 
   const activePlayers = (players ?? []).filter((p) => p.active);
@@ -393,13 +569,32 @@ function MatchesPage() {
   const previaCusto = teamCost(previaValores);
   const previaRateio = feePerPlayer(previaValores);
 
-  const matches = (data ?? []).filter((m) => status === "todos" || m.status === status);
+  const allMatches = data ?? [];
+  const matches = allMatches.filter((m) => status === "todos" || m.status === status);
+  const contagem: Record<Filtro, number> = {
+    todos: allMatches.length,
+    agendada: allMatches.filter((m) => m.status === "agendada").length,
+    realizada: allMatches.filter((m) => m.status === "realizada").length,
+    cancelada: allMatches.filter((m) => m.status === "cancelada").length,
+  };
+  const filtros: Filtro[] = ["todos", ...STATUSES];
 
-  // Seções fixas: Agendadas, Realizadas e Canceladas (nessa ordem).
-  const matchGroups = STATUSES.map((s) => ({
-    status: s,
-    matches: matches.filter((m) => m.status === s),
-  })).filter((g) => g.matches.length > 0);
+  // Seções fixas: Agendadas, Realizadas e Canceladas (nessa ordem), filtradas
+  // pela pílula ativa.
+  const agendadas = matches.filter((m) => m.status === "agendada");
+  const realizadas = matches.filter((m) => m.status === "realizada");
+  const canceladas = matches.filter((m) => m.status === "cancelada");
+
+  // "Quem vai" do próximo jogo: confirmados primeiro, depois a espera.
+  const nomePorJogador = new Map((players ?? []).map((p) => [p.id, p.nickname || p.name] as const));
+  const listaProximo = (presencasProximo ?? [])
+    .filter((p) => p.status !== "ausente")
+    .sort((a, b) => (a.status === b.status ? 0 : a.status === "confirmado" ? -1 : 1));
+  const confirmadosProximo = listaProximo.filter((p) => p.status === "confirmado");
+  const esperaProximo = listaProximo.length - confirmadosProximo.length;
+  // Mesma conta da lista do diálogo: goleiro não ocupa vaga de linha.
+  const linhaProximo = confirmadosProximo.filter((p) => p.position !== "goleiro").length;
+  const mostrarQuemVai = !!proximoJogo && (status === "todos" || status === "agendada");
 
   // Jogadores do lançamento de estatísticas, agrupados por setor do campo.
   const playersByCategory = CATEGORIES.map((cat) => ({
@@ -464,159 +659,341 @@ function MatchesPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl">Partidas</h1>
-          <p className="text-sm text-muted-foreground">Calendário, resultados e estatísticas</p>
+          <p className="mb-1.5 text-[13px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            Calendário e resultados
+          </p>
+          <h1 className="text-3xl leading-tight">Partidas</h1>
         </div>
-        <Button onClick={openNew} className={podeEditar ? undefined : "hidden"}>
-          <Plus className="mr-1 h-4 w-4" /> Nova partida
-        </Button>
+        {podeEditar && (
+          <Button onClick={openNew} className="min-h-11 gap-2 rounded-[10px] px-5 font-extrabold">
+            <Plus aria-hidden="true" className="h-[18px] w-[18px]" /> Nova partida
+          </Button>
+        )}
       </div>
 
-      <Select value={status} onValueChange={setStatus}>
-        <SelectTrigger className="md:w-56">
-          <SelectValue placeholder="Status" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="todos">Todos os status</SelectItem>
-          {STATUSES.map((s) => (
-            <SelectItem key={s} value={s}>
-              {STATUS_LABELS[s]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div role="group" aria-label="Filtrar partidas" className="flex flex-wrap gap-2">
+        {filtros.map((f) => {
+          const ativo = status === f;
+          return (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={ativo}
+              onClick={() => setStatus(f)}
+              className={cn(
+                "min-h-10 rounded-full border px-4 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                ativo
+                  ? "border-accent bg-accent font-bold text-accent-foreground"
+                  : "bg-card font-medium text-foreground hover:bg-raised",
+              )}
+            >
+              {f === "todos" ? "Todas" : STATUS_LABELS_PLURAL[f]} · {contagem[f]}
+            </button>
+          );
+        })}
+      </div>
 
       {isLoading ? (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-3">
           {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-20 w-full" />
+            <Skeleton key={i} className="h-24 w-full rounded-2xl" />
           ))}
         </div>
       ) : matches.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            {(data ?? []).length === 0
-              ? "Nenhuma partida cadastrada ainda."
-              : "Nenhuma partida com esse status."}
-          </CardContent>
-        </Card>
+        <div className="rounded-2xl border bg-card px-5 py-10 text-center text-muted-foreground">
+          {allMatches.length === 0
+            ? "Nenhuma partida cadastrada ainda."
+            : "Nenhuma partida com esse status."}
+        </div>
       ) : (
-        <div className="space-y-6">
-          {matchGroups.map((g) => (
-            <div key={g.status}>
-              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                {STATUS_LABELS_PLURAL[g.status]}
-                <Badge variant="outline" className="font-normal">
-                  {g.matches.length}
-                </Badge>
-              </h2>
-              <div className="space-y-3">
-                {g.matches.map((m) => (
-                  <Card key={m.id}>
-                    <CardContent className="flex flex-wrap items-center gap-4 p-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold">{matchTitle(m)}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <Badge variant={statusVariant(m.status)}>{STATUS_LABELS[m.status]}</Badge>
-                          <span className="text-sm text-muted-foreground">
-                            {formatDate(m.match_date)}
-                            {m.kickoff_time && ` às ${m.kickoff_time.slice(0, 5)}`}
+        <div className="flex flex-wrap items-start gap-6">
+          <div className="flex min-w-0 flex-[999_1_620px] flex-col gap-6">
+            {agendadas.length > 0 && (
+              <section aria-labelledby="sec-agendadas" className="flex flex-col gap-3">
+                <h2 id="sec-agendadas" className="text-[15px] leading-tight">
+                  Agendadas
+                </h2>
+                {agendadas.map((m) => {
+                  const fee = feePerPlayer(m);
+                  if (m.id === proximoJogo?.id) {
+                    const slots = m.line_slots ?? 0;
+                    const pct = slots ? Math.min(100, Math.round((linhaProximo / slots) * 100)) : 0;
+                    return (
+                      <article
+                        key={m.id}
+                        aria-label={`Próximo jogo: ${matchTitle(m)}`}
+                        className="flex flex-col gap-4 rounded-2xl border border-accent bg-card p-5 md:p-6"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2.5">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <StatusTag status={m.status} destaque />
+                            <span className="text-sm text-muted-foreground">{dataHora(m)}</span>
+                          </div>
+                          <MatchActions
+                            podeEditar={podeEditar}
+                            onEdit={() => openEdit(m)}
+                            onDelete={() => setToDelete(m)}
+                          />
+                        </div>
+                        <h3 className="text-xl leading-tight">
+                          Suprema Corte{" "}
+                          <span aria-hidden="true" className="text-accent">
+                            ×
                           </span>
+                          <span className="sr-only">contra</span> {m.opponent}
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={chipClass}>{localLabel(m)}</span>
+                          <span className={chipClass}>{MANDO_LABELS[m.mando]}</span>
+                          <span className={chipClass}>{tipoLabel(m)}</span>
+                          <WeatherChip
+                            match={m}
+                            podeEditar={podeEditar}
+                            refreshing={
+                              refreshWeather.isPending && refreshWeather.variables === m.id
+                            }
+                            onRefresh={() => refreshWeather.mutate(m.id)}
+                          />
                         </div>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                          <Badge variant="outline">
-                            {VENUE_LABELS[m.venue]}
-                            {m.venue === "outro" && m.venue_detail ? ` (${m.venue_detail})` : ""}
-                          </Badge>
-                          <Badge variant="outline">{MANDO_LABELS[m.mando]}</Badge>
-                          <Badge variant="outline">
-                            {m.kind === "amistoso" ? "Amistoso" : "Campeonato"}
-                          </Badge>
-                        </div>
-                        {m.kickoff_time && (
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            {m.weather ? (
-                              <Badge
-                                variant="outline"
-                                className="gap-1.5 border-sky-300 bg-sky-100 font-normal text-sky-900 dark:border-sky-400/30 dark:bg-sky-400/15 dark:text-sky-200"
+                        <div className="flex flex-wrap items-center gap-4 border-t pt-4">
+                          <div className="flex min-w-0 flex-[1_1_220px] flex-col gap-2">
+                            <div className="flex flex-wrap justify-between gap-x-3 text-[13px] text-muted-foreground">
+                              <span>Confirmados</span>
+                              <span>
+                                <strong className="text-foreground">
+                                  {carregandoProximo ? "…" : linhaProximo}
+                                </strong>
+                                {slots ? ` / ${slots}` : ""}
+                                {fee !== null && ` · ${formatMoney(fee)} por jogador`}
+                              </span>
+                            </div>
+                            {slots > 0 && (
+                              <div
+                                role="img"
+                                aria-label={`${linhaProximo} de ${slots} vagas preenchidas`}
+                                className="h-2 overflow-hidden rounded bg-raised"
                               >
-                                <CloudSun className="h-4 w-4 text-sky-600 dark:text-sky-300" />
-                                {Math.round(m.weather.temperature)}°C · {m.weather.condition}
-                                {m.weather.source === "previsao" && m.weather.rain_chance !== null
-                                  ? ` · ${m.weather.rain_chance}% chuva`
-                                  : m.weather.source === "historico" && m.weather.rain_mm !== null
-                                    ? ` · ${m.weather.rain_mm}mm chuva`
-                                    : ""}
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="gap-1.5 font-normal text-muted-foreground"
-                              >
-                                <CloudOff className="h-4 w-4" />
-                                Clima indisponível
-                              </Badge>
-                            )}
-                            {podeEditar && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-6 w-6"
-                                title="Atualizar clima"
-                                disabled={refreshWeather.isPending}
-                                onClick={() => refreshWeather.mutate(m.id)}
-                              >
-                                <RefreshCw className="h-3 w-3" />
-                              </Button>
+                                <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                      {m.status === "realizada" && (
-                        <div className="flex items-center gap-2">
-                          <span className="font-display text-3xl">
-                            {m.goals_for ?? 0} × {m.goals_against ?? 0}
-                          </span>
-                          <ResultBadge match={m} />
+                          <Button
+                            onClick={() => setConfirmando(m)}
+                            className="min-h-11 gap-2 rounded-[10px] px-5 font-extrabold"
+                          >
+                            <UserCheck aria-hidden="true" className="h-4 w-4" />
+                            Confirmar presença
+                          </Button>
                         </div>
-                      )}
-                      {m.status === "agendada" && (
+                      </article>
+                    );
+                  }
+                  return (
+                    <article
+                      key={m.id}
+                      aria-label={matchTitle(m)}
+                      className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl border bg-card px-5 py-4 md:px-6"
+                    >
+                      <StatusTag status={m.status} />
+                      <div className="flex min-w-0 flex-[1_1_240px] flex-col gap-0.5">
+                        <h3 className="text-sm leading-snug">Suprema Corte × {m.opponent}</h3>
+                        <span className="text-[13px] text-muted-foreground">
+                          {dataHora(m)} · {tipoLabel(m)} · {MANDO_LABELS[m.mando]} · {localLabel(m)}
+                        </span>
+                      </div>
+                      <WeatherChip
+                        match={m}
+                        podeEditar={podeEditar}
+                        refreshing={refreshWeather.isPending && refreshWeather.variables === m.id}
+                        onRefresh={() => refreshWeather.mutate(m.id)}
+                      />
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <Button
                           variant="outline"
-                          size="sm"
                           onClick={() => setConfirmando(m)}
-                          className="gap-1"
+                          className="min-h-11 gap-2 rounded-[10px] bg-transparent"
                         >
-                          <UserCheck className="h-4 w-4" />
+                          <UserCheck aria-hidden="true" className="h-4 w-4" />
                           Confirmar presença
                         </Button>
-                      )}
-                      <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" onClick={() => openEdit(m)}>
-                          {podeEditar ? (
-                            <Pencil className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
+                        <MatchActions
+                          podeEditar={podeEditar}
+                          onEdit={() => openEdit(m)}
+                          onDelete={() => setToDelete(m)}
+                        />
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            )}
+
+            {realizadas.length > 0 && (
+              <section aria-labelledby="sec-realizadas" className="flex flex-col gap-3">
+                <h2 id="sec-realizadas" className="text-[15px] leading-tight">
+                  Realizadas
+                </h2>
+                <ul className="rounded-2xl border bg-card px-5 py-1.5 md:px-6">
+                  {realizadas.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t py-4 first:border-t-0"
+                    >
+                      <span className="inline-flex w-8 shrink-0 justify-center">
+                        <ResultChip match={m} />
+                      </span>
+                      <div className="flex min-w-0 flex-[1_1_220px] flex-col gap-0.5">
+                        <span className="text-[15px] font-semibold">{m.opponent}</span>
+                        <span className="text-[13px] text-muted-foreground">
+                          {formatDate(m.match_date)}
+                          {m.kickoff_time && ` às ${m.kickoff_time.slice(0, 5)}`} · {tipoLabel(m)} ·{" "}
+                          {MANDO_LABELS[m.mando]} · {localLabel(m)}
+                        </span>
+                      </div>
+                      <WeatherChip
+                        match={m}
+                        podeEditar={podeEditar}
+                        refreshing={refreshWeather.isPending && refreshWeather.variables === m.id}
+                        onRefresh={() => refreshWeather.mutate(m.id)}
+                      />
+                      <span className="num w-16 text-right text-[28px] leading-none">
+                        {m.goals_for ?? 0}–{m.goals_against ?? 0}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          variant="ghost"
+                          onClick={() => openEdit(m)}
+                          className="min-h-11 px-2.5 text-[13px] font-semibold text-primary"
+                        >
+                          Estatísticas
+                          <span className="sr-only"> da partida contra {m.opponent}</span>
                         </Button>
                         {podeEditar && (
-                          <Button size="icon" variant="ghost" onClick={() => setToDelete(m)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          <MatchActions
+                            podeEditar={podeEditar}
+                            showEdit={false}
+                            onEdit={() => openEdit(m)}
+                            onDelete={() => setToDelete(m)}
+                          />
                         )}
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {canceladas.length > 0 && (
+              <section aria-labelledby="sec-canceladas" className="flex flex-col gap-3">
+                <h2 id="sec-canceladas" className="text-[15px] leading-tight text-muted-foreground">
+                  Canceladas
+                </h2>
+                <ul className="rounded-2xl border bg-card px-5 py-1.5 md:px-6">
+                  {canceladas.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex flex-wrap items-center gap-x-4 gap-y-2.5 border-t py-3 first:border-t-0"
+                    >
+                      <StatusTag status={m.status} />
+                      <div className="flex min-w-0 flex-[1_1_220px] flex-col gap-0.5">
+                        <span className="text-sm font-medium text-muted-foreground">
+                          Suprema Corte × {m.opponent}
+                        </span>
+                        <span className="text-[13px] text-muted-foreground">
+                          {dataHora(m)} · {tipoLabel(m)} · {localLabel(m)}
+                        </span>
+                      </div>
+                      <MatchActions
+                        podeEditar={podeEditar}
+                        onEdit={() => openEdit(m)}
+                        onDelete={() => setToDelete(m)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+
+          {mostrarQuemVai && proximoJogo && (
+            <aside
+              aria-labelledby="quem-vai-titulo"
+              className="flex min-w-0 flex-[1_1_320px] flex-col gap-3.5 rounded-2xl border bg-card p-5 md:p-6"
+            >
+              <div>
+                <h2 id="quem-vai-titulo" className="mb-1 text-[15px] leading-tight">
+                  Quem vai · {formatDate(proximoJogo.match_date).slice(0, 5)}
+                </h2>
+                <p className="text-[13px] text-muted-foreground">
+                  {proximoJogo.opponent} · {confirmadosProximo.length}{" "}
+                  {confirmadosProximo.length === 1 ? "confirmado" : "confirmados"}
+                  {esperaProximo > 0 && `, ${esperaProximo} na espera`}
+                </p>
               </div>
-            </div>
-          ))}
+              {carregandoProximo ? (
+                <div className="flex flex-col gap-2">
+                  {[0, 1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-8 w-full" />
+                  ))}
+                </div>
+              ) : listaProximo.length === 0 ? (
+                <p className="border-t pt-3 text-sm text-muted-foreground">
+                  Ninguém confirmou ainda.
+                </p>
+              ) : (
+                <ul className="flex flex-col">
+                  {listaProximo.map((pr) => {
+                    const pago = pr.payment_status === "pago";
+                    return (
+                      <li key={pr.id} className="flex items-center gap-2.5 border-t py-2.5 text-sm">
+                        <span className="min-w-0 flex-grow truncate font-semibold">
+                          {nomePorJogador.get(pr.player_id) ?? "Jogador"}
+                        </span>
+                        {pr.status === "espera" && (
+                          <span className="rounded-[5px] border border-accent px-1.5 py-0.5 text-xs font-bold">
+                            Espera
+                          </span>
+                        )}
+                        {pr.position && (
+                          <span
+                            title={POSITION_LABELS[pr.position]}
+                            className="rounded-[5px] border px-1.5 py-0.5 text-xs font-bold text-muted-foreground"
+                          >
+                            {POSITION_ABBR[pr.position]}
+                          </span>
+                        )}
+                        <span
+                          className={cn(
+                            "w-16 text-right text-xs font-bold",
+                            pago ? "text-primary" : "text-muted-foreground",
+                          )}
+                        >
+                          {pago ? "Pago" : "Pendente"}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {podeEditar && (
+                <p className="text-xs text-muted-foreground">
+                  Gerencie presença e pagamento em{" "}
+                  <button
+                    type="button"
+                    onClick={() => openEdit(proximoJogo)}
+                    className="font-semibold text-primary underline-offset-2 hover:underline"
+                  >
+                    editar partida.
+                  </button>
+                </p>
+              )}
+            </aside>
+          )}
         </div>
       )}
-
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[52rem]">
           <DialogHeader>
@@ -790,7 +1167,7 @@ function MatchesPage() {
                           {formatMoney(previaCusto)}
                         </span>{" "}
                         ·{" "}
-                        <span className="font-medium text-accent">
+                        <span className="font-semibold text-primary">
                           {formatMoney(previaRateio)} por jogador
                         </span>
                       </>
@@ -839,7 +1216,7 @@ function MatchesPage() {
               <>
                 <Separator className="my-2" />
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-xl">Jogadores</h3>
+                  <h3 className="text-base leading-tight">Jogadores</h3>
                   <div className="flex items-center gap-3 text-sm">
                     <span className="text-muted-foreground">
                       Confirmados:{" "}
@@ -847,7 +1224,7 @@ function MatchesPage() {
                       {editing.line_slots ? ` / ${editing.line_slots}` : ""}
                     </span>
                     {feePerPlayer(editing) !== null && (
-                      <span className="font-display text-lg text-accent">
+                      <span className="num text-xl text-primary">
                         {formatMoney(feePerPlayer(editing)!)}
                       </span>
                     )}
@@ -963,7 +1340,7 @@ function MatchesPage() {
                       </thead>
                       {playersByCategory.map((g) => (
                         <tbody key={g.category}>
-                          <tr className="border-b bg-muted/40">
+                          <tr className="border-b bg-raised">
                             <td
                               colSpan={4 + (editing.status === "realizada" ? 8 : 0) + 1}
                               className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
@@ -1107,8 +1484,8 @@ function MatchesPage() {
                                         className={cn(
                                           "h-7 gap-1",
                                           pago
-                                            ? "border-emerald-600/50 text-emerald-700 dark:text-emerald-400"
-                                            : "border-amber-500/50 text-amber-700 dark:text-amber-400",
+                                            ? "border-accent font-semibold text-primary"
+                                            : "border-warn-border bg-warn text-warn-foreground hover:bg-warn/80",
                                         )}
                                       >
                                         {salvandoLinha && (
@@ -1119,10 +1496,9 @@ function MatchesPage() {
                                     ) : (
                                       <Badge
                                         className={cn(
-                                          "border-transparent",
                                           pago
-                                            ? "bg-emerald-600 text-white hover:bg-emerald-600 dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-500"
-                                            : "bg-amber-500 text-amber-950 hover:bg-amber-500",
+                                            ? "border-accent bg-transparent text-primary hover:bg-transparent"
+                                            : "border-warn-border bg-warn text-warn-foreground hover:bg-warn",
                                         )}
                                       >
                                         {pago ? "Pago" : "Pendente"}
@@ -1204,6 +1580,7 @@ function MatchesPage() {
                                         variant="ghost"
                                         className="h-7 w-7"
                                         title="Cancelar presença (marca como não vai)"
+                                        aria-label={`Cancelar presença de ${p.nickname || p.name}`}
                                         disabled={salvandoLinha}
                                         onClick={() =>
                                           mudarStatus.mutate({ playerId: p.id, status: "ausente" })
@@ -1240,6 +1617,7 @@ function MatchesPage() {
                                           variant="ghost"
                                           className="h-7 w-7"
                                           title="Reverter — confirmar de novo"
+                                          aria-label={`Confirmar ${p.nickname || p.name} de novo`}
                                           disabled={salvandoLinha}
                                           onClick={() =>
                                             adicionarPresenca.mutate({
@@ -1259,6 +1637,7 @@ function MatchesPage() {
                                         variant="ghost"
                                         className="h-7 w-7"
                                         title="Retirar da lista"
+                                        aria-label={`Retirar ${p.nickname || p.name} da lista`}
                                         disabled={salvandoLinha}
                                         onClick={() => setToRemoverPresenca(pr)}
                                       >

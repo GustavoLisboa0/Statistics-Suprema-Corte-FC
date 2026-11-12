@@ -17,6 +17,7 @@ import {
   type PresenceStatus,
 } from "@/lib/football";
 import { gerarPixCopiaECola } from "@/lib/pix";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -148,7 +149,7 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
           // linha), o que empurra o diálogo inteiro e gera a barra horizontal —
           // mesmo com truncate na caixinha lá embaixo.
           <div className="min-w-0 space-y-4">
-            <div className="rounded-lg border p-3 text-sm">
+            <div className="rounded-xl border bg-raised p-3.5 text-sm">
               <div className="font-semibold">{matchTitle(match)}</div>
               {salvo.status === "espera" ? (
                 <p className="mt-1 text-muted-foreground">
@@ -172,11 +173,13 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
                 <div className="flex items-center justify-between">
                   <Label>Pagamento via PIX</Label>
                   {valor !== null && (
-                    <span className="font-display text-xl text-accent">{formatMoney(valor)}</span>
+                    <span className="num text-2xl leading-none text-primary">
+                      {formatMoney(valor)}
+                    </span>
                   )}
                 </div>
 
-                <div className="flex flex-col items-center gap-3 rounded-lg border p-4">
+                <div className="flex flex-col items-center gap-3 rounded-xl border p-4">
                   <div className="rounded-md bg-white p-2">
                     <QRCodeSVG value={pixCode} size={176} marginSize={0} />
                   </div>
@@ -190,17 +193,21 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
                     Pix copia e cola
                   </Label>
                   <div className="flex items-center gap-2">
-                    <div className="min-w-0 flex-1 truncate rounded-md border bg-muted/40 px-2.5 py-2 font-mono text-xs">
+                    <div className="min-w-0 flex-1 truncate rounded-md border bg-raised px-2.5 py-2.5 font-mono text-xs">
                       {pixCode}
                     </div>
-                    <Button variant="outline" size="sm" onClick={copiarCodigo} className="shrink-0">
+                    <Button
+                      variant="outline"
+                      onClick={copiarCodigo}
+                      className="min-h-11 shrink-0 bg-transparent"
+                    >
                       {copiado ? (
                         <>
-                          <Check className="mr-1 h-3.5 w-3.5" /> Copiado
+                          <Check aria-hidden="true" className="mr-1 h-4 w-4" /> Copiado
                         </>
                       ) : (
                         <>
-                          <Copy className="mr-1 h-3.5 w-3.5" /> Copiar
+                          <Copy aria-hidden="true" className="mr-1 h-4 w-4" /> Copiar
                         </>
                       )}
                     </Button>
@@ -225,15 +232,19 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
               <div className="grid grid-cols-2 gap-2">
                 <Button
                   type="button"
+                  aria-pressed={intencao === "sim"}
                   variant={intencao === "sim" ? "default" : "outline"}
                   onClick={() => setIntencao("sim")}
+                  className={cn("min-h-11 rounded-[10px]", intencao === "sim" && "font-bold")}
                 >
                   Vou jogar
                 </Button>
                 <Button
                   type="button"
+                  aria-pressed={intencao === "nao"}
                   variant={intencao === "nao" ? "default" : "outline"}
                   onClick={() => setIntencao("nao")}
+                  className={cn("min-h-11 rounded-[10px]", intencao === "nao" && "font-bold")}
                 >
                   Não vou
                 </Button>
@@ -265,9 +276,11 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
                 </div>
 
                 {valor !== null && (
-                  <div className="flex items-center justify-between rounded-lg border p-3 text-sm">
+                  <div className="flex items-center justify-between rounded-xl border bg-raised p-3.5 text-sm">
                     <span className="text-muted-foreground">Sua parte no rateio</span>
-                    <span className="font-display text-xl text-accent">{formatMoney(valor)}</span>
+                    <span className="num text-2xl leading-none text-primary">
+                      {formatMoney(valor)}
+                    </span>
                   </div>
                 )}
 
@@ -278,12 +291,14 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
                   <ul className="space-y-1.5 text-xs text-muted-foreground">
                     {TERMOS.map((termo) => (
                       <li key={termo} className="flex gap-2">
-                        <span className="text-accent">•</span>
+                        <span aria-hidden="true" className="text-accent">
+                          •
+                        </span>
                         <span>{termo}</span>
                       </li>
                     ))}
                   </ul>
-                  <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+                  <label className="mt-3 flex min-h-11 cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm">
                     <Checkbox
                       checked={aceitou}
                       onCheckedChange={(v) => setAceitou(v === true)}
@@ -297,17 +312,29 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="gap-2">
           {salvo ? (
-            <Button onClick={() => onOpenChange(false)}>Fechar</Button>
+            <Button onClick={() => onOpenChange(false)} className="min-h-11 rounded-[10px] px-5">
+              Fechar
+            </Button>
           ) : (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                className="min-h-11 rounded-[10px] bg-transparent px-5"
+              >
                 Cancelar
               </Button>
               {player && (
-                <Button onClick={() => salvar.mutate()} disabled={!podeSalvar || salvar.isPending}>
-                  {salvar.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                <Button
+                  onClick={() => salvar.mutate()}
+                  disabled={!podeSalvar || salvar.isPending}
+                  className="min-h-11 rounded-[10px] px-5 font-extrabold"
+                >
+                  {salvar.isPending && (
+                    <Loader2 aria-hidden="true" className="mr-1 h-4 w-4 animate-spin" />
+                  )}
                   {salvar.isPending ? "Salvando..." : "Salvar"}
                 </Button>
               )}
@@ -321,19 +348,26 @@ export function ConfirmarPresenca({ match, player, current, open, onOpenChange }
 
 /** Tag de status de presença, reaproveitada na lista. */
 export function PresenceBadge({ status }: { status: PresenceStatus }) {
+  // Por token (redesign 2026-11): confirmado no dourado cheio, espera só com
+  // contorno dourado, "não vai" apagado. O `hover:` repete a base porque a tag
+  // não é clicável e o `Badge` traz hover próprio.
   if (status === "confirmado") {
     return (
-      <Badge className="border-transparent bg-emerald-600 text-white hover:bg-emerald-600 dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-500">
+      <Badge className="border-accent bg-accent text-accent-foreground hover:bg-accent">
         Confirmado
       </Badge>
     );
   }
   if (status === "espera") {
     return (
-      <Badge variant="outline" className="border-accent/50 text-foreground">
+      <Badge variant="outline" className="border-accent bg-transparent text-foreground">
         Espera
       </Badge>
     );
   }
-  return <Badge variant="secondary">Não vai</Badge>;
+  return (
+    <Badge variant="outline" className="bg-raised font-normal text-muted-foreground">
+      Não vai
+    </Badge>
+  );
 }
