@@ -1,12 +1,18 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Instagram, LogOut, Menu, Moon, Sun, User } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { logout, PAPEL_LABELS } from "@/lib/auth";
 import { useUsuario } from "@/lib/useUsuario";
-import { fetchMeuJogador } from "@/lib/football";
+import {
+  fetchActiveInjuries,
+  fetchAllStats,
+  fetchMatches,
+  fetchMeuJogador,
+  fetchPlayers,
+} from "@/lib/football";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +42,32 @@ function WhatsAppIcon(props: React.SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/**
+ * Dados que cada tela pede ao abrir. Ao passar o mouse (ou encostar o dedo)
+ * no item do menu, as buscas já saem — quando o clique chega, os dados
+ * costumam estar prontos. Usa as mesmas chaves das telas, então o cache é
+ * compartilhado; com o `staleTime` global, não busca de novo o que ainda
+ * está fresco.
+ */
+const PRE_CARGA: Record<string, { key: string[]; fn: () => Promise<unknown> }[]> = {
+  "/": [
+    { key: ["players"], fn: fetchPlayers },
+    { key: ["matches"], fn: fetchMatches },
+    { key: ["stats"], fn: fetchAllStats },
+    { key: ["active-injuries"], fn: fetchActiveInjuries },
+  ],
+  "/jogadores": [
+    { key: ["players"], fn: fetchPlayers },
+    { key: ["stats"], fn: fetchAllStats },
+    { key: ["active-injuries"], fn: fetchActiveInjuries },
+  ],
+  "/partidas": [
+    { key: ["matches"], fn: fetchMatches },
+    { key: ["players"], fn: fetchPlayers },
+  ],
+  "/escalacao": [{ key: ["matches"], fn: fetchMatches }],
+};
 
 function isAtivo(pathname: string, url: string) {
   return url === "/" ? pathname === "/" : pathname.startsWith(url);
@@ -127,7 +159,14 @@ function Marca() {
 export function AppTopbar() {
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [menuAberto, setMenuAberto] = useState(false);
+
+  const preCarregar = (url: string) => {
+    for (const { key, fn } of PRE_CARGA[url] ?? []) {
+      void qc.prefetchQuery({ queryKey: key, queryFn: fn });
+    }
+  };
 
   const usuario = useUsuario();
   // Nome escolhido de verdade é o do cadastro de jogador (editável em
@@ -170,6 +209,7 @@ export function AppTopbar() {
                   <Link
                     key={item.url}
                     to={item.url}
+                    onTouchStart={() => preCarregar(item.url)}
                     onClick={() => setMenuAberto(false)}
                     aria-current={ativo ? "page" : undefined}
                     className={cn(
@@ -195,6 +235,9 @@ export function AppTopbar() {
               <Link
                 key={item.url}
                 to={item.url}
+                onMouseEnter={() => preCarregar(item.url)}
+                onFocus={() => preCarregar(item.url)}
+                onTouchStart={() => preCarregar(item.url)}
                 aria-current={ativo ? "page" : undefined}
                 className={cn(
                   "flex min-h-16 items-center border-b-2 px-3.5 text-sm transition-colors",

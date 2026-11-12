@@ -3,6 +3,22 @@ import { getAccessToken, tentarRenovarSessao, logout } from "@/lib/auth";
 // Ajuste em .env: VITE_API_BASE_URL=http://127.0.0.1:8000
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
+/**
+ * "Acorda" o servidor. No plano gratuito da Render o backend hiberna depois de
+ * ~15 min sem uso e a primeira requisição leva dezenas de segundos para
+ * ligá-lo. Disparar um ping assim que o site abre (inclusive na tela de
+ * login) faz esse tempo correr enquanto a pessoa digita a senha, em vez de
+ * aparecer como uma tela travada depois do login. Resposta ignorada
+ * (`no-cors`: só precisa chegar no servidor).
+ */
+export function acordarServidor(): void {
+  try {
+    void fetch(`${API_BASE}/`, { mode: "no-cors", cache: "no-store" }).catch(() => {});
+  } catch {
+    // sem rede ou fetch indisponível: não faz diferença
+  }
+}
+
 async function fazerRequisicao(path: string, options: RequestInit): Promise<Response> {
   const token = getAccessToken();
   const headers = new Headers(options.headers);

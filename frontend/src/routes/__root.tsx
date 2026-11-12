@@ -9,9 +9,10 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import { acordarServidor } from "@/lib/api";
 import { Toaster } from "@/components/ui/sonner";
 import { AppTopbar } from "@/components/AppTopbar";
 
@@ -143,6 +144,11 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // Uma vez por abertura do site: já liga o servidor (plano gratuito hiberna).
+  useEffect(() => {
+    acordarServidor();
+  }, []);
   // Telas públicas (fora do app): sem barra de topo.
   const semShell = pathname === "/login" || pathname === "/cadastro";
 
