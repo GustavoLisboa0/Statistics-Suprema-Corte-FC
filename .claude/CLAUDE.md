@@ -4,7 +4,7 @@ Arquivo de memória entre sessões. Registra permissões concedidas, decisões
 tomadas, features entregues e erros já diagnosticados (com a solução), para
 não repetir investigação.
 
-Última atualização: 2026-11-12
+Última atualização: 2026-11-13
 
 > **Manutenção obrigatória (instrução do usuário, 2026-08-07):** este arquivo
 > deve ser atualizado sempre que houver algo que caiba nas seções abaixo —
@@ -284,16 +284,22 @@ menor que o calendário — foi medido: calendário 235,6px dentro de popover de
 **Como agir:** conferir `borderRadius` computado de `<td>` e `<button>` do dia
 antes de mexer em tamanho de container.
 
-### 4.4 Rotas protegidas redirecionam no SSR
+### 4.4 Rotas protegidas redirecionam no SSR — **corrigido em 2026-11-12 (seção 5.11)**
 
 `beforeLoad` chama `isAutenticado()`, que lê `localStorage` → sempre `false`
-no servidor → hard refresh em `/jogadores` cai no `/login`. É o comportamento
-atual do app (login funciona por navegação client-side).
+no servidor → hard refresh em `/jogadores` caía no `/login` (toda recarga ou
+aba nova pedia login de novo).
 
-**Impacto para testes:** não dá para abrir rota protegida direto no navegador.
-Contorno já usado: trocar temporariamente por `if (false && !isAutenticado())`,
-validar, e **reverter antes de terminar**. Sempre conferir com
-`grep -rn "false &&" frontend/src/` antes de commitar.
+**Correção:** as 5 telas internas (`index`, `jogadores`, `partidas`,
+`escalacao`, `meu-jogador`) têm `ssr: false` no `createFileRoute`, então o
+guard roda só no navegador, onde a sessão existe. F5 mantém a pessoa na mesma
+tela; sem sessão continua indo pro `/login` (conferido). Rota interna nova
+precisa do mesmo `ssr: false`, senão o problema volta.
+
+**Impacto para testes:** agora dá para abrir rota protegida direto no
+navegador (com sessão no `localStorage`). O contorno antigo
+`if (false && !isAutenticado())` não é mais necessário; se aparecer um,
+é resto antigo — `grep -rn "false &&" frontend/src/` antes de commitar.
 
 Não há credenciais de teste disponíveis — não pedir senha ao usuário.
 
@@ -1190,7 +1196,90 @@ telas internas. Ajustes feitos na revisão: contagem de confirmados do
 dashboard passou a ignorar goleiro (igual a partidas), hover dourado dos
 botões outline/ghost, pontuação solta em partidas.
 
+## 5.11 Performance: abertura de telas e cliques, principalmente Escalação (2026-11-12)
+
+Queixa do usuário: demora para abrir as telas e para responder aos cliques,
+sobretudo na Escalação. Diagnóstico medido (não palpite):
+
+- **Produção roda na Render, plano gratuito** (`render.yaml`): hiberna após
+  ~15 min parado (1ª requisição leva dezenas de segundos) e tem CPU
+  reduzida, o que amplifica o solver da escalação. Não dá pra resolver só
+  com código: ver "O que depende de você" abaixo.
+- Local, a API responde em 10–30 ms (SQLite); o custo real vem de rede
+  (Supabase, 1 viagem por `.execute()`), do solver e do cache do front.
+
+**O que foi feito:**
+1. **Cache do React Query** (`router.tsx`): antes `new QueryClient()` sem
+   config (`staleTime` 0) → TODA troca de tela refazia todas as buscas (5+
+   requisições por tela). Agora `staleTime` 30 s, `gcTime` 10 min, sem
+   retry em 4xx (antes 3 tentativas com espera em 404/403), e o catálogo da
+   escalação (`["escalacao-catalogo"]`) vale 1 h. Resultado medido: navegar
+   entre telas já visitadas = 0 requisições. **Efeito colateral aceito:**
+   mudança feita por OUTRA pessoa pode levar até 30 s para aparecer; as
+   próprias mutações continuam invalidando a chave na hora.
+2. **Pré-carga** (`defaultPreload: "intent"` + `PRE_CARGA` em
+   `AppTopbar.tsx`): ao passar o mouse/encostar no item do menu, carrega o
+   código da tela e as consultas dela. Chaves iguais às das telas.
+3. **`acordarServidor()`** (`lib/api.ts`, chamado em `__root.tsx`): ping
+   `no-cors` ao abrir o site, para a Render sair da hibernação enquanto a
+   pessoa digita a senha.
+4. **`ssr: false` nas 5 telas internas** (ver 4.4): fim do "F5 = login de
+   novo".
+5. **Cache de autenticação** (`backend/auth.py`): `usuario_atual` fazia 2
+   viagens ao Supabase (validar token + buscar papel) em TODA requisição.
+   Agora cache em memória token→usuário, TTL 60 s, máx. 500. **Contrapartida:**
+   token revogado ou papel trocado (editor↔visualizador) só vale na API após
+   até 60 s. Token inválido nunca entra no cache. Testes:
+   `tests/test_auth_cache.py` (um deles pegou bug real: devolvia o mesmo
+   objeto guardado no cache).
+6. **Consultas em paralelo** (`routers/escalacao.py`,
+   `_carregar_partida_e_convocados`): a tela e o "Gerar" faziam 5 consultas
+   em fila (partida, jogadores, presença, punições, lesões); agora rodam
+   juntas num `ThreadPoolExecutor` (tempo = o da mais lenta).
+7. **Solver mais rápido** (`escalacao.py`, `_melhorar`): minutos calculados
+   de forma incremental e cópias só das janelas alteradas. **Saída idêntica**
+   — verificado com um "retrato" de 15 cenários (11–14 jogadores de linha,
+   várias sementes, fixos, duração 60, modo manual) comparado antes/depois.
+   Geração de 15 convocados: ~6,2 s → ~3,2 s (−48%); outras requisições
+   durante a geração: ~1,1 s → ~0,45 s.
+8. **GZip** (`main.py`, `GZipMiddleware(minimum_size=1000)`): respostas ~8×
+   menores (ex.: `/estatisticas/` 18 KB → 2,3 KB). CORS conferido.
+
+**Não era o problema:** custo de render no cliente (clique ~0,5 ms + render
+50–80 ms em dev) e bundle (jsPDF/html2canvas já são carregados só ao
+exportar PDF).
+
+**O que depende de você (não dá pra fazer por código):**
+- Render gratuito hiberna. Opções: plano pago (Starter, ~US$ 7/mês, sempre
+  ligado e CPU maior — resolve de vez a lentidão do solver também) ou um
+  monitor gratuito (UptimeRobot) batendo em `https://<serviço>.onrender.com/`
+  a cada 5–10 min para não hibernar. O `acordarServidor()` só ameniza o
+  primeiro acesso.
+- Região: backend (Render), Supabase e Vercel em regiões diferentes somam
+  latência por consulta; conferir se Render e Supabase estão perto (ideal:
+  mesma região).
+
+**Não feito (pensado e descartado por ora):** processo separado para o
+solver (a CPU da Render gratuita é a mesma); poda do estágio 1 do solver
+(poderia mudar a escalação escolhida); incrementalizar o `custo` (ganho ~7%
+para risco de divergir). Se a geração ainda incomodar em produção paga, a
+próxima alavanca é reduzir candidatos no estágio 1 de `_gerar_automatico_base`.
+
+**Como medir de novo:** `LOCAL_DB=1`, subir `backend-local`, logar
+(`admin@suprema.com`) e cronometrar `POST /partidas/{id}/escalacao/gerar`
+com `curl -w "%{time_total}"` (body precisa de `goleiro_id`). Para checar
+que o solver não mudou de resultado, o script de "retrato" (grava a saída
+de `gerar_automatico`/`gerar_escalacao` para vários cenários e compara) está
+no scratchpad da sessão — regerar se mexer em `escalacao.py` de novo.
+**Cuidado ao medir:** não rodar `pytest` em paralelo (usa o solver e infla os
+tempos), e a aba do preview oculta faz `requestAnimationFrame` rodar a ~1 Hz
+(ver 4.5) — para custo de clique, medir o tempo dentro de `el.click()`.
+
 ## 6. Pendências e pontos em aberto
+
+- **Performance (5.11):** mudanças feitas na branch `main` local, **não
+  commitadas** (esperando o usuário pedir). Falta medir em produção (Render
+  + Supabase de verdade): os números acima são do banco local.
 
 - **Redesign (5.10):** commitado em 6 commits por tela (`bac521f` tema e
   barra de topo, `e930ab3` dashboard, `29b81e2` partidas, `bf07be8` elenco,
