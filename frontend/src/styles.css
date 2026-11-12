@@ -5,8 +5,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-display: "Bebas Neue", system-ui, sans-serif;
-  --font-sans: "Barlow", system-ui, sans-serif;
+  /* Redesign 2026-11: Orbitron nos títulos, Archivo (variável, com eixo de
+     largura) no texto. Números grandes usam a Archivo condensada (.num). */
+  --font-display: "Orbitron", "Archivo", system-ui, sans-serif;
+  --font-sans: "Archivo", system-ui, sans-serif;
 }
 
 /*
@@ -66,30 +68,63 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  /* Superfície um degrau acima do card (trilhos, linhas de lista, chips). */
+  --color-raised: var(--raised);
+  /* Bloco roxo de destaque (próximo jogo, painel do login) — igual nos dois temas. */
+  --color-hero: var(--hero);
+  --color-hero-foreground: var(--hero-foreground);
+  --color-hero-muted: var(--hero-muted);
+  /* Barra de saldo negativo nos gráficos (o positivo é o dourado). */
+  --color-chart-neg: var(--chart-neg);
+  /* Badge de clima (antes sky-* cru em partidas.tsx). */
+  --color-sky: var(--sky);
+  --color-sky-foreground: var(--sky-foreground);
+  --color-sky-border: var(--sky-border);
+  /* Aviso (caixa "Atenção" da escalação). */
+  --color-warn: var(--warn);
+  --color-warn-foreground: var(--warn-foreground);
+  --color-warn-border: var(--warn-border);
 }
 
+/*
+ * Paleta do redesign (2026-11, aprovada na prévia "Redesign Suprema Corte FC").
+ * Claro: fundo lavanda bem claro, cards brancos, texto roxo-escuro, CTA roxo.
+ * Escuro: fundo quase preto arroxeado, cards um degrau acima, CTA dourado.
+ * Dourado único em todo o app: oklch(0.727 0.147 82) = #d49c10.
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.22 0.1 312);
+  --radius: 0.75rem;
+  --background: oklch(0.962 0.009 308);
+  --foreground: oklch(0.208 0.052 310);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.1 312);
-  --header: oklch(0.727 0.147 82);
-  --header-foreground: oklch(0.283 0.129 312);
+  --card-foreground: oklch(0.208 0.052 310);
+  --header: oklch(1 0 0);
+  --header-foreground: oklch(0.208 0.052 310);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.1 312);
-  --primary: oklch(0.283 0.129 312);
+  --popover-foreground: oklch(0.208 0.052 310);
+  --primary: oklch(0.325 0.137 311);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.96 0.02 312);
-  --secondary-foreground: oklch(0.283 0.129 312);
-  --muted: oklch(0.96 0.015 312);
-  --muted-foreground: oklch(0.5 0.05 312);
+  --secondary: oklch(0.947 0.014 308);
+  --secondary-foreground: oklch(0.325 0.137 311);
+  --muted: oklch(0.947 0.014 308);
+  --muted-foreground: oklch(0.457 0.042 309);
   --accent: oklch(0.727 0.147 82);
-  --accent-foreground: oklch(0.22 0.1 312);
+  --accent-foreground: oklch(0.208 0.052 310);
   --destructive: oklch(0.55 0.2 27);
   --destructive-foreground: oklch(0.98 0.003 250);
-  --border: oklch(0.91 0.02 312);
-  --input: oklch(0.91 0.02 312);
+  --border: oklch(0.881 0.028 309);
+  --input: oklch(0.881 0.028 309);
+  --raised: oklch(0.947 0.014 308);
+  --hero: oklch(0.243 0.087 305);
+  --hero-foreground: oklch(1 0 0);
+  --hero-muted: oklch(0.862 0.042 306);
+  --chart-neg: oklch(0.476 0.113 305);
+  --sky: oklch(0.95 0.03 230);
+  --sky-foreground: oklch(0.38 0.09 235);
+  --sky-border: oklch(0.84 0.06 230);
+  --warn: oklch(0.96 0.05 90);
+  --warn-foreground: oklch(0.4 0.08 75);
+  --warn-border: oklch(0.82 0.12 88);
   --ring: oklch(0.727 0.147 82);
   --chart-1: oklch(0.727 0.147 82);
   --chart-2: oklch(0.283 0.129 312);
@@ -120,27 +155,38 @@
  * popover.
  */
 .dark {
-  --background: oklch(0.17 0.042 294);
-  --foreground: oklch(0.97 0.006 294);
-  --card: oklch(0.235 0.024 294);
-  --card-foreground: oklch(0.97 0.006 294);
-  --header: oklch(0.215 0.055 294);
+  --background: oklch(0.176 0.025 303);
+  --foreground: oklch(0.959 0.014 308);
+  --card: oklch(0.213 0.034 303);
+  --card-foreground: oklch(0.959 0.014 308);
+  --header: oklch(0.213 0.034 303);
+  --header-foreground: oklch(0.959 0.014 308);
+  --popover: oklch(0.252 0.042 302);
+  --popover-foreground: oklch(0.959 0.014 308);
   /* Dourado único no app inteiro: o mesmo do modo claro (#d49c10). */
-  --header-foreground: oklch(0.727 0.147 82);
-  --popover: oklch(0.255 0.026 294);
-  --popover-foreground: oklch(0.97 0.006 294);
   --primary: oklch(0.727 0.147 82);
-  --primary-foreground: oklch(0.2 0.03 82);
-  --secondary: oklch(0.3 0.028 294);
-  --secondary-foreground: oklch(0.96 0.006 294);
-  --muted: oklch(0.29 0.026 294);
-  --muted-foreground: oklch(0.75 0.022 294);
+  --primary-foreground: oklch(0.208 0.052 310);
+  --secondary: oklch(0.252 0.042 302);
+  --secondary-foreground: oklch(0.959 0.014 308);
+  --muted: oklch(0.252 0.042 302);
+  --muted-foreground: oklch(0.74 0.04 304);
   --accent: oklch(0.727 0.147 82);
-  --accent-foreground: oklch(0.2 0.03 82);
+  --accent-foreground: oklch(0.208 0.052 310);
   --destructive: oklch(0.65 0.19 25);
   --destructive-foreground: oklch(0.98 0.003 250);
-  --border: oklch(1 0 0 / 11%);
-  --input: oklch(1 0 0 / 15%);
+  --border: oklch(0.31 0.049 302);
+  --input: oklch(0.31 0.049 302);
+  --raised: oklch(0.252 0.042 302);
+  --hero: oklch(0.243 0.087 305);
+  --hero-foreground: oklch(1 0 0);
+  --hero-muted: oklch(0.862 0.042 306);
+  --chart-neg: oklch(0.582 0.117 304);
+  --sky: oklch(0.3 0.06 240);
+  --sky-foreground: oklch(0.89 0.05 230);
+  --sky-border: oklch(0.42 0.08 240);
+  --warn: oklch(0.29 0.05 85);
+  --warn-foreground: oklch(0.9 0.08 90);
+  --warn-border: oklch(0.45 0.08 85);
   --ring: oklch(0.727 0.147 82);
   /* Gráficos alternam dourado e roxo, fechando com um cinza arroxeado. */
   --chart-1: oklch(0.727 0.147 82);
@@ -170,13 +216,21 @@
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
   }
 
+  /*
+   * Títulos em Orbitron, sempre em caixa alta (como a Bebas Neue anterior,
+   * que só tinha maiúsculas). A Orbitron é bem mais larga: tamanhos de
+   * título ficam menores que na fonte antiga (ex.: h1 de página = text-3xl).
+   */
   h1,
   h2,
   h3 {
     font-family: var(--font-display);
-    letter-spacing: 0.02em;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
   }
 
   /*
@@ -223,4 +277,16 @@
   ::-webkit-scrollbar-corner {
     background: transparent;
   }
+}
+
+/*
+ * Números de placar/estatística: Archivo condensada e pesada. Usar em
+ * placares, contadores grandes e números de camisa (ex.: "num text-5xl").
+ */
+@utility num {
+  font-family: var(--font-sans);
+  font-stretch: 62%;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }

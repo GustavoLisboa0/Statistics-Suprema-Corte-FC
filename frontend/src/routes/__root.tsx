@@ -9,14 +9,11 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { Toaster } from "@/components/ui/sonner";
-import { AppSidebar } from "@/components/AppSidebar";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { Moon, Sun } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { AppTopbar } from "@/components/AppTopbar";
 
 function NotFoundComponent() {
   return (
@@ -102,7 +99,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Orbitron:wght@500..900&display=swap",
       },
       { rel: "icon", href: "/iconpage.svg", type: "image/x-icon" },
     ],
@@ -112,71 +109,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
-
-/**
- * Switch deslizante de tema. O sol/lua fica dentro do próprio botão que
- * desliza; o trilho acende em dourado no escuro.
- */
-function ThemeToggle() {
-  const [isDark, setIsDark] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const root = document.documentElement;
-    const saved = localStorage.getItem("theme") as "dark" | "light" | null;
-    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const dark = saved ? saved === "dark" : systemDark;
-    setIsDark(dark);
-    root.classList.toggle("dark", dark);
-  }, []);
-
-  const toggle = () => {
-    const root = document.documentElement;
-    const next = !isDark;
-    setIsDark(next);
-    root.classList.toggle("dark", next);
-    localStorage.setItem("theme", next ? "dark" : "light");
-  };
-
-  // Antes de montar não dá pra saber o tema (o valor vive no localStorage),
-  // então renderiza o trilho vazio pra não quebrar a hidratação nem "pular".
-  const trilho =
-    "relative inline-flex h-7 w-13 shrink-0 items-center rounded-full border transition-colors";
-
-  if (!mounted) {
-    return <div className={cn(trilho, "border-border/60 bg-muted/40")} aria-hidden="true" />;
-  }
-
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={isDark}
-      onClick={toggle}
-      aria-label={isDark ? "Ativar tema claro" : "Ativar tema escuro"}
-      title={isDark ? "Ativar tema claro" : "Ativar tema escuro"}
-      className={cn(
-        trilho,
-        "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-header",
-        isDark ? "border-primary/40 bg-primary/20" : "border-black/15 bg-black/10",
-      )}
-    >
-      <span
-        className={cn(
-          "flex h-5.5 w-5.5 items-center justify-center rounded-full shadow-sm transition-all duration-200",
-          isDark ? "translate-x-6.5 bg-primary" : "translate-x-0.5 bg-white",
-        )}
-      >
-        {isDark ? (
-          <Moon className="h-3.5 w-3.5 text-primary-foreground" />
-        ) : (
-          <Sun className="h-3.5 w-3.5 text-amber-500" />
-        )}
-      </span>
-    </button>
-  );
-}
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
@@ -189,9 +121,10 @@ function RootShell({ children }: { children: ReactNode }) {
             __html: `
               (function() {
                 try {
+                  // Redesign 2026-11: escuro é o padrão; só fica claro se a
+                  // pessoa escolheu claro no switch.
                   const saved = localStorage.getItem("theme");
-                  const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-                  const isDark = saved ? saved === "dark" : systemDark;
+                  const isDark = saved ? saved === "dark" : true;
                   document.documentElement.classList.toggle("dark", isDark);
                 } catch (e) {}
               })();
@@ -210,7 +143,7 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // Telas públicas (fora do app): sem sidebar nem header.
+  // Telas públicas (fora do app): sem barra de topo.
   const semShell = pathname === "/login" || pathname === "/cadastro";
 
   if (semShell) {
@@ -224,24 +157,15 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SidebarProvider>
-        <div className="flex min-h-screen w-full">
-          <AppSidebar />
-          <div className="flex flex-1 flex-col">
-            <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-header/95 px-4 text-header-foreground backdrop-blur">
-              <SidebarTrigger />
-              <span className="font-display text-xl tracking-wide">Suprema Corte FC</span>
-              <div className="ml-auto flex items-center gap-2">
-                <ThemeToggle />
-              </div>
-            </header>
-            <main className="flex-1 p-4 md:p-8">
-              {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-              <Outlet />
-            </main>
-          </div>
-        </div>
-      </SidebarProvider>
+      <div className="flex min-h-screen w-full flex-col">
+        <AppTopbar />
+        {/* Container único de todas as telas internas: as rotas NÃO
+            colocam max-width nem padding externo próprio. */}
+        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-16 pt-6 md:px-6 md:pt-8">
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+        </main>
+      </div>
       <Toaster richColors position="top-right" />
     </QueryClientProvider>
   );
