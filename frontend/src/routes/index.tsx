@@ -31,6 +31,10 @@ import { ConfirmarPresenca } from "@/components/ConfirmarPresenca";
 import { useUsuario } from "@/lib/useUsuario";
 
 export const Route = createFileRoute("/")({
+  // Telas internas dependem da sessão (localStorage), que não existe no
+  // servidor: com SSR, todo F5 redirecionava pro login. Renderizando só no
+  // navegador o guard roda onde a sessão está e a página recarrega no lugar.
+  ssr: false,
   beforeLoad: () => {
     if (!isAutenticado()) {
       throw redirect({ to: "/login" });

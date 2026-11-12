@@ -82,6 +82,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/jogadores")({
+  ssr: false, // depende da sessão do navegador (ver comentário em routes/index.tsx)
   beforeLoad: () => {
     if (!isAutenticado()) {
       throw redirect({ to: "/login" });

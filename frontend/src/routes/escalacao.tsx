@@ -75,6 +75,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/escalacao")({
+  ssr: false, // depende da sessão do navegador (ver comentário em routes/index.tsx)
   beforeLoad: () => {
     if (!isAutenticado()) {
       throw redirect({ to: "/login" });
