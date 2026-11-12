@@ -13,6 +13,7 @@ import {
   type Player,
   type PunishmentType,
 } from "@/lib/football";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -135,15 +136,15 @@ export function PunicoesDialog({ player, open, onOpenChange }: Props) {
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[90vh] overflow-y-auto bg-card sm:max-w-lg sm:rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-destructive" />
+            <DialogTitle className="flex items-center gap-2 text-base leading-snug">
+              <ShieldAlert className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
               Punições — {player?.name}
             </DialogTitle>
           </DialogHeader>
 
-          <p className="rounded-md border border-accent/40 bg-accent/10 p-3 text-xs text-muted-foreground">
+          <p className="rounded-xl border border-accent/40 bg-accent/10 p-3 text-xs text-muted-foreground">
             Só admins veem esta tela. O jogador não sabe que está com uma punição registrada — só
             descobre, com o motivo e o prazo, se tentar confirmar presença enquanto ela valer.
           </p>
@@ -162,7 +163,13 @@ export function PunicoesDialog({ player, open, onOpenChange }: Props) {
               {(data ?? []).map((p) => {
                 const ativa = isPunishmentActive(p);
                 return (
-                  <Card key={p.id} className={ativa ? "border-destructive/40" : undefined}>
+                  <Card
+                    key={p.id}
+                    className={cn(
+                      "rounded-xl bg-raised shadow-none",
+                      ativa && "border-destructive/40",
+                    )}
+                  >
                     <CardContent className="space-y-2 p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -179,10 +186,12 @@ export function PunicoesDialog({ player, open, onOpenChange }: Props) {
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-7 w-7 shrink-0"
+                          className="-mr-1 -mt-1 h-11 w-11 shrink-0 text-destructive hover:bg-destructive hover:text-destructive-foreground"
                           onClick={() => setToDelete(p.id)}
+                          aria-label="Remover punição"
+                          title="Remover punição"
                         >
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                          <Trash2 aria-hidden="true" />
                         </Button>
                       </div>
                       {p.type === "jogos" && (
@@ -190,27 +199,29 @@ export function PunicoesDialog({ player, open, onOpenChange }: Props) {
                           <Button
                             size="icon"
                             variant="outline"
-                            className="h-6 w-6"
+                            className="h-11 w-11"
                             disabled={p.games_served <= 0 || ajustarJogos.isPending}
                             onClick={() =>
                               ajustarJogos.mutate({ id: p.id, gamesServed: p.games_served - 1 })
                             }
+                            aria-label="Diminuir jogos cumpridos"
                           >
-                            <Minus className="h-3 w-3" />
+                            <Minus aria-hidden="true" />
                           </Button>
                           <span className="text-xs text-muted-foreground">jogos cumpridos</span>
                           <Button
                             size="icon"
                             variant="outline"
-                            className="h-6 w-6"
+                            className="h-11 w-11"
                             disabled={
                               p.games_served >= (p.games_total ?? 0) || ajustarJogos.isPending
                             }
                             onClick={() =>
                               ajustarJogos.mutate({ id: p.id, gamesServed: p.games_served + 1 })
                             }
+                            aria-label="Aumentar jogos cumpridos"
                           >
-                            <Plus className="h-3 w-3" />
+                            <Plus aria-hidden="true" />
                           </Button>
                         </div>
                       )}
@@ -274,13 +285,13 @@ export function PunicoesDialog({ player, open, onOpenChange }: Props) {
                 )}
               </div>
             </div>
-            <Button onClick={submit} disabled={create.isPending} className="w-full">
+            <Button onClick={submit} disabled={create.isPending} className="min-h-11 w-full">
               {create.isPending ? "Registrando..." : "Registrar punição"}
             </Button>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="min-h-11" onClick={() => onOpenChange(false)}>
               Fechar
             </Button>
           </DialogFooter>
@@ -288,17 +299,20 @@ export function PunicoesDialog({ player, open, onOpenChange }: Props) {
       </Dialog>
 
       <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="bg-card sm:rounded-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>Remover punição?</AlertDialogTitle>
+            <AlertDialogTitle className="text-base">Remover punição?</AlertDialogTitle>
             <AlertDialogDescription>
               O jogador volta a poder confirmar presença normalmente, se essa for a única punição
               ativa dele.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => toDelete && remove.mutate(toDelete)}>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="mt-0 min-h-11">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="min-h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => toDelete && remove.mutate(toDelete)}
+            >
               Remover
             </AlertDialogAction>
           </AlertDialogFooter>

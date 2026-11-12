@@ -12,7 +12,6 @@ import {
 } from "@/lib/escalacao";
 import type { Player } from "@/lib/football";
 import { NumberInput } from "@/components/NumberInput";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -90,9 +89,11 @@ export function AtributosJogadorDialog({ player, open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto bg-card sm:max-w-xl sm:rounded-2xl">
         <DialogHeader>
-          <DialogTitle>Atributos de {player?.nickname || player?.name}</DialogTitle>
+          <DialogTitle className="text-base leading-snug">
+            Atributos de {player?.nickname || player?.name}
+          </DialogTitle>
           <DialogDescription>
             Só administradores veem isto. Serve para o escalador montar o time; nada disto aparece
             no PDF. Campo vazio vale 50.
@@ -135,17 +136,14 @@ export function AtributosJogadorDialog({ player, open, onOpenChange }: Props) {
                       type="button"
                       aria-pressed={marcada}
                       onClick={() => alternar(c.id)}
-                      className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className={cn(
+                        "min-h-11 rounded-full border px-4 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        marcada
+                          ? "border-accent bg-accent font-bold text-accent-foreground"
+                          : "bg-card text-muted-foreground hover:bg-raised",
+                      )}
                     >
-                      <Badge
-                        variant={marcada ? "default" : "outline"}
-                        className={cn(
-                          "cursor-pointer px-2.5 py-1",
-                          !marcada && "text-muted-foreground",
-                        )}
-                      >
-                        {c.nome}
-                      </Badge>
+                      {c.nome}
                     </button>
                   );
                 })}
@@ -166,12 +164,16 @@ export function AtributosJogadorDialog({ player, open, onOpenChange }: Props) {
           </div>
         )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" className="min-h-11" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={() => salvar.mutate()} disabled={salvar.isPending || isLoading}>
-            <Save className="mr-1 h-4 w-4" /> Salvar
+          <Button
+            className="min-h-11"
+            onClick={() => salvar.mutate()}
+            disabled={salvar.isPending || isLoading}
+          >
+            <Save aria-hidden="true" /> Salvar
           </Button>
         </DialogFooter>
       </DialogContent>
