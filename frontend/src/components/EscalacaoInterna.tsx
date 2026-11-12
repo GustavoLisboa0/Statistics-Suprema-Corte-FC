@@ -30,8 +30,8 @@ import { MontagemDoTime } from "@/components/MontagemTime";
 import { NumberInput } from "@/components/NumberInput";
 import { EditorJogada, type RascunhoJogada } from "@/components/JogadaEnsaiada";
 import { QuadroTatico, type RascunhoTatica } from "@/components/QuadroTatico";
+import { Aba, ListaDeAbas } from "@/components/EscalacaoControles";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -40,7 +40,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -56,6 +56,9 @@ import {
 //   Montagem do time: regras que mexem na escalação.
 //   Adversário: perfil e sugestão de modelo.
 // ---------------------------------------------------------------------------
+
+/** Botão de ação dentro dos cartões de tática/jogada (alvo de 44px). */
+const BOTAO_CARTAO = "min-h-11 rounded-[10px] bg-card";
 
 type PropsAba = {
   partidaId: string;
@@ -118,7 +121,7 @@ function DialogoPdf({
         <div className="space-y-2">
           <Label>O que incluir</Label>
           <Select value={escolha} onValueChange={setEscolha}>
-            <SelectTrigger aria-label="O que incluir no PDF">
+            <SelectTrigger aria-label="O que incluir no PDF" className="h-11">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -141,8 +144,8 @@ function DialogoPdf({
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={gerar} disabled={gerando}>
-          <FileDown className="mr-1 h-4 w-4" /> {gerando ? "Gerando…" : "Baixar PDF"}
+        <Button onClick={gerar} disabled={gerando} className="min-h-11 rounded-[10px] font-bold">
+          <FileDown aria-hidden="true" /> {gerando ? "Gerando…" : "Baixar PDF"}
         </Button>
       </DialogContent>
     </Dialog>
@@ -210,40 +213,39 @@ function SecaoTaticas({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-xl">
-          <h3 className="text-base font-semibold">Suas táticas</h3>
-          <p className="text-sm text-muted-foreground">
+          <h3 className="text-[15px] leading-tight">Suas táticas</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
             O quadro tático é a orientação do time para o treino e o jogo: onde cada um se posiciona
             com e sem a bola e o papel de cada um. Ele <strong>não muda a escalação</strong> — e
             gera um PDF separado, para você mandar só se quiser.
           </p>
         </div>
         <Button
+          className="min-h-11 rounded-[10px] font-bold"
           onClick={() => setRascunho({ nome: "", descricao: "", plano: planoVazio(formacao) })}
         >
-          <Plus className="mr-1 h-4 w-4" /> Nova tática
+          <Plus aria-hidden="true" /> Nova tática
         </Button>
       </div>
 
       {minhas.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <p className="rounded-xl border border-dashed bg-raised p-6 text-center text-sm text-muted-foreground">
           Você ainda não criou nenhuma tática. Clique em “Nova tática” ou comece de um modelo
           abaixo.
         </p>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {minhas.map((t) => (
-            <div key={t.id} className="flex gap-3 rounded-xl border bg-card p-3">
+            <div key={t.id} className="flex gap-3 rounded-xl border bg-raised p-3.5">
               <CampoFormacao
                 formacao={t.plano.formacao}
                 mini
                 className="w-16 shrink-0 self-start"
               />
               <div className="min-w-0 flex-1 space-y-1">
-                <p className="truncate font-display text-xl leading-tight tracking-wide">
-                  {t.nome}
-                </p>
+                <p className="truncate text-base font-bold leading-tight">{t.nome}</p>
                 <p className="text-xs text-muted-foreground">
-                  {t.plano.formacao}
+                  <span className="num text-sm text-primary">{t.plano.formacao}</span>
                   {t.descricao ? ` · ${t.descricao}` : ""}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -257,8 +259,8 @@ function SecaoTaticas({
                 </p>
                 <div className="flex flex-wrap gap-1 pt-1">
                   <Button
-                    size="sm"
                     variant="outline"
+                    className={BOTAO_CARTAO}
                     onClick={() =>
                       setRascunho({
                         id: t.id,
@@ -268,14 +270,15 @@ function SecaoTaticas({
                       })
                     }
                   >
-                    <Pencil className="mr-1 h-3.5 w-3.5" /> Editar
+                    <Pencil aria-hidden="true" /> Editar
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setParaPdf(t)}>
-                    <FileDown className="mr-1 h-3.5 w-3.5" /> PDF
+                  <Button variant="outline" className={BOTAO_CARTAO} onClick={() => setParaPdf(t)}>
+                    <FileDown aria-hidden="true" /> PDF
                   </Button>
                   <Button
-                    size="sm"
                     variant="ghost"
+                    size="icon"
+                    className="h-11 w-11"
                     aria-label={`Duplicar ${t.nome}`}
                     onClick={() =>
                       setRascunho({
@@ -285,17 +288,18 @@ function SecaoTaticas({
                       })
                     }
                   >
-                    <Copy className="h-3.5 w-3.5" />
+                    <Copy aria-hidden="true" />
                   </Button>
                   <Button
-                    size="sm"
                     variant="ghost"
+                    size="icon"
+                    className="h-11 w-11"
                     aria-label={`Apagar ${t.nome}`}
                     onClick={() => {
                       if (window.confirm(`Apagar a tática “${t.nome}”?`)) apagar.mutate(t.id);
                     }}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 aria-hidden="true" />
                   </Button>
                 </div>
               </div>
@@ -305,9 +309,7 @@ function SecaoTaticas({
       )}
 
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Modelos prontos
-        </h3>
+        <h3 className="text-[13px] leading-tight text-muted-foreground">Modelos prontos</h3>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {catalogo.modelos.map((m) => (
             <button
@@ -320,7 +322,7 @@ function SecaoTaticas({
                   plano: planoDoModelo(m, formacao),
                 })
               }
-              className="rounded-xl border bg-card p-3 text-left transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-11 rounded-xl border bg-raised p-3.5 text-left transition-colors hover:border-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="block font-semibold">{m.nome}</span>
               <span className="block text-xs text-muted-foreground">{m.descricao}</span>
@@ -392,14 +394,15 @@ function SecaoJogadas({ formacao }: { formacao: string }) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-xl">
-          <h3 className="text-base font-semibold">Jogadas ensaiadas</h3>
-          <p className="text-sm text-muted-foreground">
+          <h3 className="text-[15px] leading-tight">Jogadas ensaiadas</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
             A tática diz como cada um age em geral. A jogada ensaiada é combinada para um momento
             específico: escanteio, falta, saída de bola… Monte passo a passo e depois escolha,
             dentro de cada tática, quais jogadas entram. Elas saem no mesmo PDF da tática.
           </p>
         </div>
         <Button
+          className="min-h-11 rounded-[10px] font-bold"
           onClick={() =>
             setRascunho({
               nome: "",
@@ -409,27 +412,25 @@ function SecaoJogadas({ formacao }: { formacao: string }) {
             })
           }
         >
-          <Plus className="mr-1 h-4 w-4" /> Nova jogada
+          <Plus aria-hidden="true" /> Nova jogada
         </Button>
       </div>
 
       {jogadas.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <p className="rounded-xl border border-dashed bg-raised p-6 text-center text-sm text-muted-foreground">
           Você ainda não criou nenhuma jogada ensaiada. Clique em “Nova jogada” para começar.
         </p>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {jogadas.map((j) => (
-            <div key={j.id} className="flex gap-3 rounded-xl border bg-card p-3">
+            <div key={j.id} className="flex gap-3 rounded-xl border bg-raised p-3.5">
               <CampoFormacao
                 formacao={j.plano.formacao}
                 mini
                 className="w-16 shrink-0 self-start"
               />
               <div className="min-w-0 flex-1 space-y-1">
-                <p className="truncate font-display text-xl leading-tight tracking-wide">
-                  {j.nome}
-                </p>
+                <p className="truncate text-base font-bold leading-tight">{j.nome}</p>
                 <p className="text-xs text-muted-foreground">
                   {SITUACAO_CURTA[j.situacao] ?? j.situacao} · {j.plano.passos.length} passo
                   {j.plano.passos.length === 1 ? "" : "s"}
@@ -437,8 +438,8 @@ function SecaoJogadas({ formacao }: { formacao: string }) {
                 </p>
                 <div className="flex flex-wrap gap-1 pt-1">
                   <Button
-                    size="sm"
                     variant="outline"
+                    className={BOTAO_CARTAO}
                     onClick={() =>
                       setRascunho({
                         id: j.id,
@@ -449,11 +450,12 @@ function SecaoJogadas({ formacao }: { formacao: string }) {
                       })
                     }
                   >
-                    <Pencil className="mr-1 h-3.5 w-3.5" /> Editar
+                    <Pencil aria-hidden="true" /> Editar
                   </Button>
                   <Button
-                    size="sm"
                     variant="ghost"
+                    size="icon"
+                    className="h-11 w-11"
                     aria-label={`Duplicar ${j.nome}`}
                     onClick={() =>
                       setRascunho({
@@ -464,17 +466,18 @@ function SecaoJogadas({ formacao }: { formacao: string }) {
                       })
                     }
                   >
-                    <Copy className="h-3.5 w-3.5" />
+                    <Copy aria-hidden="true" />
                   </Button>
                   <Button
-                    size="sm"
                     variant="ghost"
+                    size="icon"
+                    className="h-11 w-11"
                     aria-label={`Apagar ${j.nome}`}
                     onClick={() => {
                       if (window.confirm(`Apagar a jogada “${j.nome}”?`)) apagar.mutate(j.id);
                     }}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 aria-hidden="true" />
                   </Button>
                 </div>
               </div>
@@ -504,99 +507,95 @@ export function AbaTatica({
   });
 
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <Tabs value={aba} onValueChange={setAba} className="space-y-5">
-          <TabsList>
-            <TabsTrigger value="taticas">Táticas</TabsTrigger>
-            <TabsTrigger value="jogadas">Jogadas ensaiadas</TabsTrigger>
-            <TabsTrigger value="montagem">Montagem do time</TabsTrigger>
-            <TabsTrigger value="adversario">Adversário</TabsTrigger>
-          </TabsList>
+    <div className="rounded-2xl border bg-card p-5 md:p-6">
+      <Tabs value={aba} onValueChange={setAba} className="space-y-6">
+        <ListaDeAbas aria-label="Tática e estratégia">
+          <Aba value="taticas">Táticas</Aba>
+          <Aba value="jogadas">Jogadas ensaiadas</Aba>
+          <Aba value="montagem">Montagem do time</Aba>
+          <Aba value="adversario">Adversário</Aba>
+        </ListaDeAbas>
 
-          <TabsContent value="taticas" className="space-y-4">
-            <SecaoTaticas formacao={formacao} rascunho={rascunho} setRascunho={setRascunho} />
-          </TabsContent>
+        <TabsContent value="taticas" className="mt-0 space-y-4">
+          <SecaoTaticas formacao={formacao} rascunho={rascunho} setRascunho={setRascunho} />
+        </TabsContent>
 
-          <TabsContent value="jogadas">
-            <SecaoJogadas formacao={formacao} />
-          </TabsContent>
+        <TabsContent value="jogadas" className="mt-0">
+          <SecaoJogadas formacao={formacao} />
+        </TabsContent>
 
-          <TabsContent value="montagem">
-            <MontagemDoTime
-              formacao={formacao}
-              setFormacao={setFormacao}
-              composicao={composicao}
-              setComposicao={setComposicao}
-            />
-          </TabsContent>
+        <TabsContent value="montagem" className="mt-0">
+          <MontagemDoTime
+            formacao={formacao}
+            setFormacao={setFormacao}
+            composicao={composicao}
+            setComposicao={setComposicao}
+          />
+        </TabsContent>
 
-          <TabsContent value="adversario" className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
+        <TabsContent value="adversario" className="mt-0 space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="secondary"
+              className="min-h-11 rounded-[10px]"
+              onClick={() => {
+                setVerSugestao(true);
+                if (verSugestao) sugestao.refetch();
+              }}
+            >
+              <Lightbulb aria-hidden="true" /> Sugerir contra o adversário
+            </Button>
+            {sugestao.isFetching && (
+              <span className="text-sm text-muted-foreground">Pensando…</span>
+            )}
+          </div>
+          {sugestao.data?.aviso && (
+            <p className="text-sm text-muted-foreground">{sugestao.data.aviso}</p>
+          )}
+          {sugestao.data?.sugestao && (
+            <div className="space-y-3 rounded-xl border bg-raised p-4 text-sm">
+              <p>
+                Contra <strong>{sugestao.data.adversario}</strong>: modelo{" "}
+                <strong className="text-primary">{sugestao.data.sugestao.tatica_nome}</strong>.
+              </p>
+              <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+                {sugestao.data.sugestao.motivos.map((m) => (
+                  <li key={m}>{m}</li>
+                ))}
+              </ul>
+              {sugestao.data.historico.jogos > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Histórico: {sugestao.data.historico.jogos} jogo(s),{" "}
+                  {sugestao.data.historico.vitorias}V {sugestao.data.historico.empates}E{" "}
+                  {sugestao.data.historico.derrotas}D, gols {sugestao.data.historico.gols_pro}x
+                  {sugestao.data.historico.gols_contra}.
+                </p>
+              )}
               <Button
-                variant="secondary"
-                size="sm"
+                className="min-h-11 rounded-[10px] font-bold"
                 onClick={() => {
-                  setVerSugestao(true);
-                  if (verSugestao) sugestao.refetch();
+                  const m = catalogo?.modelos.find((x) => x.id === sugestao.data!.sugestao!.tatica);
+                  if (!m) return;
+                  setRascunho({
+                    nome: `${m.nome} contra ${sugestao.data!.adversario}`,
+                    descricao: m.descricao,
+                    plano: planoDoModelo(m, formacao),
+                  });
+                  setAba("taticas");
                 }}
               >
-                <Lightbulb className="mr-1 h-4 w-4" /> Sugerir contra o adversário
+                Montar tática a partir deste modelo
               </Button>
-              {sugestao.isFetching && (
-                <span className="text-sm text-muted-foreground">Pensando…</span>
-              )}
             </div>
-            {sugestao.data?.aviso && (
-              <p className="text-sm text-muted-foreground">{sugestao.data.aviso}</p>
-            )}
-            {sugestao.data?.sugestao && (
-              <div className="space-y-2 text-sm">
-                <p>
-                  Contra <strong>{sugestao.data.adversario}</strong>: modelo{" "}
-                  <strong>{sugestao.data.sugestao.tatica_nome}</strong>.
-                </p>
-                <ul className="list-disc pl-5 text-muted-foreground">
-                  {sugestao.data.sugestao.motivos.map((m) => (
-                    <li key={m}>{m}</li>
-                  ))}
-                </ul>
-                {sugestao.data.historico.jogos > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    Histórico: {sugestao.data.historico.jogos} jogo(s),{" "}
-                    {sugestao.data.historico.vitorias}V {sugestao.data.historico.empates}E{" "}
-                    {sugestao.data.historico.derrotas}D, gols {sugestao.data.historico.gols_pro}x
-                    {sugestao.data.historico.gols_contra}.
-                  </p>
-                )}
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    const m = catalogo?.modelos.find(
-                      (x) => x.id === sugestao.data!.sugestao!.tatica,
-                    );
-                    if (!m) return;
-                    setRascunho({
-                      nome: `${m.nome} contra ${sugestao.data!.adversario}`,
-                      descricao: m.descricao,
-                      plano: planoDoModelo(m, formacao),
-                    });
-                    setAba("taticas");
-                  }}
-                >
-                  Montar tática a partir deste modelo
-                </Button>
-              </div>
-            )}
-            <PerfilAdversario
-              partidaId={partidaId}
-              aoSalvar={() => sugestao.refetch()}
-              ativo={verSugestao}
-            />
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-    </Card>
+          )}
+          <PerfilAdversario
+            partidaId={partidaId}
+            aoSalvar={() => sugestao.refetch()}
+            ativo={verSugestao}
+          />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }
 
@@ -650,7 +649,12 @@ function PerfilAdversario({
   if (!ativo || !data) return null;
   return (
     <div className="space-y-3">
-      <Button variant="link" className="h-auto p-0" onClick={() => setAberto((v) => !v)}>
+      <Button
+        variant="outline"
+        className="min-h-11 rounded-[10px] bg-card"
+        aria-expanded={aberto}
+        onClick={() => setAberto((v) => !v)}
+      >
         {aberto ? "Esconder" : "Cadastrar/editar"} perfil de {data.adversario}
       </Button>
       {aberto && (
@@ -673,7 +677,7 @@ function PerfilAdversario({
             <div className="space-y-1">
               <Label>Estilo</Label>
               <Select value={f.estilo} onValueChange={(v) => setF((s) => ({ ...s, estilo: v }))}>
-                <SelectTrigger aria-label="Estilo do adversário">
+                <SelectTrigger aria-label="Estilo do adversário" className="h-11">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -692,8 +696,12 @@ function PerfilAdversario({
             placeholder="Observações sobre o adversário (opcional)"
             maxLength={1000}
           />
-          <Button size="sm" onClick={() => salvar.mutate()} disabled={salvar.isPending}>
-            <Save className="mr-1 h-4 w-4" /> Salvar perfil
+          <Button
+            className="min-h-11 rounded-[10px] font-bold"
+            onClick={() => salvar.mutate()}
+            disabled={salvar.isPending}
+          >
+            <Save aria-hidden="true" /> Salvar perfil
           </Button>
         </div>
       )}

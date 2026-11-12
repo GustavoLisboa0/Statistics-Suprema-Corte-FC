@@ -206,7 +206,7 @@ function CampoTatico({
               fontSize="14"
               fontWeight="700"
               fill={goleiro ? "#1f1235" : "#fff"}
-              fontFamily="Barlow, system-ui, sans-serif"
+              fontFamily="Archivo, system-ui, sans-serif"
               pointerEvents="none"
             >
               {lugar.slice(0, 3)}
@@ -221,7 +221,7 @@ function CampoTatico({
                 stroke="#14532d"
                 strokeWidth="3"
                 paintOrder="stroke"
-                fontFamily="Barlow, system-ui, sans-serif"
+                fontFamily="Archivo, system-ui, sans-serif"
                 pointerEvents="none"
               >
                 {PAPEL_CURTO[papel] ?? papel}
@@ -261,11 +261,11 @@ function Niveis({
             aria-label={`${rotulo}: ${nomes[n - 1]}`}
             onClick={() => onChange(n)}
             className={cn(
-              "h-7 rounded-md border text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "num h-11 rounded-[10px] border text-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               valor === n
-                ? "border-primary bg-primary text-primary-foreground"
-                : "bg-card hover:border-primary",
-              n < valor && "border-primary/40 bg-primary/10",
+                ? "border-accent bg-accent text-accent-foreground"
+                : "bg-card hover:border-accent",
+              n < valor && "border-accent/40 bg-accent/15",
             )}
           >
             {n}
@@ -344,7 +344,7 @@ export function QuadroTatico({
   };
 
   return (
-    <div className="space-y-5 rounded-xl border-2 border-primary/40 bg-primary/5 p-4">
+    <div className="space-y-5 rounded-2xl border bg-raised p-4 md:p-5">
       <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
         <div className="space-y-1">
           <Label htmlFor="nome-tatica">Nome da tática</Label>
@@ -379,7 +379,7 @@ export function QuadroTatico({
               toast.success(`Modelo “${m.nome}” aplicado. Ajuste do seu jeito.`);
             }}
           >
-            <SelectTrigger aria-label="Começar de um modelo" className="w-full md:w-52">
+            <SelectTrigger aria-label="Começar de um modelo" className="h-11 w-full md:w-52">
               <SelectValue placeholder="Escolher modelo" />
             </SelectTrigger>
             <SelectContent>
@@ -394,8 +394,12 @@ export function QuadroTatico({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="outline" size="sm" onClick={() => setSeletorAberto(true)}>
-          Formação: {plano.formacao}
+        <Button
+          variant="outline"
+          className="min-h-11 rounded-[10px] bg-card"
+          onClick={() => setSeletorAberto(true)}
+        >
+          Formação: <span className="num text-lg text-primary">{plano.formacao}</span>
         </Button>
         <SeletorFormacao
           aberto={seletorAberto}
@@ -409,7 +413,7 @@ export function QuadroTatico({
         <div
           role="tablist"
           aria-label="Fase do jogo"
-          className="inline-flex rounded-lg border bg-card p-0.5"
+          className="inline-flex gap-1 rounded-[12px] border bg-card p-1"
         >
           {FASES.map((f) => (
             <button
@@ -419,10 +423,10 @@ export function QuadroTatico({
               aria-selected={fase === f.id}
               onClick={() => setFase(f.id)}
               className={cn(
-                "rounded-md px-4 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "min-h-11 rounded-[9px] px-4 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 fase === f.id
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-accent font-bold text-accent-foreground"
+                  : "font-medium text-muted-foreground hover:text-foreground",
               )}
             >
               {f.nome}
@@ -451,16 +455,16 @@ export function QuadroTatico({
           {selecionado && funcao ? (
             <div className="space-y-3 rounded-xl border bg-card p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-display text-xl tracking-wide">
+                <h4 className="font-display text-[15px] font-extrabold uppercase leading-tight">
                   {nomeDoLugar(plano.formacao, selecionado)}
-                </p>
+                </h4>
                 {atual?.[fase] && (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    className="min-h-11"
                     onClick={() => mexerJogador(selecionado, { [fase]: undefined })}
                   >
-                    <RotateCcw className="mr-1 h-4 w-4" /> Voltar à posição sugerida
+                    <RotateCcw aria-hidden="true" /> Voltar à posição sugerida
                   </Button>
                 )}
               </div>
@@ -481,8 +485,8 @@ export function QuadroTatico({
                           mexerJogador(selecionado, { papel: ativo ? undefined : p.id })
                         }
                         className={cn(
-                          "rounded-lg border p-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          ativo ? "border-primary bg-primary/10" : "hover:border-primary/60",
+                          "min-h-11 rounded-[10px] border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          ativo ? "border-accent bg-accent/15" : "bg-raised hover:border-accent/60",
                         )}
                       >
                         <span className="block text-sm font-semibold">{p.nome}</span>
@@ -548,10 +552,10 @@ export function QuadroTatico({
                       }))
                     }
                     className={cn(
-                      "rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      "min-h-11 rounded-full border px-4 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       plano.time.saida === s.id
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "bg-card hover:border-primary",
+                        ? "border-accent bg-accent font-bold text-accent-foreground"
+                        : "bg-raised hover:border-accent",
                     )}
                   >
                     {s.nome}
@@ -594,13 +598,13 @@ export function QuadroTatico({
                 <label
                   key={j.id}
                   className={cn(
-                    "flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
-                    marcada ? "border-primary bg-primary/5" : "hover:border-primary/50",
+                    "flex min-h-11 cursor-pointer items-start gap-2 rounded-[10px] border p-3 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
+                    marcada ? "border-accent bg-accent/15" : "bg-raised hover:border-accent/50",
                   )}
                 >
                   <input
                     type="checkbox"
-                    className="mt-1 h-4 w-4 accent-[#6410c9]"
+                    className="mt-0.5 h-4 w-4 accent-[#d49c10]"
                     checked={marcada}
                     onChange={(e) =>
                       setPlano((p) => {
@@ -624,15 +628,15 @@ export function QuadroTatico({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={salvar} disabled={salvando}>
+        <Button onClick={salvar} disabled={salvando} className="min-h-11 rounded-[10px] font-bold">
           {salvando ? (
-            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            <Loader2 className="animate-spin" aria-hidden="true" />
           ) : (
-            <Save className="mr-1 h-4 w-4" />
+            <Save aria-hidden="true" />
           )}
           {inicial.id ? "Salvar alterações" : "Salvar tática"}
         </Button>
-        <Button variant="outline" onClick={aoCancelar}>
+        <Button variant="outline" className="min-h-11 rounded-[10px] bg-card" onClick={aoCancelar}>
           Cancelar
         </Button>
       </div>

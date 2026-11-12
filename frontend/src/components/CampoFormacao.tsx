@@ -86,7 +86,7 @@ export function CampoFormacao({
                 stroke="#14532d"
                 strokeWidth="3"
                 paintOrder="stroke"
-                fontFamily="Barlow, system-ui, sans-serif"
+                fontFamily="Archivo, system-ui, sans-serif"
               >
                 {marcas[funcao]}
               </text>
@@ -98,7 +98,7 @@ export function CampoFormacao({
                 fontSize="14"
                 fontWeight="700"
                 fill={lugar === "GOL" ? "#1f1235" : "#fff"}
-                fontFamily="Barlow, system-ui, sans-serif"
+                fontFamily="Archivo, system-ui, sans-serif"
               >
                 {funcao}
               </text>

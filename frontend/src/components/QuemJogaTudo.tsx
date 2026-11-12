@@ -21,7 +21,7 @@ function Pessoa({ j }: { j: Convocado | undefined }) {
     <span className="whitespace-nowrap">
       {j.nome}
       {sigla && (
-        <span className="ml-1 rounded bg-muted px-1 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="ml-1.5 rounded-[5px] border px-1.5 py-px align-middle text-[11px] font-bold uppercase text-muted-foreground">
           {sigla}
         </span>
       )}
@@ -31,8 +31,14 @@ function Pessoa({ j }: { j: Convocado | undefined }) {
 
 function Diferenca({ min }: { min: number }) {
   return (
-    <span className="text-sm tabular-nums">
-      {min === 0 ? "sem diferença" : `diferença de ${min} min`}
+    <span className="shrink-0 text-sm text-muted-foreground">
+      {min === 0 ? (
+        "sem diferença"
+      ) : (
+        <>
+          diferença de <span className="num text-base text-foreground">{min}</span> min
+        </>
+      )}
     </span>
   );
 }
@@ -116,7 +122,7 @@ export function QuemJogaTudo({
           <div
             role="radiogroup"
             aria-label="Como ver as escolhas"
-            className="inline-flex w-fit rounded-lg border p-0.5 text-sm"
+            className="inline-flex w-fit gap-1 rounded-[12px] border p-1 text-sm"
           >
             {(
               [
@@ -131,8 +137,10 @@ export function QuemJogaTudo({
                 aria-checked={modo === id}
                 onClick={() => setModo(id)}
                 className={cn(
-                  "rounded-md px-3 py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  modo === id ? "bg-primary text-primary-foreground" : "hover:bg-muted",
+                  "min-h-11 rounded-[9px] px-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  modo === id
+                    ? "bg-accent font-bold text-accent-foreground"
+                    : "font-medium text-muted-foreground hover:text-foreground",
                 )}
               >
                 {rotulo}
@@ -143,14 +151,14 @@ export function QuemJogaTudo({
 
         {!grupos && !erro && (
           <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Calculando as combinações… pode levar uns
-            15 segundos.
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Calculando as
+            combinações… pode levar uns 15 segundos.
           </p>
         )}
         {erro && <p className="text-sm text-destructive">{erro}</p>}
 
         {grupos && bons.length === 0 && (
-          <p className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+          <p className="rounded-xl border border-dashed bg-raised p-4 text-sm text-muted-foreground">
             Nenhuma escolha deixa o tempo dentro de 5 minutos com {quantos}{" "}
             {quantos === 1 ? "jogador" : "jogadores"} o jogo todo.
           </p>
@@ -164,8 +172,8 @@ export function QuemJogaTudo({
                 <li
                   key={g.fixos.join("|")}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg border p-3",
-                    escolhido && "border-primary bg-primary/5",
+                    "flex flex-wrap items-center gap-3 rounded-xl border bg-raised p-3",
+                    escolhido && "border-accent bg-accent/15",
                   )}
                 >
                   <span className="flex min-w-0 flex-1 flex-wrap gap-x-3 gap-y-1 font-medium">
@@ -175,12 +183,12 @@ export function QuemJogaTudo({
                   </span>
                   <Diferenca min={g.diferenca_minutos} />
                   <Button
-                    size="sm"
+                    className="min-h-11 min-w-14 rounded-[10px] font-bold"
                     variant={escolhido ? "secondary" : "default"}
                     aria-label={`Escolher ${g.fixos.map((id) => porId.get(id)?.nome).join(" e ")}`}
                     onClick={() => escolher(g.fixos)}
                   >
-                    {escolhido ? <Check className="h-4 w-4" /> : "OK"}
+                    {escolhido ? <Check className="h-4 w-4" aria-hidden="true" /> : "OK"}
                   </Button>
                 </li>
               );
@@ -197,8 +205,8 @@ export function QuemJogaTudo({
                 <li
                   key={id}
                   className={cn(
-                    "flex items-center gap-3 rounded-lg border p-3",
-                    escolhido && "border-primary bg-primary/5",
+                    "flex flex-wrap items-center gap-3 rounded-xl border bg-raised p-3",
+                    escolhido && "border-accent bg-accent/15",
                   )}
                 >
                   <span className="min-w-0 flex-1">
@@ -213,12 +221,12 @@ export function QuemJogaTudo({
                   </span>
                   <Diferenca min={g.diferenca_minutos} />
                   <Button
-                    size="sm"
+                    className="min-h-11 min-w-14 rounded-[10px] font-bold"
                     variant={escolhido ? "secondary" : "default"}
                     aria-label={`Escolher ${porId.get(id)?.nome}`}
                     onClick={() => escolher(g.fixos)}
                   >
-                    {escolhido ? <Check className="h-4 w-4" /> : "OK"}
+                    {escolhido ? <Check className="h-4 w-4" aria-hidden="true" /> : "OK"}
                   </Button>
                 </li>
               );

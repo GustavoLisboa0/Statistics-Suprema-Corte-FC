@@ -73,9 +73,9 @@ export function CampoEscalacao({
               y="6"
               textAnchor="middle"
               fontSize="17"
-              fontWeight="700"
+              fontWeight="800"
               fill="#fff"
-              fontFamily="Barlow, system-ui, sans-serif"
+              fontFamily="Archivo, system-ui, sans-serif"
             >
               {jogador?.numero_camisa ?? ROTULO_CURTO[lugar.slice(0, 3)]}
             </text>
@@ -88,7 +88,7 @@ export function CampoEscalacao({
               stroke="#0b2e12"
               strokeWidth="3.5"
               paintOrder="stroke"
-              fontFamily="Barlow, system-ui, sans-serif"
+              fontFamily="Archivo, system-ui, sans-serif"
             >
               {jogador ? nomeCurto(jogador.nome) : "—"}
             </text>

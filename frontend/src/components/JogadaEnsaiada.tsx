@@ -214,7 +214,7 @@ function CampoJogada({
               fontSize="14"
               fontWeight="700"
               fill={goleiro ? "#1f1235" : "#fff"}
-              fontFamily="Barlow, system-ui, sans-serif"
+              fontFamily="Archivo, system-ui, sans-serif"
               pointerEvents="none"
             >
               {lugar.slice(0, 3)}
@@ -342,7 +342,7 @@ export function EditorJogada({
   const temBola = !!bolaNoPasso(plano, passo);
 
   return (
-    <div className="space-y-5 rounded-xl border-2 border-primary/40 bg-primary/5 p-4">
+    <div className="space-y-5 rounded-2xl border bg-raised p-4 md:p-5">
       <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
         <div className="space-y-1">
           <Label htmlFor="nome-jogada">Nome da jogada</Label>
@@ -367,7 +367,7 @@ export function EditorJogada({
         <div className="space-y-1">
           <Label>Quando acontece</Label>
           <Select value={situacao} onValueChange={setSituacao}>
-            <SelectTrigger aria-label="Quando acontece" className="w-full md:w-52">
+            <SelectTrigger aria-label="Quando acontece" className="h-11 w-full md:w-52">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -382,8 +382,12 @@ export function EditorJogada({
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="outline" size="sm" onClick={() => setSeletorAberto(true)}>
-          Formação: {plano.formacao}
+        <Button
+          variant="outline"
+          className="min-h-11 rounded-[10px] bg-card"
+          onClick={() => setSeletorAberto(true)}
+        >
+          Formação: <span className="num text-lg text-primary">{plano.formacao}</span>
         </Button>
         <SeletorFormacao
           aberto={seletorAberto}
@@ -403,18 +407,22 @@ export function EditorJogada({
               aria-selected={passo === i}
               onClick={() => setPasso(i)}
               className={cn(
-                "rounded-md border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "min-h-11 rounded-[10px] border px-3.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 passo === i
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "bg-card hover:border-primary",
+                  ? "border-accent bg-accent font-bold text-accent-foreground"
+                  : "bg-card font-medium hover:border-accent",
               )}
             >
               Passo {i + 1}
             </button>
           ))}
           {plano.passos.length < MAX_PASSOS && (
-            <Button variant="outline" size="sm" onClick={adicionarPasso}>
-              <Plus className="mr-1 h-3.5 w-3.5" /> Passo
+            <Button
+              variant="outline"
+              className="min-h-11 rounded-[10px] border-dashed bg-card"
+              onClick={adicionarPasso}
+            >
+              <Plus aria-hidden="true" /> Passo
             </Button>
           )}
         </div>
@@ -442,19 +450,19 @@ export function EditorJogada({
               <Label htmlFor="texto-passo" className="text-sm font-semibold">
                 O que acontece no passo {passo + 1}
               </Label>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 {!temBola && (
                   <Button
-                    size="sm"
                     variant="outline"
+                    className="min-h-11 rounded-[10px] bg-card"
                     onClick={() => mexerPasso(passo, { bola: { x: 200, y: 280 } })}
                   >
                     Colocar a bola
                   </Button>
                 )}
                 {plano.passos.length > 1 && (
-                  <Button size="sm" variant="ghost" onClick={removerPasso}>
-                    <Trash2 className="mr-1 h-3.5 w-3.5" /> Tirar passo
+                  <Button variant="ghost" className="min-h-11" onClick={removerPasso}>
+                    <Trash2 aria-hidden="true" /> Tirar passo
                   </Button>
                 )}
               </div>
@@ -472,12 +480,16 @@ export function EditorJogada({
           {selecionado ? (
             <div className="space-y-2 rounded-xl border bg-card p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-display text-xl tracking-wide">
+                <h4 className="font-display text-[15px] font-extrabold uppercase leading-tight">
                   {nomeDoLugar(plano.formacao, selecionado)}
-                </p>
+                </h4>
                 {atual.posicoes[selecionado] && (
-                  <Button size="sm" variant="ghost" onClick={() => voltarPosicao(selecionado)}>
-                    <RotateCcw className="mr-1 h-3.5 w-3.5" /> Voltar à posição anterior
+                  <Button
+                    variant="ghost"
+                    className="min-h-11"
+                    onClick={() => voltarPosicao(selecionado)}
+                  >
+                    <RotateCcw aria-hidden="true" /> Voltar à posição anterior
                   </Button>
                 )}
               </div>
@@ -516,15 +528,15 @@ export function EditorJogada({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={salvar} disabled={salvando}>
+        <Button onClick={salvar} disabled={salvando} className="min-h-11 rounded-[10px] font-bold">
           {salvando ? (
-            <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            <Loader2 className="animate-spin" aria-hidden="true" />
           ) : (
-            <Save className="mr-1 h-4 w-4" />
+            <Save aria-hidden="true" />
           )}
           {inicial.id ? "Salvar alterações" : "Salvar jogada"}
         </Button>
-        <Button variant="outline" onClick={aoCancelar}>
+        <Button variant="outline" className="min-h-11 rounded-[10px] bg-card" onClick={aoCancelar}>
           Cancelar
         </Button>
       </div>

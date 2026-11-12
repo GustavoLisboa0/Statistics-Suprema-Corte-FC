@@ -89,10 +89,10 @@ function Pilula({
       aria-pressed={ativa}
       onClick={onClick}
       className={cn(
-        "rounded-full border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "min-h-11 rounded-full border px-4 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         ativa
-          ? "border-primary bg-primary text-primary-foreground"
-          : "bg-card hover:border-primary",
+          ? "border-accent bg-accent font-bold text-accent-foreground"
+          : "bg-card hover:border-accent",
       )}
     >
       {children}
@@ -146,16 +146,20 @@ export function MontagemDoTime({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-base font-semibold">Montagem do time</h3>
-          <p className="text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 max-w-xl">
+          <h3 className="text-[15px] leading-tight">Montagem do time</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
             Estas regras mexem na escalação: o sistema escolhe quem joga em cada setor para
             cumpri-las sempre que der (o tempo igual continua mandando).
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setSeletorAberto(true)}>
-          Formação: {formacao}
+        <Button
+          variant="outline"
+          className="min-h-11 rounded-[10px] bg-card"
+          onClick={() => setSeletorAberto(true)}
+        >
+          Formação: <span className="num text-lg text-primary">{formacao}</span>
         </Button>
       </div>
       <SeletorFormacao
@@ -182,21 +186,24 @@ export function MontagemDoTime({
 
         <div className="space-y-4">
           {!setor ? (
-            <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+            <p className="rounded-xl border border-dashed bg-raised p-4 text-sm text-muted-foreground">
               Escolha um setor no campinho (zagueiros, laterais, volantes, meias ou atacantes) para
               criar a regra dele.
             </p>
           ) : (
-            <div className="space-y-4 rounded-xl border bg-muted/30 p-4">
-              <div className="flex items-center justify-between">
-                <p className="font-display text-xl tracking-wide">{FUNCAO_LABELS[setor]}s</p>
+            <div className="space-y-4 rounded-xl border bg-raised p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h4 className="font-display text-[15px] font-extrabold uppercase leading-tight">
+                  {FUNCAO_LABELS[setor]}s
+                </h4>
                 <Button
                   variant="ghost"
                   size="icon"
+                  className="h-11 w-11"
                   onClick={() => setSetor(null)}
                   aria-label="Fechar"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </div>
 
@@ -205,16 +212,16 @@ export function MontagemDoTime({
                   {regrasDoSetor.map((r) => (
                     <li
                       key={JSON.stringify(r)}
-                      className="flex items-center justify-between gap-2 rounded-md bg-card px-3 py-1.5 text-sm"
+                      className="flex items-center justify-between gap-2 rounded-lg border bg-card py-0.5 pl-3 pr-0.5 text-sm"
                     >
                       <span>{fraseDaRegra(r, nomes)}</span>
                       <button
                         type="button"
-                        aria-label="Remover regra"
+                        aria-label={`Remover regra: ${fraseDaRegra(r, nomes)}`}
                         onClick={() => setComposicao(composicao.filter((x) => x !== r))}
-                        className="text-muted-foreground hover:text-destructive"
+                        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <X className="h-4 w-4" />
+                        <X className="h-4 w-4" aria-hidden="true" />
                       </button>
                     </li>
                   ))}
@@ -276,10 +283,11 @@ export function MontagemDoTime({
                   Regra: <strong>{previa}</strong>
                 </p>
                 <Button
+                  className="min-h-11 rounded-[10px] font-bold"
                   disabled={!!jaExiste}
                   onClick={() => nova && setComposicao([...composicao, nova])}
                 >
-                  <Plus className="mr-1 h-4 w-4" /> {jaExiste ? "Já adicionada" : "Adicionar regra"}
+                  <Plus aria-hidden="true" /> {jaExiste ? "Já adicionada" : "Adicionar regra"}
                 </Button>
               </div>
             </div>
@@ -298,16 +306,16 @@ export function MontagemDoTime({
                 {composicao.map((r) => (
                   <li
                     key={JSON.stringify(r)}
-                    className="flex items-center gap-1 rounded-full border bg-card py-1 pl-3 pr-1 text-sm"
+                    className="flex items-center gap-1 rounded-full border bg-raised py-0.5 pl-3 pr-0.5 text-sm"
                   >
                     {fraseDaRegra(r, nomes)}
                     <button
                       type="button"
-                      aria-label="Remover regra"
+                      aria-label={`Remover regra: ${fraseDaRegra(r, nomes)}`}
                       onClick={() => setComposicao(composicao.filter((x) => x !== r))}
-                      className="rounded-full p-1 text-muted-foreground hover:text-destructive"
+                      className="inline-flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <X className="h-4 w-4" aria-hidden="true" />
                     </button>
                   </li>
                 ))}

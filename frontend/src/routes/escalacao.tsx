@@ -1,7 +1,17 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardList, Download, Loader2, RefreshCw, Save, Shuffle, Plus, X } from "lucide-react";
+import {
+  ChevronDown,
+  ClipboardList,
+  Download,
+  Loader2,
+  RefreshCw,
+  Save,
+  Shuffle,
+  Plus,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { isAutenticado } from "@/lib/auth";
@@ -42,19 +52,19 @@ import {
 } from "@/components/ui/dialog";
 import { QuemJogaTudo } from "@/components/QuemJogaTudo";
 import {
+  Aba,
   AjudaSistema,
+  CLASSE_CHAVE,
   FormacaoDoJogo,
+  ListaDeAbas,
   type MudancaFormacaoForm,
 } from "@/components/EscalacaoControles";
 import { NumberInput } from "@/components/NumberInput";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -76,6 +86,17 @@ export const Route = createFileRoute("/escalacao")({
   component: EscalacaoPage,
 });
 
+/** Cartão/seção padrão da tela. */
+const SECAO = "rounded-2xl border bg-card p-5 md:p-6";
+/** Título de seção (Orbitron é larga: tamanho pequeno). */
+const TITULO_SECAO = "text-[15px] leading-tight";
+
+const ROTULO_JOGO: Record<Match["status"], string> = {
+  agendada: "Jogo agendado",
+  realizada: "Jogo realizado",
+  cancelada: "Jogo cancelado",
+};
+
 // ---------------------------------------------------------------------------
 // Página: título + escolha do jogo
 // ---------------------------------------------------------------------------
@@ -96,24 +117,29 @@ function EscalacaoPage() {
   const partida = partidas?.find((p) => p.id === partidaId);
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-5 p-4 md:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-4xl tracking-wide text-foreground">Escalação</h1>
-          <p className="text-sm text-muted-foreground">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <p className="mb-1.5 text-[13px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            {partida
+              ? `${ROTULO_JOGO[partida.status] ?? "Jogo"} · ${partida.opponent} · ${formatDate(partida.match_date)}`
+              : "Montagem do time"}
+          </p>
+          <h1 className="text-3xl leading-tight">Escalação</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             {podeEditar
               ? "Escolha o jogo e o sistema divide os minutos e as trocas para você."
               : "Veja a escalação montada para cada jogo."}
           </p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           {isLoading ? (
-            <Skeleton className="h-10 w-72" />
+            <Skeleton className="h-11 w-full rounded-[10px] sm:w-72" />
           ) : !partidas?.length ? (
             <p className="text-sm text-muted-foreground">Nenhuma partida cadastrada ainda.</p>
           ) : (
             <Select value={partidaId} onValueChange={setPartidaId}>
-              <SelectTrigger className="w-72" aria-label="Jogo">
+              <SelectTrigger className="h-11 w-full sm:w-72" aria-label="Jogo">
                 <SelectValue placeholder="Selecione o jogo" />
               </SelectTrigger>
               <SelectContent>
@@ -157,14 +183,13 @@ function PainelVisualizacao({ partida }: { partida: Match }) {
     queryFn: () => fetchEscalacaoSalva(partida.id),
   });
 
-  if (isLoading) return <Skeleton className="h-96 w-full" />;
+  if (isLoading) return <Skeleton className="h-96 w-full rounded-2xl" />;
   if (!salva) {
     return (
-      <Card>
-        <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
-          <ClipboardList className="h-5 w-5" />A escalação deste jogo ainda não foi divulgada.
-        </CardContent>
-      </Card>
+      <div className={cn(SECAO, "flex items-center gap-3 text-sm text-muted-foreground")}>
+        <ClipboardList className="h-5 w-5 shrink-0" aria-hidden="true" />A escalação deste jogo
+        ainda não foi divulgada.
+      </div>
     );
   }
   return <VisaoEscalacao resultado={salva.resultado} partida={partida} />;
@@ -208,130 +233,180 @@ const VisaoEscalacao = memo(function VisaoEscalacao({
     .map(([id, minutos]) => ({ id, minutos, nome: resultado.jogadores[id]?.nome ?? id }))
     .sort((a, b) => b.minutos - a.minutos || a.nome.localeCompare(b.nome));
 
-  return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-        <CardTitle className="font-display text-2xl tracking-wide">
-          Escalação {resultado.formacao}
-          {resultado.mudancas_formacao && resultado.mudancas_formacao.length > 0 && (
-            <span className="ml-2 text-base text-muted-foreground">
-              {resultado.mudancas_formacao.map((m) => `→ ${m.formacao} aos ${m.minuto}'`).join(" ")}
-            </span>
-          )}
-        </CardTitle>
-        <div className="flex flex-wrap gap-2">
-          {acoes}
-          <Button variant="outline" size="sm" onClick={pdf}>
-            <Download className="mr-1 h-4 w-4" /> Exportar PDF
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div
-          className="flex flex-wrap items-center gap-2"
-          role="tablist"
-          aria-label="Momento do jogo"
-        >
-          {resultado.janelas.map((j, i) => (
-            <Button
-              key={j.inicio}
-              role="tab"
-              aria-selected={i === idx}
-              size="sm"
-              variant={i === idx ? "default" : "outline"}
-              onClick={() => setIndice(i)}
-            >
-              {j.inicio}'–{j.fim}'
-              {j.formacao && j.formacao !== resultado.formacao ? ` · ${j.formacao}` : ""}
-            </Button>
-          ))}
-        </div>
+  // Trocas agrupadas por minuto (linha do tempo).
+  const trocasPorMinuto = useMemo(() => {
+    const grupos = new Map<number, ResultadoEscalacao["trocas"]>();
+    for (const t of resultado.trocas) {
+      const lista = grupos.get(t.minuto) ?? [];
+      lista.push(t);
+      grupos.set(t.minuto, lista);
+    }
+    return [...grupos.entries()];
+  }, [resultado.trocas]);
 
-        <div className="grid gap-6 md:grid-cols-[minmax(0,360px)_1fr]">
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className={TITULO_SECAO}>Escalação {resultado.formacao}</h2>
+          {resultado.mudancas_formacao && resultado.mudancas_formacao.length > 0 && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {resultado.mudancas_formacao.map((m) => `→ ${m.formacao} aos ${m.minuto}'`).join(" ")}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="min-h-11 rounded-[10px] bg-card" onClick={pdf}>
+            <Download aria-hidden="true" /> Baixar PDF
+          </Button>
+          {acoes}
+        </div>
+      </div>
+
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
+        <section aria-label="Campo" className={cn(SECAO, "space-y-4")}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className={TITULO_SECAO}>Momento do jogo</h3>
+            <span className="num text-xl text-primary">
+              {janela.formacao ?? resultado.formacao}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Momento do jogo">
+            {resultado.janelas.map((j, i) => (
+              <button
+                key={j.inicio}
+                type="button"
+                role="tab"
+                aria-selected={i === idx}
+                onClick={() => setIndice(i)}
+                className={cn(
+                  "min-h-11 min-w-16 rounded-[10px] border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  i === idx
+                    ? "border-accent bg-accent font-extrabold text-accent-foreground"
+                    : "bg-card font-semibold hover:border-accent",
+                )}
+              >
+                {j.inicio}'–{j.fim}'
+                {j.formacao && j.formacao !== resultado.formacao ? ` · ${j.formacao}` : ""}
+              </button>
+            ))}
+          </div>
           <CampoEscalacao
             lugares={janela.lugares}
             formacao={janela.formacao ?? resultado.formacao}
             jogadores={resultado.jogadores}
             destaque={quemEntrou}
-            className="w-full max-w-sm justify-self-center"
+            className="mx-auto block w-full max-w-sm"
           />
-          <div className="space-y-4">
-            <div>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Banco neste momento
-              </h3>
-              {banco.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Sem reservas.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {banco.map((id) => (
-                    <Badge key={id} variant="secondary">
-                      {resultado.jogadores[id].numero_camisa != null
-                        ? `${resultado.jogadores[id].numero_camisa} · `
-                        : ""}
-                      {resultado.jogadores[id].nome}
-                    </Badge>
-                  ))}
-                </div>
-              )}
+          {quemEntrou.size > 0 && (
+            <p className="text-center text-xs text-muted-foreground">
+              Contorno dourado: quem acabou de entrar.
+            </p>
+          )}
+        </section>
+
+        <div className="min-w-0 space-y-6">
+          <section aria-label="Banco neste momento" className={cn(SECAO, "space-y-3")}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className={TITULO_SECAO}>Banco neste momento</h3>
+              <span className="text-[13px] text-muted-foreground">
+                {banco.length} {banco.length === 1 ? "reserva" : "reservas"}
+              </span>
             </div>
-            <div>
-              <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                Linha do tempo das trocas
-              </h3>
-              {resultado.trocas.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Sem substituições.</p>
-              ) : (
-                <ol className="space-y-1 text-sm">
-                  {resultado.trocas.map((t, i) => (
-                    <li key={i} className="flex flex-wrap items-center gap-x-2">
-                      <span className="w-10 font-semibold tabular-nums">{t.minuto}'</span>
-                      <span className="text-destructive">↓ {t.sai_nome}</span>
-                      <span className="text-emerald-600 dark:text-emerald-400">
-                        ↑ {t.entra_nome}
+            {banco.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sem reservas.</p>
+            ) : (
+              <ul className="flex flex-wrap gap-2">
+                {banco.map((id) => (
+                  <li
+                    key={id}
+                    className="inline-flex items-center gap-1.5 rounded-full border bg-raised px-3 py-1 text-sm font-medium"
+                  >
+                    {resultado.jogadores[id].numero_camisa != null && (
+                      <span className="num text-base text-primary">
+                        {resultado.jogadores[id].numero_camisa}
                       </span>
-                      <span className="text-muted-foreground">({FUNCAO_LABELS[t.funcao]})</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-              {resultado.ajustes_de_posicao.length > 0 && (
-                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                  {resultado.ajustes_de_posicao.map((a, i) => (
-                    <li key={i}>
-                      {a.minuto}' · {a.nome} muda de {FUNCAO_LABELS[a.de]} para{" "}
-                      {FUNCAO_LABELS[a.para]}
-                    </li>
-                  ))}
-                </ul>
-              )}
+                    )}
+                    {resultado.jogadores[id].nome}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section aria-label="Substituições" className={cn(SECAO, "space-y-4")}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className={TITULO_SECAO}>Substituições</h3>
+              <span className="text-[13px] text-muted-foreground">
+                {trocasPorMinuto.length} {trocasPorMinuto.length === 1 ? "momento" : "momentos"} ·{" "}
+                {resultado.trocas.length} {resultado.trocas.length === 1 ? "troca" : "trocas"} ·
+                jogo de {resultado.duracao} min
+              </span>
             </div>
-          </div>
+            {trocasPorMinuto.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sem substituições.</p>
+            ) : (
+              <ol className="space-y-2.5" aria-label="Linha do tempo das trocas">
+                {trocasPorMinuto.map(([minuto, lista]) => (
+                  <li
+                    key={minuto}
+                    className="flex flex-wrap items-start gap-x-4 gap-y-2 rounded-xl border bg-raised px-4 py-3.5"
+                  >
+                    <span className="num min-w-14 text-3xl text-primary">{minuto}'</span>
+                    <ul className="flex min-w-0 flex-[1_1_220px] flex-col gap-1.5 text-sm">
+                      {lista.map((t, i) => (
+                        <li key={i} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                          <span>
+                            <strong className="text-primary">Entra</strong> {t.entra_nome}
+                          </span>
+                          <span className="text-muted-foreground">
+                            <strong>Sai</strong> {t.sai_nome}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {FUNCAO_LABELS[t.funcao]}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ol>
+            )}
+            {resultado.ajustes_de_posicao.length > 0 && (
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {resultado.ajustes_de_posicao.map((a, i) => (
+                  <li key={i}>
+                    <span className="num text-sm text-foreground">{a.minuto}'</span> · {a.nome} muda
+                    de {FUNCAO_LABELS[a.de]} para {FUNCAO_LABELS[a.para]}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </div>
+      </div>
 
-        <Separator />
-
-        <div>
-          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Minutos por jogador
-          </h3>
-          <div className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
-            {minutosOrdenados.map((m) => (
-              <div key={m.id} className="flex items-center gap-3 text-sm">
-                <span className="w-28 truncate">{m.nome}</span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${(m.minutos / resultado.duracao) * 100}%` }}
-                  />
-                </div>
-                <span className="w-10 text-right tabular-nums">{m.minutos}'</span>
+      <section aria-label="Minutos por jogador" className={cn(SECAO, "space-y-4")}>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className={TITULO_SECAO}>Minutos por jogador</h3>
+          <span className="text-[13px] text-muted-foreground">Goleiro fora do rodízio</span>
+        </div>
+        <ul className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
+          {minutosOrdenados.map((m) => (
+            <li key={m.id} className="flex items-center gap-3 text-sm">
+              <span className="w-28 truncate font-medium">{m.nome}</span>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-raised" aria-hidden="true">
+                <div
+                  className="h-full rounded-full bg-accent"
+                  style={{ width: `${(m.minutos / resultado.duracao) * 100}%` }}
+                />
               </div>
-            ))}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+              <span className="num w-10 text-right text-lg">{m.minutos}'</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
   );
 });
 
@@ -366,7 +441,7 @@ function PainelAdmin({ partida }: { partida: Match }) {
   });
 
   if (carregandoConvocados || carregandoSalva || !convocadosApi) {
-    return <Skeleton className="h-96 w-full" />;
+    return <Skeleton className="h-96 w-full rounded-2xl" />;
   }
   return (
     <FormularioAdmin
@@ -393,7 +468,7 @@ function Sigla({ posicoes }: { posicoes: string[] }) {
   return (
     <span
       title={posicoes.map((p) => p.replace(/_/g, " ")).join(" / ")}
-      className="ml-1.5 rounded bg-muted px-1 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+      className="ml-1.5 rounded-[5px] border px-1.5 py-px align-middle text-[11px] font-bold uppercase text-muted-foreground"
     >
       {sigla}
     </span>
@@ -431,10 +506,10 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
   const [escolhendo, setEscolhendo] = useState<number | null>(null);
   const [soEsses, setSoEsses] = useState<number | null>(null);
   return (
-    <section className="space-y-3">
+    <section aria-label="Como dividir o tempo" className={cn(SECAO, "space-y-4")}>
       <div>
-        <h2 className="font-semibold">Como dividir o tempo?</h2>
-        <p className="text-sm text-muted-foreground">
+        <h2 className={TITULO_SECAO}>Como dividir o tempo?</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
           O sistema comparou jeitos de fazer as trocas. Só aparecem os que funcionam. Escolha um — a
           escalação abaixo muda junto.
         </p>
@@ -447,18 +522,16 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
               key={`${o.tipo}-${o.quantos_fixos}-${i}`}
               className={cn(
                 "rounded-xl border-2 p-4 transition-colors",
-                ativa ? "border-primary bg-primary/5" : "bg-card hover:border-primary/50",
+                ativa ? "border-accent bg-accent/10" : "bg-raised hover:border-accent/60",
               )}
             >
               <button
                 type="button"
                 onClick={() => aoEscolher(i)}
                 aria-pressed={ativa}
-                className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <span className="block font-display text-xl leading-tight tracking-wide">
-                  {tituloDaOpcao(o)}
-                </span>
+                <span className="block text-base font-bold leading-snug">{tituloDaOpcao(o)}</span>
                 <span className="mt-1 block text-sm">
                   <strong>{o.momentos}</strong> momento{o.momentos === 1 ? "" : "s"} de troca ·{" "}
                   <strong>{o.trocas}</strong> substituições
@@ -496,7 +569,11 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
               })()}
               {o.tipo === "igual" && quemJogaTudo(o.resultado).length > 0 && (
                 <div className="mt-3">
-                  <Button size="sm" variant="outline" onClick={() => setSoEsses(i)}>
+                  <Button
+                    variant="outline"
+                    className="min-h-11 rounded-[10px] bg-card"
+                    onClick={() => setSoEsses(i)}
+                  >
                     Escolher quem joga o jogo todo
                   </Button>
                 </div>
@@ -504,8 +581,8 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
               {o.tipo === "fixos" && o.fixos.length > 0 && (
                 <div className="mt-3 space-y-1">
                   <Button
-                    size="sm"
                     variant="outline"
+                    className="min-h-11 rounded-[10px] bg-card"
                     disabled={refazendo}
                     onClick={() => setEscolhendo(i)}
                   >
@@ -513,7 +590,8 @@ const OpcoesDeTempo = memo(function OpcoesDeTempo({
                   </Button>
                   {refazendo && ativa && (
                     <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Refazendo as trocas…
+                      <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Refazendo as
+                      trocas…
                     </p>
                   )}
                 </div>
@@ -828,13 +906,13 @@ function FormularioAdmin({
   const linha = elenco.filter((j) => j.id !== goleiroId);
 
   return (
-    <Tabs defaultValue="escalacao" className="space-y-4">
-      <TabsList>
-        <TabsTrigger value="escalacao">Escalação</TabsTrigger>
-        <TabsTrigger value="tatica">Tática e estratégia</TabsTrigger>
-      </TabsList>
+    <Tabs defaultValue="escalacao" className="space-y-6">
+      <ListaDeAbas aria-label="Seções da escalação">
+        <Aba value="escalacao">Escalação</Aba>
+        <Aba value="tatica">Tática e estratégia</Aba>
+      </ListaDeAbas>
 
-      <TabsContent value="tatica" className="space-y-4">
+      <TabsContent value="tatica" className="mt-0 space-y-4">
         <AbaTatica
           partidaId={partida.id}
           formacao={formacao}
@@ -844,293 +922,322 @@ function FormularioAdmin({
         />
       </TabsContent>
 
-      <TabsContent value="escalacao" className="space-y-6">
-        {/* Tudo que define a escalação, num cartão só */}
-        <Card>
-          <CardContent className="space-y-6 pt-6">
-            {/* Quem joga */}
-            <section className="space-y-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h2 className="font-semibold">Quem joga</h2>
-                <span className="text-sm text-muted-foreground">
-                  {elenco.length} convocados · vêm da lista de presença
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {convocadosApi.convocados.map((j) => {
-                  const dentro = !remover.has(j.id);
-                  return (
-                    <button
-                      key={j.id}
-                      type="button"
-                      aria-pressed={dentro}
-                      onClick={() => alternarPadrao(j.id)}
-                      className={cn(
-                        "rounded-full border px-3 py-1 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        dentro
-                          ? "border-primary bg-primary/10 font-medium"
-                          : "text-muted-foreground line-through opacity-60",
-                      )}
-                    >
-                      {j.nome}
-                      <Sigla posicoes={j.posicoes} />
-                    </button>
-                  );
-                })}
-                {convocadosApi.bloqueados.map((j) => (
+      <TabsContent value="escalacao" className="mt-0 space-y-6">
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          {/* Quem joga */}
+          <section aria-label="Quem joga" className={cn(SECAO, "space-y-4")}>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className={TITULO_SECAO}>Quem joga</h2>
+              <span className="text-[13px] text-muted-foreground">
+                {elenco.length} convocados · vêm da lista de presença
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {convocadosApi.convocados.map((j) => {
+                const dentro = !remover.has(j.id);
+                return (
                   <button
                     key={j.id}
                     type="button"
-                    aria-pressed={incluir.has(j.id)}
-                    onClick={() => alternarExtra(j.id, !incluir.has(j.id))}
-                    title={`Indisponível: ${j.motivo}. Clique para incluir mesmo assim.`}
+                    aria-pressed={dentro}
+                    onClick={() => alternarPadrao(j.id)}
                     className={cn(
-                      "rounded-full border border-dashed px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      incluir.has(j.id) ? "border-primary bg-primary/10" : "opacity-60",
+                      "min-h-11 rounded-full border px-4 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      dentro
+                        ? "border-accent bg-accent/15 font-semibold"
+                        : "text-muted-foreground line-through opacity-60 hover:opacity-100",
                     )}
                   >
+                    {j.nome}
+                    <Sigla posicoes={j.posicoes} />
+                  </button>
+                );
+              })}
+              {convocadosApi.bloqueados.map((j) => (
+                <button
+                  key={j.id}
+                  type="button"
+                  aria-pressed={incluir.has(j.id)}
+                  onClick={() => alternarExtra(j.id, !incluir.has(j.id))}
+                  title={`Indisponível: ${j.motivo}. Clique para incluir mesmo assim.`}
+                  className={cn(
+                    "min-h-11 rounded-full border border-dashed px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    incluir.has(j.id)
+                      ? "border-accent bg-accent/15 font-semibold"
+                      : "opacity-60 hover:opacity-100",
+                  )}
+                >
+                  {j.nome} <Sigla posicoes={j.posicoes} />{" "}
+                  <span className="text-xs font-normal text-muted-foreground">({j.motivo})</span>
+                </button>
+              ))}
+              {convocadosApi.outros_ativos
+                .filter((j) => incluir.has(j.id))
+                .map((j) => (
+                  <button
+                    key={j.id}
+                    type="button"
+                    onClick={() => alternarExtra(j.id, false)}
+                    aria-label={`Tirar ${j.nome}`}
+                    className="flex min-h-11 items-center gap-1.5 rounded-full border border-accent bg-accent/15 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
                     {j.nome} <Sigla posicoes={j.posicoes} />
-                    <span className="text-xs text-muted-foreground">({j.motivo})</span>
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                 ))}
-                {convocadosApi.outros_ativos
-                  .filter((j) => incluir.has(j.id))
-                  .map((j) => (
-                    <button
-                      key={j.id}
-                      type="button"
-                      onClick={() => alternarExtra(j.id, false)}
-                      aria-label={`Tirar ${j.nome}`}
-                      className="flex items-center gap-1 rounded-full border border-primary bg-primary/10 px-3 py-1 text-sm"
-                    >
-                      {j.nome} <Sigla posicoes={j.posicoes} /> <X className="h-3 w-3" />
-                    </button>
-                  ))}
-                {convocadosApi.outros_ativos.filter((j) => !incluir.has(j.id)).length > 0 && (
-                  <Select value="" onValueChange={(id) => alternarExtra(id, true)}>
-                    <SelectTrigger
-                      aria-label="Adicionar outro jogador"
-                      className="h-8 w-auto gap-1 rounded-full border-dashed px-3 text-sm"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <SelectValue placeholder="Adicionar outro" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {convocadosApi.outros_ativos
-                        .filter((j) => !incluir.has(j.id))
-                        .map((j) => (
-                          <SelectItem key={j.id} value={j.id}>
-                            {j.nome}
-                            <Sigla posicoes={j.posicoes} />
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-              {convocadosApi.convocados.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  Ninguém confirmou presença ainda — adicione jogadores abaixo.
-                </p>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Clique em um nome para tirar ou devolver o jogador da lista.
-              </p>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label>Goleiro (joga o jogo todo)</Label>
-                  <Select value={goleiroId} onValueChange={setGoleiroId}>
-                    <SelectTrigger aria-label="Goleiro">
-                      <SelectValue placeholder="Escolha o goleiro" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {elenco.map((j) => (
+              {convocadosApi.outros_ativos.filter((j) => !incluir.has(j.id)).length > 0 && (
+                <Select value="" onValueChange={(id) => alternarExtra(id, true)}>
+                  <SelectTrigger
+                    aria-label="Adicionar outro jogador"
+                    className="h-11 w-auto gap-1.5 rounded-full border-dashed px-4 text-sm"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    <SelectValue placeholder="Adicionar outro" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {convocadosApi.outros_ativos
+                      .filter((j) => !incluir.has(j.id))
+                      .map((j) => (
                         <SelectItem key={j.id} value={j.id}>
                           {j.nome}
-                          {j.posicoes.includes("goleiro") ? " 🧤" : ""}
+                          <Sigla posicoes={j.posicoes} />
                         </SelectItem>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="duracao">Duração (minutos)</Label>
-                  <NumberInput
-                    id="duracao"
-                    value={duracao}
-                    onChange={setDuracao}
-                    min={10}
-                    max={120}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <Separator />
-
-            {/* Formação */}
-            <section className="space-y-3">
-              <h2 className="font-semibold">Formação</h2>
-              <FormacaoDoJogo
-                formacao={formacao}
-                setFormacao={setFormacao}
-                mudancas={mudancasForm}
-                setMudancas={setMudancasForm}
-                tatica={null}
-                duracao={Number(duracao) || 90}
-              />
-              <p className="text-xs text-muted-foreground">
-                As regras de montagem do time ficam na aba “Tática e estratégia”. A tática em si é
-                só orientação (PDF separado) e não muda a escalação.
-              </p>
-            </section>
-
-            <Separator />
-
-            {/* Avançado */}
-            <section className="space-y-3">
-              <Button
-                variant="link"
-                className="h-auto p-0"
-                onClick={() => setMostrarAvancado((v) => !v)}
-              >
-                {mostrarAvancado ? "Esconder" : "Mostrar"} regras por jogador (opcional)
-              </Button>
-              {mostrarAvancado && (
-                <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground">
-                    Aqui você escolhe, por exemplo, quem joga o jogo todo. O sistema ajusta as
-                    trocas em volta.
-                  </p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[560px] text-sm">
-                      <thead>
-                        <tr className="text-left text-xs uppercase text-muted-foreground">
-                          <th className="py-1 pr-2 font-medium">Jogador</th>
-                          <th className="px-2 font-medium">Joga o jogo todo</th>
-                          <th className="px-2 font-medium">Começa</th>
-                          <th className="px-2 font-medium">Só X min</th>
-                          <th className="px-2 font-medium">Só 2º tempo</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {linha.map((j) => {
-                          const r = regras[j.id] ?? {};
-                          return (
-                            <tr key={j.id} className="border-t">
-                              <td className="py-1 pr-2">{j.nome}</td>
-                              <td className="px-2">
-                                <Switch
-                                  checked={!!r.grupo_fixo}
-                                  onCheckedChange={(v) => mudarRegra(j.id, { grupo_fixo: v })}
-                                  aria-label={`${j.nome} joga o jogo todo`}
-                                />
-                              </td>
-                              <td className="px-2">
-                                <Select
-                                  value={r.comeca ?? "livre"}
-                                  onValueChange={(v) =>
-                                    mudarRegra(j.id, {
-                                      comeca:
-                                        v === "livre" ? undefined : (v as "titular" | "reserva"),
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger
-                                    className="h-8 w-32"
-                                    aria-label={`${j.nome} começa`}
-                                  >
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="livre">Tanto faz</SelectItem>
-                                    <SelectItem value="titular">Titular</SelectItem>
-                                    <SelectItem value="reserva">Reserva</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </td>
-                              <td className="px-2">
-                                <NumberInput
-                                  value={r.minutos_max ? String(r.minutos_max) : ""}
-                                  onChange={(v) =>
-                                    mudarRegra(j.id, { minutos_max: Number(v) || undefined })
-                                  }
-                                  min={1}
-                                  max={120}
-                                  placeholder="—"
-                                  className="w-24"
-                                />
-                              </td>
-                              <td className="px-2">
-                                <Switch
-                                  checked={!!r.so_segundo_tempo}
-                                  onCheckedChange={(v) => mudarRegra(j.id, { so_segundo_tempo: v })}
-                                  aria-label={`${j.nome} entra só no segundo tempo`}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <label className="flex items-start gap-3 text-sm">
-                    <Switch
-                      checked={!automatico}
-                      onCheckedChange={(v) => setAutomatico(!v)}
-                      aria-label="Escolher as substituições na mão"
-                    />
-                    <span>
-                      <strong>Escolher as substituições na mão</strong>
-                      <span className="block text-muted-foreground">
-                        Por padrão o computador decide tudo. Ligue só se quiser definir você mesmo.
-                      </span>
-                    </span>
-                  </label>
-                  {!automatico && (
-                    <div className="grid gap-4 sm:max-w-md sm:grid-cols-2">
-                      <div className="space-y-1">
-                        <Label htmlFor="subs">Momentos de substituição</Label>
-                        <NumberInput id="subs" value={nSubs} onChange={setNSubs} min={0} max={20} />
-                      </div>
-                      <div className="space-y-1">
-                        <Label htmlFor="trocas">Quantos trocam por vez</Label>
-                        <NumberInput
-                          id="trocas"
-                          value={trocas}
-                          onChange={setTrocas}
-                          min={1}
-                          max={10}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={() => rodar()} disabled={gerar.isPending} size="lg">
-                {gerar.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                )}
-                {gerar.isPending
-                  ? "Pensando nas melhores trocas…"
-                  : previa
-                    ? "Gerar novamente"
-                    : "Gerar escalação"}
-              </Button>
-              {gerar.isError && (
-                <p role="alert" className="text-sm text-destructive">
-                  {gerar.error.message}
-                </p>
+                  </SelectContent>
+                </Select>
               )}
             </div>
-          </CardContent>
-        </Card>
+            {convocadosApi.convocados.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Ninguém confirmou presença ainda — adicione jogadores abaixo.
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Clique em um nome para tirar ou devolver o jogador da lista.
+            </p>
+
+            <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Goleiro (joga o jogo todo)</Label>
+                <Select value={goleiroId} onValueChange={setGoleiroId}>
+                  <SelectTrigger aria-label="Goleiro" className="h-11">
+                    <SelectValue placeholder="Escolha o goleiro" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {elenco.map((j) => (
+                      <SelectItem key={j.id} value={j.id}>
+                        {j.nome}
+                        {j.posicoes.includes("goleiro") && (
+                          <span className="ml-1.5 rounded-[5px] border px-1.5 py-px align-middle text-[11px] font-bold uppercase text-muted-foreground">
+                            GOL
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="duracao">Duração (minutos)</Label>
+                <NumberInput
+                  id="duracao"
+                  value={duracao}
+                  onChange={setDuracao}
+                  min={10}
+                  max={120}
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Formação */}
+          <section aria-label="Formação" className={cn(SECAO, "space-y-4")}>
+            <h2 className={TITULO_SECAO}>Formação</h2>
+            <FormacaoDoJogo
+              formacao={formacao}
+              setFormacao={setFormacao}
+              mudancas={mudancasForm}
+              setMudancas={setMudancasForm}
+              tatica={null}
+              duracao={Number(duracao) || 90}
+            />
+            <p className="text-xs text-muted-foreground">
+              As regras de montagem do time ficam na aba “Tática e estratégia”. A tática em si é só
+              orientação (PDF separado) e não muda a escalação.
+            </p>
+          </section>
+        </div>
+
+        {/* Avançado */}
+        <section aria-label="Regras por jogador" className={cn(SECAO, "space-y-4")}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className={TITULO_SECAO}>Regras por jogador</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Opcional. Aqui você escolhe, por exemplo, quem joga o jogo todo. O sistema ajusta as
+                trocas em volta.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              className="min-h-11 rounded-[10px] bg-card"
+              aria-expanded={mostrarAvancado}
+              onClick={() => setMostrarAvancado((v) => !v)}
+            >
+              {mostrarAvancado ? "Esconder" : "Mostrar"} regras
+              <ChevronDown
+                aria-hidden="true"
+                className={cn("transition-transform", mostrarAvancado && "rotate-180")}
+              />
+            </Button>
+          </div>
+          {mostrarAvancado && (
+            <div className="space-y-5">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px] border-collapse text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-[0.06em] text-muted-foreground">
+                      <th scope="col" className="py-2 pr-2 font-semibold">
+                        Jogador
+                      </th>
+                      <th scope="col" className="px-2 py-2 font-semibold">
+                        Começa
+                      </th>
+                      <th scope="col" className="px-2 py-2 font-semibold">
+                        Só X min
+                      </th>
+                      <th scope="col" className="px-2 py-2 text-center font-semibold">
+                        Só 2º tempo
+                      </th>
+                      <th scope="col" className="py-2 pl-2 text-right font-semibold">
+                        Jogo todo
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {linha.map((j) => {
+                      const r = regras[j.id] ?? {};
+                      return (
+                        <tr key={j.id} className="border-t">
+                          <th scope="row" className="py-2 pr-2 text-left font-semibold">
+                            {j.nome}
+                            <Sigla posicoes={j.posicoes} />
+                          </th>
+                          <td className="px-2 py-2">
+                            <Select
+                              value={r.comeca ?? "livre"}
+                              onValueChange={(v) =>
+                                mudarRegra(j.id, {
+                                  comeca: v === "livre" ? undefined : (v as "titular" | "reserva"),
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-11 w-32" aria-label={`${j.nome} começa`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="livre">Tanto faz</SelectItem>
+                                <SelectItem value="titular">Titular</SelectItem>
+                                <SelectItem value="reserva">Reserva</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          <td className="px-2 py-2">
+                            <NumberInput
+                              value={r.minutos_max ? String(r.minutos_max) : ""}
+                              onChange={(v) =>
+                                mudarRegra(j.id, { minutos_max: Number(v) || undefined })
+                              }
+                              min={1}
+                              max={120}
+                              placeholder="—"
+                              className="w-24"
+                              aria-label={`${j.nome}: máximo de minutos`}
+                            />
+                          </td>
+                          <td className="px-2 py-2 text-center">
+                            <Switch
+                              className={CLASSE_CHAVE}
+                              checked={!!r.so_segundo_tempo}
+                              onCheckedChange={(v) => mudarRegra(j.id, { so_segundo_tempo: v })}
+                              aria-label={`${j.nome} entra só no segundo tempo`}
+                            />
+                          </td>
+                          <td className="py-2 pl-2 text-right">
+                            <Switch
+                              className={CLASSE_CHAVE}
+                              checked={!!r.grupo_fixo}
+                              onCheckedChange={(v) => mudarRegra(j.id, { grupo_fixo: v })}
+                              aria-label={`${j.nome} joga o jogo todo`}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="space-y-4 rounded-xl border bg-raised p-4">
+                <label className="flex items-start gap-3 text-sm">
+                  <Switch
+                    className={cn(CLASSE_CHAVE, "mt-0.5")}
+                    checked={!automatico}
+                    onCheckedChange={(v) => setAutomatico(!v)}
+                    aria-label="Escolher as substituições na mão"
+                  />
+                  <span>
+                    <strong>Escolher as substituições na mão</strong>
+                    <span className="block text-muted-foreground">
+                      Por padrão o computador decide tudo. Ligue só se quiser definir você mesmo.
+                    </span>
+                  </span>
+                </label>
+                {!automatico && (
+                  <div className="grid gap-4 sm:max-w-md sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="subs">Momentos de substituição</Label>
+                      <NumberInput id="subs" value={nSubs} onChange={setNSubs} min={0} max={20} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="trocas">Quantos trocam por vez</Label>
+                      <NumberInput
+                        id="trocas"
+                        value={trocas}
+                        onChange={setTrocas}
+                        min={1}
+                        max={10}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            onClick={() => rodar()}
+            disabled={gerar.isPending}
+            className="min-h-11 rounded-[10px] px-6 font-bold"
+          >
+            {gerar.isPending ? (
+              <Loader2 className="animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw aria-hidden="true" />
+            )}
+            {gerar.isPending
+              ? "Pensando nas melhores trocas…"
+              : previa
+                ? "Gerar novamente"
+                : "Gerar escalação"}
+          </Button>
+          {gerar.isError && (
+            <p role="alert" className="text-sm text-destructive">
+              {gerar.error.message}
+            </p>
+          )}
+        </div>
 
         {/* Resultado */}
         {previa && resultadoAtual && (
@@ -1139,8 +1246,11 @@ function FormularioAdmin({
               ...(previa.avisos ?? []),
               ...(resultadoAtual.plano?.aviso ? [resultadoAtual.plano.aviso] : []),
             ].length > 0 && (
-              <div className="rounded-lg border border-accent bg-accent/10 p-4 text-sm">
-                <p className="mb-1 font-semibold">Atenção</p>
+              <div
+                role="note"
+                className="rounded-[10px] border border-warn-border bg-warn px-4 py-3 text-sm leading-relaxed text-warn-foreground"
+              >
+                <p className="mb-1 font-bold">Atenção</p>
                 <ul className="list-disc space-y-1 pl-5">
                   {[
                     ...(previa.avisos ?? []),
@@ -1178,7 +1288,7 @@ function FormularioAdmin({
                   <>
                     <Button
                       variant="outline"
-                      size="sm"
+                      className="min-h-11 rounded-[10px] bg-card"
                       disabled={gerar.isPending}
                       onClick={() => {
                         const proxima = semente + 1;
@@ -1186,10 +1296,14 @@ function FormularioAdmin({
                         rodar(proxima);
                       }}
                     >
-                      <Shuffle className="mr-1 h-4 w-4" /> Outra opção
+                      <Shuffle aria-hidden="true" /> Outra opção
                     </Button>
-                    <Button size="sm" onClick={() => salvar.mutate()} disabled={salvar.isPending}>
-                      <Save className="mr-1 h-4 w-4" />
+                    <Button
+                      className="min-h-11 rounded-[10px] px-5 font-bold"
+                      onClick={() => salvar.mutate()}
+                      disabled={salvar.isPending}
+                    >
+                      <Save aria-hidden="true" />
                       {salva ? "Atualizar escalação salva" : "Salvar escalação"}
                     </Button>
                   </>
@@ -1197,24 +1311,37 @@ function FormularioAdmin({
               />
             </div>
 
-            <section className="space-y-3">
-              <Button
-                variant="link"
-                className="h-auto p-0"
-                onClick={() => setMostrarAjuste((v) => !v)}
-              >
-                {mostrarAjuste ? "Esconder" : "Ajustar um jogador"} (começa jogando, posição…)
-              </Button>
+            <section aria-label="Ajustar um jogador" className={cn(SECAO, "space-y-4")}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className={TITULO_SECAO}>Ajustar um jogador</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Começa jogando, começa no banco ou joga numa posição específica.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="min-h-11 rounded-[10px] bg-card"
+                  aria-expanded={mostrarAjuste}
+                  onClick={() => setMostrarAjuste((v) => !v)}
+                >
+                  {mostrarAjuste ? "Esconder" : "Ajustar"}
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={cn("transition-transform", mostrarAjuste && "rotate-180")}
+                  />
+                </Button>
+              </div>
               {mostrarAjuste && (
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-end gap-3">
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <Label>Jogador</Label>
                       <Select
                         value={novaRestricao.jogador}
                         onValueChange={(v) => setNovaRestricao((s) => ({ ...s, jogador: v }))}
                       >
-                        <SelectTrigger className="w-48" aria-label="Jogador do ajuste">
+                        <SelectTrigger className="h-11 w-48" aria-label="Jogador do ajuste">
                           <SelectValue placeholder="Escolha" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1226,13 +1353,13 @@ function FormularioAdmin({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       <Label>Regra</Label>
                       <Select
                         value={novaRestricao.tipo}
                         onValueChange={(v) => setNovaRestricao((s) => ({ ...s, tipo: v }))}
                       >
-                        <SelectTrigger className="w-56" aria-label="Tipo de ajuste">
+                        <SelectTrigger className="h-11 w-56" aria-label="Tipo de ajuste">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1248,33 +1375,39 @@ function FormularioAdmin({
                     </div>
                     <Button
                       variant="secondary"
+                      className="min-h-11 rounded-[10px]"
                       onClick={adicionarRestricao}
                       disabled={!novaRestricao.jogador || gerar.isPending}
                     >
-                      <Plus className="mr-1 h-4 w-4" /> Aplicar e regerar
+                      <Plus aria-hidden="true" /> Aplicar e regerar
                     </Button>
                   </div>
                   {restricoes.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
+                    <ul className="flex flex-wrap gap-2">
                       {restricoes.map((r, i) => (
-                        <Badge key={i} variant="secondary" className="gap-1">
-                          {nomeDe(r.jogador_id)}:{" "}
-                          {r.tipo === "comeca_dentro"
-                            ? "começa jogando"
-                            : r.tipo === "comeca_fora"
-                              ? "começa no banco"
-                              : `joga de ${FUNCAO_LABELS[r.funcao!].toLowerCase()}`}
+                        <li
+                          key={i}
+                          className="inline-flex items-center gap-1 rounded-full border bg-raised py-0.5 pl-3 pr-0.5 text-sm"
+                        >
+                          <span>
+                            <strong className="font-semibold">{nomeDe(r.jogador_id)}:</strong>{" "}
+                            {r.tipo === "comeca_dentro"
+                              ? "começa jogando"
+                              : r.tipo === "comeca_fora"
+                                ? "começa no banco"
+                                : `joga de ${FUNCAO_LABELS[r.funcao!].toLowerCase()}`}
+                          </span>
                           <button
                             type="button"
-                            aria-label="Remover ajuste"
+                            aria-label={`Remover ajuste de ${nomeDe(r.jogador_id)}`}
                             onClick={() => removerRestricao(i)}
-                            className="rounded-full hover:text-destructive"
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
-                            <X className="h-3 w-3" />
+                            <X className="h-4 w-4" aria-hidden="true" />
                           </button>
-                        </Badge>
+                        </li>
                       ))}
-                    </div>
+                    </ul>
                   )}
                 </div>
               )}
