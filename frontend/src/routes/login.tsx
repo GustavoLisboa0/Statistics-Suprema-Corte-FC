@@ -7,7 +7,6 @@ import { fetchMeuJogador } from "@/lib/football";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -39,55 +38,81 @@ function LoginPage() {
   };
 
   return (
-    // No claro o fundo é o dourado cheio; no escuro ele viraria um bloco muito
-    // berrante, então usa o cinza do tema e o dourado fica na borda do card.
-    <div className="flex min-h-screen items-center justify-center bg-accent/100 p-4 dark:bg-background">
-      <Card className="w-full max-w-sm dark:border-accent/30">
-        <CardHeader className="text-center">
-          {/* CardTitle é uma <div> estilizada, não um heading real — sem isso
-              a página não tem nenhum <h1> pra leitor de tela navegar por título. */}
-          <h1 className="sr-only">Suprema Corte FC</h1>
-          <CardTitle aria-hidden="true" className="font-display text-3xl dark:text-accent">
-            Suprema Corte FC
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">Entre para acessar o sistema</p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={submit} className="space-y-4">
-            <div>
+    <div className="flex min-h-screen flex-wrap bg-background text-foreground">
+      <section
+        aria-label="Apresentação"
+        className="flex min-h-[360px] flex-[1_1_420px] flex-col justify-between gap-10 bg-hero px-6 py-10 text-hero-foreground sm:px-12 sm:py-14"
+      >
+        <span
+          aria-hidden="true"
+          className="num inline-flex h-[52px] w-[52px] items-center justify-center rounded-xl bg-accent text-[22px] text-accent-foreground"
+        >
+          SC
+        </span>
+        <div className="flex flex-col gap-4">
+          <h1 className="text-4xl leading-tight">
+            Suprema
+            <br />
+            Corte FC
+          </h1>
+          <p className="max-w-[360px] text-base leading-relaxed text-hero-muted">
+            Elenco, partidas, presença e escalação do time num só lugar.
+          </p>
+        </div>
+        {/* Espaçador: mantém o título no meio do painel sem inventar números
+            (a tela de login não tem sessão pra buscar dado real). */}
+        <span aria-hidden="true" />
+      </section>
+
+      <main className="flex flex-[1_1_480px] items-center justify-center px-4 py-12 sm:px-6">
+        <div className="flex w-full max-w-[400px] flex-col gap-7">
+          <div>
+            <h2 className="mb-2 text-2xl leading-tight">Entrar</h2>
+            <p className="text-[15px] text-muted-foreground">
+              Use o email da sua conta para acessar o sistema.
+            </p>
+          </div>
+          <form onSubmit={submit} className="flex flex-col gap-[18px]">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
                 autoComplete="username"
+                placeholder="email@exemplo.com"
                 required
+                className="h-12"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            <div>
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Senha</Label>
               <Input
                 id="password"
                 type="password"
                 autoComplete="current-password"
                 required
+                className="h-12"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="h-12 w-full font-bold" disabled={loading}>
               {loading ? "Entrando..." : "Entrar"}
             </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              Primeiro acesso?{" "}
-              <Link to="/cadastro" className="font-medium text-accent hover:underline">
-                Criar conta
-              </Link>
-            </p>
           </form>
-        </CardContent>
-      </Card>
+          <p className="text-center text-sm text-muted-foreground">
+            Primeiro acesso?{" "}
+            <Link
+              to="/cadastro"
+              className="inline-flex min-h-11 items-center font-bold text-primary hover:underline"
+            >
+              Criar conta
+            </Link>
+          </p>
+        </div>
+      </main>
     </div>
   );
 }

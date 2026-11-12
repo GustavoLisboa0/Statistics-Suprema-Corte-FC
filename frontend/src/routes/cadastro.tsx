@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const Route = createFileRoute("/cadastro")({
   head: () => ({
@@ -23,6 +22,8 @@ export const Route = createFileRoute("/cadastro")({
 });
 
 const MIN_SENHA = 6;
+
+const PASSOS = ["Crie sua conta", "Confira seu cadastro de jogador", "Confirme presença"] as const;
 
 function CadastroPage() {
   const navigate = useNavigate();
@@ -70,118 +71,172 @@ function CadastroPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-accent/100 p-4 dark:bg-background">
-      <Card className="w-full max-w-sm dark:border-accent/30">
-        <CardHeader className="text-center">
-          {/* CardTitle é uma <div> estilizada, não um heading real — sem isso
-              a página não tem nenhum <h1> pra leitor de tela navegar por título. */}
-          <h1 className="sr-only">Suprema Corte FC</h1>
-          <CardTitle aria-hidden="true" className="font-display text-3xl dark:text-accent">
-            Suprema Corte FC
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {confirmeEmail ? "Confirme seu email" : "Crie sua conta"}
+    <div className="flex min-h-screen flex-wrap bg-background text-foreground">
+      <section
+        aria-label="Apresentação"
+        className="flex min-h-[360px] flex-[1_1_420px] flex-col justify-between gap-10 bg-hero px-6 py-10 text-hero-foreground sm:px-12 sm:py-14"
+      >
+        <span
+          aria-hidden="true"
+          className="num inline-flex h-[52px] w-[52px] items-center justify-center rounded-xl bg-accent text-[22px] text-accent-foreground"
+        >
+          SC
+        </span>
+        <div className="flex flex-col gap-4">
+          <h1 className="text-4xl leading-tight">
+            Suprema
+            <br />
+            Corte FC
+          </h1>
+          <p className="max-w-[360px] text-base leading-relaxed text-hero-muted">
+            Crie sua conta e confirme presença nos jogos do time.
           </p>
-        </CardHeader>
-        <CardContent>
+        </div>
+        <ol aria-label="Etapas" className="flex flex-col gap-3 text-sm text-hero-muted">
+          {PASSOS.map((passo, i) => (
+            <li
+              key={passo}
+              aria-current={i === 0 ? "step" : undefined}
+              className="flex items-center gap-3"
+            >
+              <span
+                aria-hidden="true"
+                className={
+                  i === 0
+                    ? "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-extrabold text-accent-foreground"
+                    : "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-hero-muted/50 text-[13px] font-bold"
+                }
+              >
+                {i + 1}
+              </span>
+              <span className={i === 0 ? "font-semibold text-hero-foreground" : undefined}>
+                {passo}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <main className="flex flex-[1_1_480px] items-center justify-center px-4 py-12 sm:px-6">
+        <div className="flex w-full max-w-[420px] flex-col gap-6">
           {confirmeEmail ? (
-            <div className="space-y-4 text-sm">
-              <p>
-                Enviamos um link de confirmação para{" "}
-                <span className="font-medium">{email.trim()}</span>. Abra o link e depois entre
-                normalmente — vamos te levar direto pra completar seu cadastro de jogador.
-              </p>
-              <Button className="w-full" onClick={() => navigate({ to: "/login" })}>
-                Ir para o login
-              </Button>
-            </div>
-          ) : (
-            <form onSubmit={submit} className="space-y-4">
-              <p className="rounded-md border border-accent/40 bg-accent/10 p-3 text-xs text-muted-foreground">
-                Depois de criar a conta você vai completar seu cadastro de jogador. Se um editor já
-                cadastrou você antes, a gente identifica pelo email ou telefone e te mostra pra
-                conferir.
-              </p>
+            <>
               <div>
-                <Label htmlFor="nome">Nome</Label>
-                <Input
-                  id="nome"
-                  maxLength={MAX_NAME_LENGTH}
-                  required
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="telefone">Telefone</Label>
-                <Input
-                  id="telefone"
-                  type="tel"
-                  inputMode="numeric"
-                  placeholder="(11) 91234-5678"
-                  maxLength={15}
-                  required
-                  value={telefone}
-                  onChange={(e) => setTelefone(formatPhone(e.target.value))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="username"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="password">Senha</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  minLength={MIN_SENHA}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Mínimo de {MIN_SENHA} caracteres.
+                <h2 className="mb-2 text-2xl leading-tight">Confirme seu email</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Enviamos um link de confirmação para{" "}
+                  <span className="font-semibold break-all text-foreground">{email.trim()}</span>.
+                  Abra o link e depois entre normalmente — vamos te levar direto pra completar seu
+                  cadastro de jogador.
                 </p>
               </div>
-              <div>
-                <Label htmlFor="confirmacao">Repita a senha</Label>
-                <Input
-                  id="confirmacao"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  aria-invalid={senhaDivergente}
-                  aria-describedby={senhaDivergente ? "confirmacao-erro" : undefined}
-                  value={confirmacao}
-                  onChange={(e) => setConfirmacao(e.target.value)}
-                />
-                {senhaDivergente && (
-                  <p id="confirmacao-erro" className="mt-1 text-xs text-destructive">
-                    As senhas não conferem.
-                  </p>
-                )}
-              </div>
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Criando conta..." : "Criar conta"}
+              <Button className="h-12 w-full font-bold" onClick={() => navigate({ to: "/login" })}>
+                Ir para o login
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
+            </>
+          ) : (
+            <>
+              <div>
+                <h2 className="mb-2 text-2xl leading-tight">Criar conta</h2>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Depois de criar a conta você completa seu cadastro de jogador. Se um administrador
+                  já cadastrou você, identificamos pelo email ou telefone e mostramos para você
+                  conferir.
+                </p>
+              </div>
+              <form onSubmit={submit} className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="nome">Nome</Label>
+                  <Input
+                    id="nome"
+                    autoComplete="name"
+                    maxLength={MAX_NAME_LENGTH}
+                    required
+                    className="h-12"
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="telefone">Telefone</Label>
+                  <Input
+                    id="telefone"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    placeholder="(11) 91234-5678"
+                    maxLength={15}
+                    required
+                    className="h-12"
+                    value={telefone}
+                    onChange={(e) => setTelefone(formatPhone(e.target.value))}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    autoComplete="username"
+                    required
+                    className="h-12"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="password">Senha</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    minLength={MIN_SENHA}
+                    aria-describedby="password-dica"
+                    className="h-12"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <p id="password-dica" className="text-xs text-muted-foreground">
+                    Mínimo de {MIN_SENHA} caracteres.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="confirmacao">Repita a senha</Label>
+                  <Input
+                    id="confirmacao"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    aria-invalid={senhaDivergente}
+                    aria-describedby={senhaDivergente ? "confirmacao-erro" : undefined}
+                    className="h-12 aria-[invalid=true]:border-2 aria-[invalid=true]:border-destructive"
+                    value={confirmacao}
+                    onChange={(e) => setConfirmacao(e.target.value)}
+                  />
+                  {senhaDivergente && (
+                    <p id="confirmacao-erro" className="text-xs text-destructive">
+                      As senhas não conferem.
+                    </p>
+                  )}
+                </div>
+                <Button type="submit" className="h-12 w-full font-bold" disabled={loading}>
+                  {loading ? "Criando conta..." : "Criar conta"}
+                </Button>
+              </form>
+              <p className="text-center text-sm text-muted-foreground">
                 Já tem conta?{" "}
-                <Link to="/login" className="font-medium text-accent hover:underline">
+                <Link
+                  to="/login"
+                  className="inline-flex min-h-11 items-center font-bold text-primary hover:underline"
+                >
                   Entrar
                 </Link>
               </p>
-            </form>
+            </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </main>
     </div>
   );
 }
