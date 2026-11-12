@@ -1192,8 +1192,11 @@ botões outline/ghost, pontuação solta em partidas.
 
 ## 6. Pendências e pontos em aberto
 
-- **Redesign (5.10):** código na branch `redesign`, **ainda não commitado**
-  (só o `CLAUDE.md` foi, a pedido). Não testado: fluxo de usuário comum
+- **Redesign (5.10):** commitado em 6 commits por tela (`bac521f` tema e
+  barra de topo, `e930ab3` dashboard, `29b81e2` partidas, `bf07be8` elenco,
+  `a986c15` escalação, `53bed38` login/cadastro/meu cadastro) e enviado
+  direto pro `main` em 2026-11-12, a pedido; deploy de produção da Vercel
+  ficou READY. Não testado: fluxo de usuário comum
   (sem ser admin), confirmar presença de verdade pelo botão novo, salvar
   escalação/PDF, diálogos de punição/lesão/atributos abertos no navegador.
   `NumberInput` continua com 36px de altura (abaixo dos 44px de toque);
