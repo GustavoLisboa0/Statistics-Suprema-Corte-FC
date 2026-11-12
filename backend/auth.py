@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 
 import httpx
 from fastapi import Depends, Header, HTTPException
@@ -113,12 +114,57 @@ def papel_do_usuario(user_id: str) -> str:
     return resposta.data[0]["papel"]
 
 
+# Cache curto de "token -> usuário". Cada tela dispara várias requisições
+# seguidas (jogadores, partidas, estatísticas...) e CADA uma validava o token
+# no Supabase Auth e consultava o papel: 2 viagens de rede (~0,3-1s no plano
+# gratuito) antes de qualquer trabalho. Com o cache, só a primeira de cada
+# minuto paga isso.
+#
+# Contrapartida assumida: um token revogado, ou um papel trocado pelo admin
+# (editor <-> visualizador), só vale na API depois de até `_CACHE_TTL_S`
+# segundos. Tokens inválidos/expirados NUNCA entram no cache (a falha levanta
+# antes), então um 401 continua imediato para quem não está logado.
+_CACHE_TTL_S = 60
+_CACHE_MAX = 500
+_cache_usuarios: dict[str, tuple[float, dict]] = {}
+
+
+def _usuario_em_cache(token: str) -> dict | None:
+    item = _cache_usuarios.get(token)
+    if item is None:
+        return None
+    expira_em, usuario = item
+    if expira_em < time.monotonic():
+        _cache_usuarios.pop(token, None)
+        return None
+    return usuario
+
+
+def _guardar_usuario(token: str, usuario: dict) -> None:
+    if len(_cache_usuarios) >= _CACHE_MAX:
+        agora = time.monotonic()
+        for chave in [k for k, (exp, _) in _cache_usuarios.items() if exp < agora]:
+            _cache_usuarios.pop(chave, None)
+        if len(_cache_usuarios) >= _CACHE_MAX:  # tudo ainda válido: descarta o mais antigo
+            _cache_usuarios.pop(next(iter(_cache_usuarios)), None)
+    _cache_usuarios[token] = (time.monotonic() + _CACHE_TTL_S, usuario)
+
+
+def limpar_cache_usuarios() -> None:
+    """Esvazia o cache (usado em testes e no logout, se houver)."""
+    _cache_usuarios.clear()
+
+
 async def usuario_atual(authorization: str | None = Header(default=None)) -> dict:
     """Dependency: exige um Bearer token válido em qualquer requisição."""
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Faça login para continuar")
 
     token = authorization.split(" ", 1)[1]
+    em_cache = _usuario_em_cache(token)
+    if em_cache is not None:
+        return dict(em_cache)  # cópia: quem recebe pode mexer sem sujar o cache
+
     # _validar_token e papel_do_usuario usam httpx/supabase-py de forma
     # bloqueante. Chamados direto aqui (função async), cada um trava o único
     # loop de eventos do Uvicorn por ~0,5-1s — o servidor não processa NENHUMA
@@ -127,7 +173,7 @@ async def usuario_atual(authorization: str | None = Header(default=None)) -> dic
     usuario = await asyncio.to_thread(_validar_token, token)
     papel = await asyncio.to_thread(papel_do_usuario, usuario["id"])
     metadata = usuario.get("user_metadata") or {}
-    return {
+    resultado = {
         "id": usuario["id"],
         "email": usuario.get("email"),
         "nome": metadata.get("nome"),
@@ -137,6 +183,8 @@ async def usuario_atual(authorization: str | None = Header(default=None)) -> dic
         "telefone": usuario.get("phone") or metadata.get("telefone"),
         "papel": papel,
     }
+    _guardar_usuario(token, dict(resultado))
+    return resultado
 
 
 async def exige_editor(usuario: dict = Depends(usuario_atual)) -> dict:

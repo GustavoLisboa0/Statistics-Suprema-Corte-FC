@@ -9,6 +9,7 @@ Quem gera e salva é só o editor (admin); qualquer usuário logado pode ver a
 escalação já salva.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -161,15 +162,54 @@ def _resumo(jogador: dict, presenca: dict | None = None) -> dict:
     }
 
 
-def _carregar_convocados(partida: dict) -> dict:
-    jogadores = supabase.table("jogadores").select("*").order("nome").execute().data or []
-    por_id = {j["id"]: j for j in jogadores}
-    presencas = (
-        supabase.table("presenca").select("*").eq("partida_id", str(partida["id"])).execute().data
-        or []
+# Cada `.execute()` do Supabase é uma viagem de rede. Estas consultas não
+# dependem umas das outras, então rodam juntas: o tempo total é o da mais
+# lenta, não a soma (no plano gratuito cada uma custa ~0,1-0,4 s).
+_POOL_CONSULTAS = ThreadPoolExecutor(max_workers=8, thread_name_prefix="consulta")
+
+
+def _buscar_tudo(*consultas):
+    """Roda funções sem argumento em paralelo e devolve os resultados na mesma ordem."""
+    futuros = [_POOL_CONSULTAS.submit(c) for c in consultas]
+    return [f.result() for f in futuros]
+
+
+def _consultas_da_partida(partida_id: str):
+    """As 4 consultas que o passo 'convocados' precisa, na ordem: jogadores, presenças, punições, lesões."""
+    return (
+        lambda: supabase.table("jogadores").select("*").order("nome").execute().data or [],
+        lambda: supabase.table("presenca").select("*").eq("partida_id", partida_id).execute().data
+        or [],
+        lambda: supabase.table("punicoes").select("*").execute().data or [],
+        lambda: supabase.table("lesoes").select("*").execute().data or [],
     )
-    punicoes = supabase.table("punicoes").select("*").execute().data or []
-    lesoes = supabase.table("lesoes").select("*").execute().data or []
+
+
+def _carregar_partida_e_convocados(partida_id: UUID) -> tuple[dict, dict]:
+    """
+    Partida + convocados com as 5 consultas em paralelo (a partida também: o
+    id vem da rota, não precisa esperar a partida chegar para filtrar a presença).
+    """
+    pid = str(partida_id)
+    partida_res, jogadores, presencas, punicoes, lesoes = _buscar_tudo(
+        lambda: supabase.table("partidas").select("*").eq("id", pid).execute(),
+        *_consultas_da_partida(pid),
+    )
+    if not partida_res.data:
+        raise HTTPException(status_code=404, detail="Partida não encontrada")
+    partida = partida_res.data[0]
+    return partida, _montar_convocados(partida, jogadores, presencas, punicoes, lesoes)
+
+
+def _carregar_convocados(partida: dict) -> dict:
+    jogadores, presencas, punicoes, lesoes = _buscar_tudo(*_consultas_da_partida(str(partida["id"])))
+    return _montar_convocados(partida, jogadores, presencas, punicoes, lesoes)
+
+
+def _montar_convocados(
+    partida: dict, jogadores: list, presencas: list, punicoes: list, lesoes: list
+) -> dict:
+    por_id = {j["id"]: j for j in jogadores}
 
     convocados, bloqueados = [], []
     ids_confirmados = set()
@@ -195,7 +235,7 @@ def _carregar_convocados(partida: dict) -> dict:
 @router.get("/{partida_id}/escalacao/convocados")
 def listar_convocados(partida_id: UUID, usuario: dict = Depends(exige_editor)):
     """Ponto de partida do passo 'convocados': presença confirmada, já filtrada."""
-    return _carregar_convocados(_partida_ou_404(partida_id))
+    return _carregar_partida_e_convocados(partida_id)[1]
 
 
 # ---------------------------------------------------------------------------
@@ -203,10 +243,9 @@ def listar_convocados(partida_id: UUID, usuario: dict = Depends(exige_editor)):
 # ---------------------------------------------------------------------------
 @router.post("/{partida_id}/escalacao/gerar")
 def gerar(partida_id: UUID, payload: GerarPayload, usuario: dict = Depends(exige_editor)):
-    partida = _partida_ou_404(partida_id)
-    dados = _carregar_convocados(partida)
+    partida, dados = _carregar_partida_e_convocados(partida_id)
 
-    todos = {j["id"]: j for j in dados["convocados"] + dados["bloqueados"] + dados["outros_ativos"]}
+    todos ={j["id"]: j for j in dados["convocados"] + dados["bloqueados"] + dados["outros_ativos"]}
     ids = [j["id"] for j in dados["convocados"]]
     for jid in map(str, payload.incluir):
         if jid not in todos:

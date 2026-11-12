@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from routers import (
     atributos,
@@ -26,6 +27,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Comprime respostas JSON maiores que 1 KB (listas de jogadores, partidas,
+# estatísticas, escalação salva). O JSON comprime ~5-10x, e na rede/CPU do
+# plano gratuito isso pesa mais que o custo de comprimir. Adicionado DEPOIS do
+# CORS de propósito: o último middleware adicionado fica por fora.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.include_router(auth.router)
 app.include_router(jogadores.router)
