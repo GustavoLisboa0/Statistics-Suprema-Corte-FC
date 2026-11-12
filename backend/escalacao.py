@@ -1035,8 +1035,32 @@ def _melhorar(
             comp_memo[chave] = v
         return v
 
-    def custo(plano: list[set[str]], comp: Optional[float] = None) -> float:
-        m = minutos(plano)
+    def minutos_apos(
+        m_base: dict[str, int], plano: list[set[str]], novo: list[set[str]]
+    ) -> dict[str, int]:
+        """
+        Minutos de `novo` a partir dos de `plano`, mexendo só nas janelas que
+        mudaram (as demais são o MESMO objeto set). Dá o mesmo resultado de
+        `minutos(novo)`, sem refazer a conta das ~12 janelas a cada tentativa.
+        """
+        m = dict(m_base)
+        for i, (antigo, atual_i) in enumerate(zip(plano, novo)):
+            if atual_i is antigo:
+                continue
+            t = tamanho[i]
+            for jid in antigo - atual_i:
+                m[jid] -= t
+            for jid in atual_i - antigo:
+                m[jid] += t
+        return m
+
+    def custo(
+        plano: list[set[str]],
+        comp: Optional[float] = None,
+        m: Optional[dict[str, int]] = None,
+    ) -> float:
+        if m is None:
+            m = minutos(plano)
         quadrados = sum(m[jid] ** 2 for jid in equilibrar)
         entradas = sum(len(plano[i] - plano[i - 1]) for i in range(1, len(plano)))
         ganho_q = 0.0
@@ -1057,10 +1081,31 @@ def _melhorar(
     # (mais uma pequena folga), para continuar todo mundo jogando o mesmo.
     m0 = minutos(campos)
     limite_folga = max(m0[j] for j in equilibrar) - min(m0[j] for j in equilibrar) + folga_extra
+    m = m0  # minutos do plano atual; só muda quando uma troca é aceita
+
+    # Caminho rápido (sem tática nem regras de composição, o uso normal): cada
+    # tentativa mexe só em "a sai, b entra" num trecho de janelas, então o
+    # custo novo sai do atual somando só a diferença — em vez de refazer a
+    # soma dos quadrados e das entradas do plano inteiro (~12 janelas) a cada
+    # uma das centenas de tentativas. Os números são inteiros, então o
+    # resultado é idêntico ao do cálculo completo (`custo`), tentativa a
+    # tentativa, e as sorteios de `rng` seguem na mesma ordem.
+    rapido = not modo_pref
+    equil_set = set(equilibrar)
+    n_janelas = len(campos)
+    min_tam = min(tamanho)
+    quad = sum(m[j] ** 2 for j in equilibrar)
+    ent = sum(len(campos[i] - campos[i - 1]) for i in range(1, n_janelas))
+    folga = max(m[j] for j in equilibrar) - min(m[j] for j in equilibrar)
+    # Por janela: quem está em campo (ordenado) e quem está fora, na ordem de
+    # `por_id`. Só mudam quando uma troca é aceita; antes eram refeitos a cada
+    # tentativa. Mesma ordem de antes, então o sorteio escolhe os mesmos jogadores.
+    em_campo_ord: list[Optional[list[str]]] = [None] * n_janelas
+    fora_de_campo: list[Optional[list[str]]] = [None] * n_janelas
     for _ in range(tentativas):
-        m = minutos(campos)
-        folga = max(m[j] for j in equilibrar) - min(m[j] for j in equilibrar)
-        if folga <= min(tamanho) and sem_melhora > 200 and not modo_pref:
+        if not rapido:
+            folga = max(m[j] for j in equilibrar) - min(m[j] for j in equilibrar)
+        if folga <= min_tam and sem_melhora > 200 and not modo_pref:
             break
         if modo_pref and sem_melhora > 350:
             break
@@ -1073,15 +1118,22 @@ def _melhorar(
             b_opcoes = sorted(campos[w2] - campos[w1])
             if a_opcoes and b_opcoes:
                 a, b = rng.choice(a_opcoes), rng.choice(b_opcoes)
-                novo = [set(c) for c in campos]
+                novo = list(campos)  # só as janelas mexidas viram cópia nova
+                novo[w1], novo[w2] = set(campos[w1]), set(campos[w2])
                 novo[w1].remove(a)
                 novo[w1].add(b)
                 novo[w2].remove(b)
                 novo[w2].add(a)
         if novo is None:
             w = rng.randrange(len(campos))
-            saem = sorted(campos[w])
-            entram = [jid for jid in por_id if jid not in campos[w]]
+            if rapido:
+                if em_campo_ord[w] is None:
+                    em_campo_ord[w] = sorted(campos[w])
+                    fora_de_campo[w] = [jid for jid in por_id if jid not in campos[w]]
+                saem, entram = em_campo_ord[w], fora_de_campo[w]
+            else:
+                saem = sorted(campos[w])
+                entram = [jid for jid in por_id if jid not in campos[w]]
             if not entram:
                 break
             a, b = rng.choice(saem), rng.choice(entram)
@@ -1091,10 +1143,38 @@ def _melhorar(
             while hi < len(campos) - 1 and a in campos[hi + 1] and b not in campos[hi + 1]:
                 hi += 1
             lo, hi = rng.randint(lo, w), rng.randint(w, hi)
-            novo = [set(c) for c in campos]
+            novo = list(campos)  # só as janelas mexidas viram cópia nova
             for i in range(lo, hi + 1):
+                novo[i] = set(campos[i])
                 novo[i].remove(a)
                 novo[i].add(b)
+            if rapido:
+                dur = sum(tamanho[lo : hi + 1])  # minutos que a perde e b ganha
+                qa, qb = m[a], m[b]
+                quad_novo = quad
+                if a in equil_set:
+                    quad_novo += (qa - dur) ** 2 - qa**2
+                if b in equil_set:
+                    quad_novo += (qb + dur) ** 2 - qb**2
+                # "Entradas" só mudam nas fronteiras que encostam no trecho mexido.
+                ent_novo = ent
+                for p in range(max(lo, 1), min(hi + 1, n_janelas - 1) + 1):
+                    ent_novo += len(novo[p] - novo[p - 1]) - len(campos[p] - campos[p - 1])
+                valor = quad_novo + 0.001 * ent_novo
+                if valor < atual - 1e-9 and _plano_valido(
+                    novo, por_id, janelas, duracao, max_trocas, slots_j
+                ):
+                    campos, atual, sem_melhora = novo, valor, 0
+                    m = dict(m)
+                    m[a] -= dur
+                    m[b] += dur
+                    quad, ent = quad_novo, ent_novo
+                    folga = max(m[j] for j in equilibrar) - min(m[j] for j in equilibrar)
+                    for i in range(lo, hi + 1):  # essas janelas mudaram de gente
+                        em_campo_ord[i] = None
+                else:
+                    sem_melhora += 1
+                continue
         if prefs:
             comp_nova = list(comp_por_janela)
             for i in range(len(novo)):
@@ -1102,16 +1182,16 @@ def _melhorar(
                     comp_nova[i] = comp_janela(i, novo[i])
         else:
             comp_nova = comp_por_janela
-        valor = custo(novo, sum(comp_nova))
+        mn = minutos_apos(m, campos, novo)
+        valor = custo(novo, sum(comp_nova), mn)
         if modo_pref:
-            mn = minutos(novo)
             if max(mn[j] for j in equilibrar) - min(mn[j] for j in equilibrar) > limite_folga:
                 sem_melhora += 1
                 continue
         if valor < atual - 1e-9 and _plano_valido(
             novo, por_id, janelas, duracao, max_trocas, slots_j
         ):
-            campos, atual, sem_melhora = novo, valor, 0
+            campos, atual, sem_melhora, m = novo, valor, 0, mn
             comp_por_janela = comp_nova
         else:
             sem_melhora += 1
