@@ -65,10 +65,6 @@ npm run dev
 Abra o endereço que o `npm run dev` mostrar (normalmente `http://localhost:3000`).
 Logins de teste criados pelo `seed_local.py`:
 
-| Papel               | Email                 | Senha         |
-|---------------------|-----------------------|---------------|
-| Admin (editor)      | `admin@suprema.com`   | `admin123`    |
-| Usuário comum       | `jogador@suprema.com` | `jogador123`  |
 
 Para rodar os testes do backend: `cd backend; $env:LOCAL_DB=1; pytest`.
 O arquivo `backend/env.example` mostra as variáveis de ambiente possíveis.
