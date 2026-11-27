@@ -32,9 +32,18 @@ from escalacao import (
     gerar_escalacao,
     sugerir_fixos,
 )
+from medicao import cronometrado
 from models import lesao_ativa, punicao_ativa
 import tatica as tt
 from routers.atributos import achar_adversario, carregar_atributos, resolver_tatica
+
+# Fase "solver" do log/Server-Timing (medicao.py): cada chamada destas soma no
+# solver da requisição. Só mede; a rota `gerar` (única que as chama) não muda.
+avaliar_grupos_de_fixos = cronometrado("solver")(avaliar_grupos_de_fixos)
+opcoes_de_trocas = cronometrado("solver")(opcoes_de_trocas)
+gerar_automatico = cronometrado("solver")(gerar_automatico)
+gerar_escalacao = cronometrado("solver")(gerar_escalacao)
+sugerir_fixos = cronometrado("solver")(sugerir_fixos)
 
 router = APIRouter(prefix="/partidas", tags=["Escalação"])
 
@@ -185,6 +194,7 @@ def _consultas_da_partida(partida_id: str):
     )
 
 
+@cronometrado("dados")  # fase "dados" do log/Server-Timing (medicao.py)
 def _carregar_partida_e_convocados(partida_id: UUID) -> tuple[dict, dict]:
     """
     Partida + convocados com as 5 consultas em paralelo (a partida também: o

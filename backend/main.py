@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from medicao import MedicaoMiddleware
 from routers import (
     atributos,
     auth,
@@ -21,9 +22,11 @@ app = FastAPI(
 )
 
 # Libera acesso do front-end local (ajuste as origens conforme necessário em produção)
+# A medição usa as mesmas origens no Timing-Allow-Origin.
+ORIGENS_CORS = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ORIGENS_CORS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -33,6 +36,11 @@ app.add_middleware(
 # plano gratuito isso pesa mais que o custo de comprimir. Adicionado DEPOIS do
 # CORS de propósito: o último middleware adicionado fica por fora.
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Duração de cada rota no log e no cabeçalho Server-Timing (ver medicao.py).
+# Adicionado POR ÚLTIMO de propósito: fica por fora de CORS e GZip e mede o
+# app inteiro. Desliga com MEDICAO_ATIVA=0.
+app.add_middleware(MedicaoMiddleware, origens_timing=ORIGENS_CORS)
 
 app.include_router(auth.router)
 app.include_router(jogadores.router)
