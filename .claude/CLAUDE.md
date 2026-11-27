@@ -4,7 +4,7 @@ Arquivo de memória entre sessões. Registra permissões concedidas, decisões
 tomadas, features entregues e erros já diagnosticados (com a solução), para
 não repetir investigação.
 
-Última atualização: 2026-11-13
+Última atualização: 2026-11-26
 
 > **Manutenção obrigatória (instrução do usuário, 2026-08-07):** este arquivo
 > deve ser atualizado sempre que houver algo que caiba nas seções abaixo —
@@ -129,7 +129,7 @@ O `@layer base` também define `color-scheme` (light/dark) e o estilo das
 mais `::-webkit-scrollbar` e `scrollbar-width`). O `color-scheme` é o que faz
 os controles nativos pararem de aparecer brancos no escuro — não remover.
 
-**Paleta em 2026-11-09:** a frente de escalação (branch `updates-breno`,
+**Paleta em 2026-11-09:** a frente de escalação (branch de outro dev,
 commit `14a76fd`) trocou a paleta inteira (roxo hue 312 → 294, fundo claro
 cinza `0.934`, dourado `oklch(0.8037 0.1625 84)`). O usuário pediu para
 voltar o **modo claro inteiro** e o **dourado do escuro** ao que eram antes
@@ -345,8 +345,14 @@ faz o watcher enxergar o arquivo sumindo e remover a rota.
 
 **Como agir:** não é preciso mexer no arquivo gerado — basta tocar de novo a
 rota (qualquer alteração salva) com o dev server rodando e ele se refaz.
-Conferir com `grep -c "jogadores" src/routeTree.gen.ts`. O arquivo é
-gitignorado, então não polui o diff.
+Conferir com `grep -c "jogadores" src/routeTree.gen.ts`.
+
+**Correção (2026-11-23):** o arquivo **é versionado** (`git ls-files` o
+lista), não gitignorado como dizia aqui antes. O dev server e o `vite build`
+o regeneram, e numa máquina com `core.autocrlf=true` só o fim de linha muda.
+Se `git diff` não mostrar diferença de conteúdo, restaurar com
+`git checkout -- frontend/src/routeTree.gen.ts` antes de commitar. Se a
+mudança for de verdade (rota nova/removida), commitar junto com a rota.
 
 ### 4.9 Diálogo com barra de rolagem horizontal por causa de texto longo
 
@@ -446,7 +452,7 @@ Feature nova, decidida com o usuário antes de implementar:
   no backend: `custo_do_time()` em `models.py`.
 - **Chave PIX:** fica só no `.env` (`VITE_PIX_CHAVE`), não neste arquivo — o
   valor foi tirado daqui em 2026-11-12, quando o `CLAUDE.md` passou a ser
-  versionado num repositório público. Banco Itaú, sem QR code. **Não commitar no
+  versionado num repositório público. Sem QR code do banco. **Não commitar no
   repositório**, que é público — vai em variável de ambiente.
 - **Backend será fechado:** decidido aplicar `usuario_atual`/`exige_editor`
   em todas as rotas, não só nas novas. Hoje só `/auth/me` valida token.
@@ -556,18 +562,15 @@ sucesso mostra "chave não configurada".
 (`src/lib/pix.ts`), não são imagem anexada em lugar nenhum — o QR estático do
 banco não carrega valor, e o valor muda por partida. Implementação própria do
 BR Code (padrão EMV/Banco Central): TLV + CRC16. **Validada byte a byte**
-contra um código real do Itaú que o usuário colou no chat (mesma chave, nome,
+contra um código real do banco que o usuário colou no chat (mesma chave, nome,
 cidade, sem campo de valor) — o CRC16 calculado bateu exatamente
 (`/tmp/testpix.js`, não commitado). Usa `qrcode.react` (zero dependências
 transitivas) para desenhar o SVG a partir do código gerado.
 
 > **Mudou a forma de testar:** agora `/jogadores`, `/partidas` e
-> `/estatisticas` exigem Bearer token válido. O truque de gravar uma sessão
-> falsa no `localStorage` **não funciona mais** — o token não passa na
-> validação do Supabase, o `api.ts` tenta renovar, falha e joga pro `/login`.
-> Para validar tela com dado real é preciso login de verdade; não há
-> credencial disponível e não se pede senha ao usuário. Alternativa usada
-> antes (bypass do `beforeLoad`) só resolve a rota, não as chamadas de API.
+> `/estatisticas` exigem login válido na API. Para validar tela com dado real
+> é preciso login de verdade (ou o modo local, ver 5.10); não há credencial
+> de produção disponível e não se pede senha ao usuário.
 
 ## 5.2 Cadastro autoatendimento e permissão de dono (2026-08-15)
 
@@ -784,8 +787,7 @@ concorrência (dois `PATCH` simultâneos passando pela checagem da API ao
 mesmo tempo), não a fonte principal de verdade (essa é a API, que devolve
 mensagem amigável; o índice sozinho devolveria erro cru do Postgres).
 **Antes de aplicar**, achei 2 jogadores ativos com número 0 no banco real
-("Gustavo Lisboa" e "Editor Teste", esse último resto de sessão de teste
-anterior) — a migração teria falhado (não dá pra criar índice único em cima
+(um deles era resto de uma conta de teste anterior) — a migração teria falhado (não dá pra criar índice único em cima
 de dado que já viola a unicidade). Reportei e o usuário corrigiu direto no
 banco antes de eu confirmar a migração.
 
@@ -1144,9 +1146,8 @@ ainda — segue a regra de só commitar quando pedido.
 ## 5.10 Redesign visual completo (2026-11-12, branch `redesign`)
 
 O usuário não gostava do design anterior e pediu uma proposta pelo canvas de
-design (artifact "Redesign Suprema Corte FC",
-https://claude.ai/artifact/WmJBau1b47CyYnMqTNAjpT, com prévia de todas as
-telas). Decisões dele: fonte de título **Orbitron** (queria a Crospor, que é
+design (artifact privado "Redesign Suprema Corte FC", com prévia de todas
+as telas; o link fica com o usuário). Decisões dele: fonte de título **Orbitron** (queria a Crospor, que é
 paga na Envato — testamos 5 gratuitas e ele escolheu essa), navegação no
 topo, escuro como padrão. Depois pediu para implementar as 8 etapas do plano
 de uma vez, com agentes em paralelo, e só reportar no fim.
@@ -1274,6 +1275,83 @@ no scratchpad da sessão — regerar se mexer em `escalacao.py` de novo.
 **Cuidado ao medir:** não rodar `pytest` em paralelo (usa o solver e infla os
 tempos), e a aba do preview oculta faz `requestAnimationFrame` rodar a ~1 Hz
 (ver 4.5) — para custo de clique, medir o tempo dentro de `el.click()`.
+
+**Ressalva (2026-11-23, ver 5.12):** o "~6,2 s → ~3,2 s" acima foi medido
+com `comparar_opcoes=false` (corpo só com `goleiro_id`; o padrão do
+`GerarPayload` é `False`). O "Gerar" do front manda `comparar_opcoes=true`
+no modo automático (`escalacao.tsx:876`), que cai em `opcoes_de_trocas` e
+custa bem mais. O caminho medido é o do "trocar fixo".
+
+## 5.12 Auditoria de rotas, infra e performance (2026-11-23)
+
+Fase 1, só análise, pedida pelo responsável por rotas/infra/performance
+(o time tem 3 devs; regra de negócio, tática, UI, PDFs e testes são dos
+outros). Relatórios: `docs/auditoria-rotas-infra.md` (achados do escopo,
+fluxo da escalação, Socket.IO, plano) e `docs/achados-fora-de-escopo.md`
+(para os outros devs). **Os dois ficam só na máquina do usuário e não são
+versionados** (listados em `.git/info/exclude`; o repositório é público).
+O que vai para o time está em `docs/decisoes-para-o-time.md`, versionado.
+
+**Benchmark do solver:** `backend/scripts/bench_escalacao.py` (só stdlib,
+sem banco nem rede). Modos `real`, `serial` e `medir`. O `medir` separa a
+CPU do processo web da CPU dos filhos do pool, mede o pico de memória de cada
+filho e simula a cota de CPU (`--cota 0.1`). `--rss-web` mede a memória do
+processo web após `import main`. Rodar de dentro de `backend/`. Os números
+variam até ~2× entre rodadas nesta máquina: comparar faixas, não uma rodada.
+
+Números medidos (15 / 18 convocados, CPU): "Gerar" padrão 6–7 / 16–23 s;
+"Quem joga o jogo todo" 11–16 / 34–47 s; "trocar fixo" 3–5 / 8–14 s.
+Processo web 66 MB após `import main`; filho do pool com pico de 25 MB (spawn).
+**Dados de produção (2026-11-24, informados pelo usuário):** "Gerar" padrão
+(`comparar_opcoes=true`), servidor já acordado, tempo no Network do
+navegador: **13 convocados = 24 s e 22 s; 15 convocados = 33,35 s e
+32,86 s** (1ª e 2ª tentativa). Local, a mesma chamada gasta 3,3–4,5 s de CPU
+com 13 (`--elenco equilibrado`; o padrão com 13 fica sem atacante e é
+inviável) e 6,1–8,3 s com 15 (`bench_escalacao.py --modo medir --funcoes
+opcoes --repeticoes 3`). **Fator produção/local ≈ 4–6× sobre a CPU local**
+(central ~5,6× com 13 e ~4,5× com 15: o fator cai com o tamanho, motivo
+desconhecido). Substitui a hipótese antiga da cota de 0,1 CPU (~10×) e o
+5–7× calculado antes com 1 amostra só. Estimativas no relatório = CPU local
+× 4–6. A 1ª tentativa foi mais lenta nos dois tamanhos (+2 s / +0,5 s):
+hipótese de custo de criar o pool na 1ª geração, ou o cache de auth frio.
+Com esse fator, o `timeout=120` do pool não dispara com até 18 convocados
+(simulado com `--cota 0.17 0.25`). Por isso o I1 caiu de Crítica para Alta,
+o P2 de Alta para Média (e desceu no plano); a 2ª rodada não mudou nenhuma
+severidade. **O plano free da Render não tem shell**: medir lá só com
+middleware de duração por rota + painel de métricas da Render (passo 0 do
+plano). CPU, memória e duração por rota no servidor continuam sem medição.
+
+**Decisões para o time (2026-11-24):** `docs/decisoes-para-o-time.md`
+reúne o que depende de decisão, custo ou mudança de comportamento que
+afeta os outros devs: P1, P5, P3, I1, I2, A2 (só a validação local do
+login), A3, I10 e I9. Cada item traz o problema, o dado, a pergunta com
+opções, quem decide e o que fica bloqueado. Na tabela da auditoria eles
+estão marcados "aguarda decisão do time" e saíram do plano, que ficou só
+com o que o usuário faz sozinho. A pedido dele, entraram também A7, A8,
+A9, A11, I4, I7 e R9 (16 itens no total). **Achado:** a tela não
+exibe mais a `dica_fixos` desde `ed15dd8` (2026-11-09), mas
+`routers/escalacao.py:403-408` continua calculando `sugerir_fixos` em todo
+"trocar fixo" (2,2–8,9 s de CPU local jogados fora). Pergunta do P5 para o
+responsável pela escalação: a dica volta?
+
+**Decisões (2026-11-26):** `docs/decisoes-para-o-time.md` foi dividido em
+"Decidir" (11: P1, I1, P3, I10, A8, A3, A7, A2, I2-migrar, I9, A9) e
+"Avisar" (3: P5, I2-conferir, A11), em ordem de impacto, com as 4
+perguntas principais no topo (P1, I1, I10, P5). O P3 foi para "Decidir"
+porque muda o fluxo da tela de escalação e depende do P1. O I2 foi dividido
+em conferir a região no painel (Avisar) e migrar (Decidir). I4, I7 e R9
+voltaram ao plano do usuário na auditoria (passo 7). **Requisito do I4:** o
+`allow_origin_regex` aceita só o padrão de URL dos previews do NOSSO
+projeto/time na Vercel, ancorado. Um `*.vercel.app` genérico aceita o app de
+qualquer pessoa e equivale ao `*`.
+
+Para `pytest`/build: este clone precisou de `npm ci` e de um `backend/venv`
+novo (autorizados pelo usuário). Não existe CI no repositório.
+
+**Tempo da suíte varia com a carga da máquina:** 271,6 s (2026-11-23),
+88,2 s e 177,7 s depois, sem mudança no solver nem nos testes. A rodada de
+271 s foi num `venv` recém-criado e em paralelo com `npm ci` e `vite build`
+(causa provável). Para comparar tempos, rodar a suíte sozinha.
 
 ## 6. Pendências e pontos em aberto
 
