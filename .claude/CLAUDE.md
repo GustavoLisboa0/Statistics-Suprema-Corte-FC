@@ -4,7 +4,7 @@ Arquivo de memória entre sessões. Registra permissões concedidas, decisões
 tomadas, features entregues e erros já diagnosticados (com a solução), para
 não repetir investigação.
 
-Última atualização: 2026-11-13
+Última atualização: 2026-11-26
 
 > **Manutenção obrigatória (instrução do usuário, 2026-08-07):** este arquivo
 > deve ser atualizado sempre que houver algo que caiba nas seções abaixo —
@@ -129,7 +129,7 @@ O `@layer base` também define `color-scheme` (light/dark) e o estilo das
 mais `::-webkit-scrollbar` e `scrollbar-width`). O `color-scheme` é o que faz
 os controles nativos pararem de aparecer brancos no escuro — não remover.
 
-**Paleta em 2026-11-09:** a frente de escalação (branch `updates-breno`,
+**Paleta em 2026-11-09:** a frente de escalação (branch de outro dev,
 commit `14a76fd`) trocou a paleta inteira (roxo hue 312 → 294, fundo claro
 cinza `0.934`, dourado `oklch(0.8037 0.1625 84)`). O usuário pediu para
 voltar o **modo claro inteiro** e o **dourado do escuro** ao que eram antes
@@ -446,7 +446,7 @@ Feature nova, decidida com o usuário antes de implementar:
   no backend: `custo_do_time()` em `models.py`.
 - **Chave PIX:** fica só no `.env` (`VITE_PIX_CHAVE`), não neste arquivo — o
   valor foi tirado daqui em 2026-11-12, quando o `CLAUDE.md` passou a ser
-  versionado num repositório público. Banco Itaú, sem QR code. **Não commitar no
+  versionado num repositório público. Sem QR code do banco. **Não commitar no
   repositório**, que é público — vai em variável de ambiente.
 - **Backend será fechado:** decidido aplicar `usuario_atual`/`exige_editor`
   em todas as rotas, não só nas novas. Hoje só `/auth/me` valida token.
@@ -556,18 +556,15 @@ sucesso mostra "chave não configurada".
 (`src/lib/pix.ts`), não são imagem anexada em lugar nenhum — o QR estático do
 banco não carrega valor, e o valor muda por partida. Implementação própria do
 BR Code (padrão EMV/Banco Central): TLV + CRC16. **Validada byte a byte**
-contra um código real do Itaú que o usuário colou no chat (mesma chave, nome,
+contra um código real do banco que o usuário colou no chat (mesma chave, nome,
 cidade, sem campo de valor) — o CRC16 calculado bateu exatamente
 (`/tmp/testpix.js`, não commitado). Usa `qrcode.react` (zero dependências
 transitivas) para desenhar o SVG a partir do código gerado.
 
 > **Mudou a forma de testar:** agora `/jogadores`, `/partidas` e
-> `/estatisticas` exigem Bearer token válido. O truque de gravar uma sessão
-> falsa no `localStorage` **não funciona mais** — o token não passa na
-> validação do Supabase, o `api.ts` tenta renovar, falha e joga pro `/login`.
-> Para validar tela com dado real é preciso login de verdade; não há
-> credencial disponível e não se pede senha ao usuário. Alternativa usada
-> antes (bypass do `beforeLoad`) só resolve a rota, não as chamadas de API.
+> `/estatisticas` exigem login válido na API. Para validar tela com dado real
+> é preciso login de verdade (ou o modo local, ver 5.10); não há credencial
+> de produção disponível e não se pede senha ao usuário.
 
 ## 5.2 Cadastro autoatendimento e permissão de dono (2026-08-15)
 
@@ -784,8 +781,7 @@ concorrência (dois `PATCH` simultâneos passando pela checagem da API ao
 mesmo tempo), não a fonte principal de verdade (essa é a API, que devolve
 mensagem amigável; o índice sozinho devolveria erro cru do Postgres).
 **Antes de aplicar**, achei 2 jogadores ativos com número 0 no banco real
-("Gustavo Lisboa" e "Editor Teste", esse último resto de sessão de teste
-anterior) — a migração teria falhado (não dá pra criar índice único em cima
+(um deles era resto de uma conta de teste anterior) — a migração teria falhado (não dá pra criar índice único em cima
 de dado que já viola a unicidade). Reportei e o usuário corrigiu direto no
 banco antes de eu confirmar a migração.
 
@@ -1144,9 +1140,8 @@ ainda — segue a regra de só commitar quando pedido.
 ## 5.10 Redesign visual completo (2026-11-12, branch `redesign`)
 
 O usuário não gostava do design anterior e pediu uma proposta pelo canvas de
-design (artifact "Redesign Suprema Corte FC",
-https://claude.ai/artifact/WmJBau1b47CyYnMqTNAjpT, com prévia de todas as
-telas). Decisões dele: fonte de título **Orbitron** (queria a Crospor, que é
+design (artifact privado "Redesign Suprema Corte FC", com prévia de todas
+as telas; o link fica com o usuário). Decisões dele: fonte de título **Orbitron** (queria a Crospor, que é
 paga na Envato — testamos 5 gratuitas e ele escolheu essa), navegação no
 topo, escuro como padrão. Depois pediu para implementar as 8 etapas do plano
 de uma vez, com agentes em paralelo, e só reportar no fim.
@@ -1274,6 +1269,104 @@ no scratchpad da sessão — regerar se mexer em `escalacao.py` de novo.
 **Cuidado ao medir:** não rodar `pytest` em paralelo (usa o solver e infla os
 tempos), e a aba do preview oculta faz `requestAnimationFrame` rodar a ~1 Hz
 (ver 4.5) — para custo de clique, medir o tempo dentro de `el.click()`.
+
+## 5.14 Medição de duração por rota (item I11, 2026-11-26)
+
+Até aqui não havia nenhuma medição no servidor. Agora cada requisição gera
+uma linha de log e um cabeçalho `Server-Timing`. Branch
+`perf/medicao-rotas` (a partir do `origin/main` em `3a6ab58`, separada da
+`perf/auditoria-e-sessao`).
+
+- **`backend/medicao.py`:** middleware ASGI puro (`MedicaoMiddleware`, sem
+  `BaseHTTPMiddleware`), registrado **por último** no `main.py`, para ficar
+  por fora de CORS e GZip e medir o app inteiro.
+  - Log: uma linha por requisição no stdout, logger `medicao`, em chave=valor:
+    `metodo`, `rota` (o **molde**, ex.: `/partidas/{partida_id}/escalacao/gerar`;
+    sem rota casada vira `sem_rota`), `status`, `dur_ms` e as fases
+    (`auth_ms`, `auth_cache`, `dados_ms`, `solver_ms`). Acima de
+    `LIMITE_LENTO_MS` (2000 ms) a linha sai como `WARNING`.
+  - Exceção na rota: registra `status=500` e deixa a exceção subir como antes.
+  - Fica fora: `GET`/`HEAD /` (health check da Render, `healthCheckPath: /`)
+    e `OPTIONS` (preflight do CORS).
+  - **Nunca registra** query string, cabeçalhos, token, corpo nem dado de
+    usuário. Há teste para isso.
+  - `Server-Timing`: `app;dur=...` (total até o início da resposta) mais as
+    fases; `auth` leva `desc="cache"` ou `desc="supabase"`.
+    `Timing-Allow-Origin` é derivado da mesma lista do CORS: os dois
+    middlewares recebem o mesmo objeto `main.ORIGENS_CORS`, hoje `["*"]`.
+    Com uma lista restrita, o cabeçalho devolve a origem da requisição só se
+    ela estiver na lista. Quando o I4 restringir o CORS, o
+    `Timing-Allow-Origin` acompanha sozinho. Sem esse cabeçalho, o front,
+    que está em outra origem, não enxerga as fases pela Resource Timing.
+  - `MEDICAO_ATIVA=0` (ou `false`/`off`/`nao`) desliga tudo: sem log e sem
+    cabeçalho. O padrão é ligado.
+- **Fases:** um coletor por requisição num `ContextVar`, com
+  `with medir("nome")` e `marcar("chave", valor)`. Fora de uma requisição
+  medida, não fazem nada.
+  - `auth.py`: `usuario_atual` mede `auth` e marca `auth_cache` (1 = veio do
+    cache, 0 = foi ao Supabase). O corpo virou `_usuario_do_token`, sem
+    mudar a lógica.
+  - `routers/escalacao.py`: medido com o decorador `cronometrado`, **sem
+    mexer no corpo da rota** (o diff no arquivo são só 10 linhas
+    adicionadas). `@cronometrado("dados")` está em
+    `_carregar_partida_e_convocados`, então a fase aparece no `gerar` e também
+    no `GET .../escalacao/convocados`. As 5 funções do solver
+    (`avaliar_grupos_de_fixos`, `opcoes_de_trocas`, `gerar_automatico`,
+    `gerar_escalacao`, `sugerir_fixos`) são reembrulhadas logo depois dos
+    imports e somam na fase `solver`. Só a rota `gerar` as chama. O resto
+    fica implícito no total.
+  - O contextvar chega à threadpool dos handlers `def`: o anyio copia o
+    contexto. O teste das fases do `gerar` prova isso. Os processos filhos
+    do pool não são medidos (o tempo deles entra no `solver`).
+- **Testes:** `backend/tests/test_medicao.py` (12). Cobrem: cabeçalho,
+  molde da rota, nada de query/token/corpo no log, 404 como `sem_rota`,
+  exceção como 500, health check e OPTIONS fora, `MEDICAO_ATIVA=0`, fases do
+  `gerar`, `auth_cache` 0→1, WARNING acima do limite e
+  `Timing-Allow-Origin` acompanhando o CORS (mesma lista no `main.py`;
+  origem permitida ecoada, origem de fora sem cabeçalho).
+- **Visto no navegador (local, 2026-11-26):** "Gerar" padrão com 18
+  convocados do seed, em 4,6 s:
+  `WARNING medicao metodo=POST rota=/partidas/{partida_id}/escalacao/gerar status=200 dur_ms=4601.6 auth_ms=0.0 dados_ms=12.9 solver_ms=4566.6 auth_cache=1`.
+  O `PerformanceResourceTiming.serverTiming` da página (front na 3000, API
+  na 8000) trouxe `app`, `auth` (cache), `dados` e `solver`, porque há
+  `Timing-Allow-Origin`. O painel do DevTools em si não abre no navegador
+  embutido do agente: conferir lá na primeira medição em produção.
+
+**Como ler depois do deploy:**
+- **Logs da Render:** painel → serviço do backend → aba **Logs**. A busca
+  filtra por texto:
+  - `medicao` mostra só as linhas da medição;
+  - `rota=/partidas/{partida_id}/escalacao/gerar` mostra só o "Gerar";
+  - `WARNING medicao` mostra só as requisições acima de 2 s.
+  
+  O plano free guarda pouco histórico [hipótese: conferir a retenção no
+  painel]. Copiar as linhas que interessam logo depois do teste.
+- **O que olhar na linha:** `dur_ms` é o total. Com `auth_cache=0`, o
+  `auth_ms` é a viagem ao Supabase; com `auth_cache=1`, ~0. `dados_ms` são as
+  5 consultas da escalação; `solver_ms` é o cálculo. A conta `dur_ms − auth_ms
+  − dados_ms − solver_ms` é o resto da rota.
+  - Se o `dur_ms` do log for muito menor que o tempo visto no navegador, a
+    diferença é rede, região (I2) ou fila de requisições.
+  - Se `dados_ms` pesar, o gargalo é o banco/região; se `solver_ms` pesar,
+    é CPU (I1/P1).
+- **DevTools:** Network → a requisição → aba **Timing** → seção **Server
+  Timing**: mostra `app`, `auth`, `dados` e `solver`.
+- **Painel de métricas da Render** (aba **Metrics**): CPU e memória do
+  serviço durante um "Gerar" e um "Quem joga o jogo todo". Isso confirma o
+  fator de CPU (I1) e a memória dos filhos do pool (P2).
+- **Desligar:** variável `MEDICAO_ATIVA=0` no painel da Render
+  (Environment). A Render reinicia o serviço, mas não precisa de deploy de
+  código.
+- **Access log do Uvicorn desligado (`--no-access-log` no `startCommand` do
+  `render.yaml`, 2026-11-26, pedido do usuário):** o log de acesso padrão
+  imprimia o caminho com ids e a query string de cada requisição, e
+  duplicava a linha da medição. **Aviso ao time:** sem ele, perdemos o
+  caminho exato dos 404. Rota inexistente aparece só como `rota=sem_rota`.
+  Para depurar um 404 específico, reproduzir localmente (o `backend-local`
+  do `launch.json` não usa `--no-access-log`). [hipótese] Se o serviço na
+  Render não for gerenciado pelo Blueprint (`render.yaml`), o comando que
+  vale é o do painel (Settings → Start Command), e aí é preciso trocar lá
+  também.
 
 ## 6. Pendências e pontos em aberto
 

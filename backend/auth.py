@@ -6,6 +6,7 @@ import httpx
 from fastapi import Depends, Header, HTTPException
 
 from database import LOCAL_DB, supabase
+from medicao import marcar, medir
 
 if LOCAL_DB:
     import local_auth
@@ -161,9 +162,18 @@ async def usuario_atual(authorization: str | None = Header(default=None)) -> dic
         raise HTTPException(status_code=401, detail="Faça login para continuar")
 
     token = authorization.split(" ", 1)[1]
+    # Fase "auth" do Server-Timing/log (medicao.py); auth_cache diz se veio
+    # do cache em memória (1) ou precisou ir ao Supabase (0).
+    with medir("auth"):
+        return await _usuario_do_token(token)
+
+
+async def _usuario_do_token(token: str) -> dict:
     em_cache = _usuario_em_cache(token)
     if em_cache is not None:
+        marcar("auth_cache", 1)
         return dict(em_cache)  # cópia: quem recebe pode mexer sem sujar o cache
+    marcar("auth_cache", 0)
 
     # _validar_token e papel_do_usuario usam httpx/supabase-py de forma
     # bloqueante. Chamados direto aqui (função async), cada um trava o único

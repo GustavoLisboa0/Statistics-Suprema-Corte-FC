@@ -5,7 +5,9 @@ services:
     rootDir: backend
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    # --no-access-log: o log de acesso do Uvicorn trazia caminho com ids e
+    # query string, e duplicava a linha da medição (backend/medicao.py).
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --no-access-log
     healthCheckPath: /
     envVars:
       - key: SUPABASE_URL
