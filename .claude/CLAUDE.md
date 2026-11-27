@@ -1431,9 +1431,17 @@ commitados.**
 
 ## 6. Pendências e pontos em aberto
 
-- **Sessão (5.13):** R1/A1/R2 implementados, testados por unidade e no
-  navegador (2026-11-26). Não commitados; a Parte 3 (branch
-  `perf/auditoria-e-sessao` + PR) espera a aprovação do usuário.
+- **Sessão (5.13) e decisões (5.12):** na branch `perf/auditoria-e-sessao`
+  (a partir do `main` em `3a6ab58`), enviada ao GitHub em 2026-11-26, com 3
+  commits: `7d8d754` (docs: decisões + benchmark), `20b90f7` (fix: sessão
+  R1/A1/R2 + testes) e o registro neste arquivo. **PR para `main` a abrir
+  pelo usuário** (o `gh` não está instalado nesta máquina) em
+  `https://github.com/GustavoLisboa0/Statistics-Suprema-Corte-FC/pull/new/perf/auditoria-e-sessao`,
+  com a descrição em português preparada na sessão: mudanças, testes,
+  pendências, o bug da ordem do Sair, a nota do R4 (manter logout →
+  navigate → clear) e as mudanças de privacidade no CLAUDE.md (§3, §5.1,
+  §5.5, §5.10). Não fazer merge: a revisão fica com os outros 2 devs.
+  Trocar este item pelo número do PR quando ele existir.
 
 - **Performance (5.11):** mudanças feitas na branch `main` local, **não
   commitadas** (esperando o usuário pedir). Falta medir em produção (Render
