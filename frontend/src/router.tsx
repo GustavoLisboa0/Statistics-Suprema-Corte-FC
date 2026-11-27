@@ -1,9 +1,22 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { routeTree } from "./routeTree.gen";
 
 export const getRouter = () => {
   const queryClient = new QueryClient({
+    // Servidor ou Supabase fora do ar (503) ou limitando requisições (429):
+    // a sessão continua (ver lib/api.ts) e as buscas avisam com um toast só.
+    // O `id` fixo junta as várias buscas de uma tela que falham juntas num
+    // aviso. Mutações não passam por aqui: cada uma já mostra o próprio erro.
+    queryCache: new QueryCache({
+      onError: (erro) => {
+        const status = (erro as { status?: number }).status;
+        if (status === 503 || status === 429) {
+          toast.error(erro.message, { id: "servidor-indisponivel" });
+        }
+      },
+    }),
     defaultOptions: {
       queries: {
         // Dado "fresco" por 30s: voltar para uma tela ou abrir outra que usa a

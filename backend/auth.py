@@ -21,20 +21,49 @@ def _auth_headers(access_token: str | None = None) -> dict:
     return headers
 
 
+# Erro do lado do Supabase (fora do ar, lento, limite de requisições) não pode
+# virar "senha inválida" nem derrubar a sessão: o front só desloga em 401.
+# Todos os logins saem do mesmo IP (o do servidor), então um 429 do Supabase
+# atinge todo mundo de uma vez.
+MSG_INDISPONIVEL = "Servidor de login indisponível, tente de novo em instantes"
+MSG_MUITAS_TENTATIVAS = "Muitas tentativas de login. Aguarde um pouco e tente de novo"
+
+
+def _chamar_supabase_auth(metodo: str, caminho: str, **kwargs) -> httpx.Response:
+    """Faz a chamada ao Supabase Auth; timeout ou falha de rede vira 503."""
+    try:
+        return httpx.request(metodo, f"{SUPABASE_URL}{caminho}", timeout=10, **kwargs)
+    except httpx.RequestError as erro:  # timeout, conexão recusada, DNS...
+        raise HTTPException(status_code=503, detail=MSG_INDISPONIVEL) from erro
+
+
+def _erro_de_sessao(status: int, detalhe_401: str) -> HTTPException:
+    """Refresh e validação de token: só credencial ruim vira 401."""
+    if status == 429 or status >= 500:
+        return HTTPException(status_code=503, detail=MSG_INDISPONIVEL)
+    # 400/401/403 (token inválido, expirado ou revogado) e qualquer outro 4xx
+    return HTTPException(status_code=401, detail=detalhe_401)
+
+
 def login(email: str, password: str) -> dict:
     """Autentica no Supabase Auth com email/senha."""
     if LOCAL_DB:
         return local_auth.login(email, password)
-    resposta = httpx.post(
-        f"{SUPABASE_URL}/auth/v1/token",
+    resposta = _chamar_supabase_auth(
+        "POST",
+        "/auth/v1/token",
         params={"grant_type": "password"},
         headers=_auth_headers(),
         json={"email": email, "password": password},
-        timeout=10,
     )
-    if resposta.status_code != 200:
-        raise HTTPException(status_code=401, detail="Email ou senha inválidos")
-    return resposta.json()
+    if resposta.status_code == 200:
+        return resposta.json()
+    if resposta.status_code == 429:
+        raise HTTPException(status_code=429, detail=MSG_MUITAS_TENTATIVAS)
+    if resposta.status_code >= 500:
+        raise HTTPException(status_code=503, detail=MSG_INDISPONIVEL)
+    # Senha errada volta 400 (invalid_grant); 401 e outros 4xx, mesma mensagem
+    raise HTTPException(status_code=401, detail="Email ou senha inválidos")
 
 
 def criar_conta(
@@ -81,29 +110,35 @@ def refresh(refresh_token: str) -> dict:
     """Troca um refresh_token por um novo access_token."""
     if LOCAL_DB:
         return local_auth.refresh(refresh_token)
-    resposta = httpx.post(
-        f"{SUPABASE_URL}/auth/v1/token",
+    resposta = _chamar_supabase_auth(
+        "POST",
+        "/auth/v1/token",
         params={"grant_type": "refresh_token"},
         headers=_auth_headers(),
         json={"refresh_token": refresh_token},
-        timeout=10,
     )
     if resposta.status_code != 200:
-        raise HTTPException(status_code=401, detail="Sessão expirada, faça login novamente")
+        raise _erro_de_sessao(resposta.status_code, "Sessão expirada, faça login novamente")
     return resposta.json()
 
 
 def _validar_token(access_token: str) -> dict:
-    """Pergunta pro próprio Supabase Auth se o token ainda é válido."""
+    """
+    Pergunta pro próprio Supabase Auth se o token ainda é válido.
+
+    Supabase fora do ar devolve 503 (não 401): a sessão do usuário continua
+    no front, e como a exceção sobe antes de `_guardar_usuario`, nada entra
+    no cache.
+    """
     if LOCAL_DB:
         return local_auth.validar_token(access_token)
-    resposta = httpx.get(
-        f"{SUPABASE_URL}/auth/v1/user",
+    resposta = _chamar_supabase_auth(
+        "GET",
+        "/auth/v1/user",
         headers=_auth_headers(access_token),
-        timeout=10,
     )
     if resposta.status_code != 200:
-        raise HTTPException(status_code=401, detail="Sessão inválida ou expirada")
+        raise _erro_de_sessao(resposta.status_code, "Sessão inválida ou expirada")
     return resposta.json()
 
 

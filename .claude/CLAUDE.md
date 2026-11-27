@@ -1353,7 +1353,87 @@ novo (autorizados pelo usuário). Não existe CI no repositório.
 271 s foi num `venv` recém-criado e em paralelo com `npm ci` e `vite build`
 (causa provável). Para comparar tempos, rodar a suíte sozinha.
 
+## 5.13 Sessão: logout, erros do Supabase Auth e refresh único (2026-11-24)
+
+Itens R1, A1 e R2 da auditoria (5.12), pedidos pelo usuário. **Não
+commitados.**
+
+- **R1, `components/AppTopbar.tsx`:** o `sair` chama `qc.clear()` antes de
+  navegar. Antes, quem entrava em seguida na mesma aba via o cache da pessoa
+  anterior. O logout forçado de `lib/api.ts` não precisou de mudança: ele já
+  faz `window.location.href = "/login"`, e a recarga zera o cache em memória.
+- **A1, `backend/auth.py`:** as chamadas ao Supabase Auth passam por
+  `_chamar_supabase_auth` (`httpx.request`; timeout ou erro de rede = 503).
+  - Login: 400/401 (senha errada = 400 `invalid_grant`) e outros 4xx → 401
+    "Email ou senha inválidos"; 429 → 429; 5xx → 503.
+  - Refresh e `_validar_token` (`_erro_de_sessao`): 400/401/403 e outros 4xx
+    → 401; 429/5xx → 503.
+  - 503 nunca entra no cache de token, porque a exceção sobe antes de
+    `_guardar_usuario`. `criar_conta` não mudou.
+- **A1, front:** `tentarRenovarSessao` agora devolve `"renovada" |
+  "invalida" | "indisponivel"` (antes `boolean`). Só `"invalida"` (401 ou
+  outro 4xx) apaga a sessão. Em `lib/api.ts`, 503/429 numa requisição ou
+  `"indisponivel"` no refresh viram um erro com `status` e a mensagem
+  "Servidor indisponível, tente de novo", e a sessão continua.
+  - **Ajuste de 2026-11-26:** o toast saiu de `api.ts` (dava aviso
+    duplicado nas mutações). Agora o `QueryCache({ onError })` de
+    `router.tsx` mostra o toast só para buscas com status 503/429
+    (`id: "servidor-indisponivel"`, várias falhas juntas dão 1 aviso só), e
+    cada mutação segue com o próprio `onError`.
+  - O login **não** passa por `request()`: usa `chamarAuth` (`lib/auth.ts`),
+    e o `login.tsx` mostra `err.message`. Por isso um 429 no login mostra a
+    mensagem do backend ("Muitas tentativas de login...") e um 503 mostra
+    "Servidor de login indisponível...".
+  - Todo 503 de qualquer rota que passa por `request()` vira a mensagem
+    genérica; hoje nenhuma rota devolve 503 própria.
+- **R2, `lib/auth.ts`:** refresh *single-flight*. Uma `Promise` em andamento
+  (`renovacaoEmAndamento`) é compartilhada, e as outras requisições aguardam.
+  Em `api.ts`, se o token mudou enquanto a requisição estava no ar (outra já
+  renovou), ela só repete, sem renovar de novo.
+- **Testes:** `backend/tests/test_auth_erros.py` (httpx mockado via
+  `monkeypatch`, `auth.LOCAL_DB` forçado a `False`). No front: `tsc` limpo e
+  `eslint` limpo nos 3 arquivos, ignorando o `␍` (I9; rodar com
+  `--rule '{"prettier/prettier": ["error", {"endOfLine": "auto"}]}'`).
+- **Teste no navegador (2026-11-26), todos passaram:**
+  - Login com o Supabase fora do ar (porta fechada): "Servidor de login
+    indisponível..." em 2,8 s; com o Supabase falso em 503: a mesma mensagem
+    em 0,8 s; em 429: "Muitas tentativas de login..." em 0,6 s. Nunca
+    "Email ou senha inválidos".
+  - R1: admin → Escalação → Sair → `jogador@suprema.com` na mesma aba. O
+    topo mostra a conta nova (o jogador vinculado, papel "Usuário"), a Escalação vem na
+    visão de usuário comum, e depois do Sair não há requisição à API, 401 nem
+    recarga (marcador em `window` sobreviveu).
+  - Buscas com 503 (sessão válida, Supabase falso em 503): **o toast leva
+    ~5,0 s desde a 1ª requisição** (5,95 s desde o início da navegação),
+    porque cada busca tenta 3 vezes (retentativas do React Query com ~1 s e
+    ~2 s de espera). Um toast só, a sessão continua e a tela não vai para o
+    `/login`.
+- **Bug achado no teste e corrigido:** com `qc.clear()` antes do `navigate`,
+  as buscas da tela ainda montada repetiam sem sessão, recebiam 401 e o
+  `api.ts` recarregava a página. Agora o `sair` faz `await navigate(...)` e
+  só depois `qc.clear()`.
+- **Como repetir:** `.claude/launch.json` (não versionado; `.claude/` é
+  gitignorado, exceto este arquivo) tem `frontend`, `backend-local`
+  (`LOCAL_DB_PATH` no scratchpad, seed com `seed_local.py`),
+  `backend-auth-fora` (`SUPABASE_URL=http://127.0.0.1:54399`, chave falsa,
+  sem `LOCAL_DB`) e `supabase-falso`. O servidor falso é um script de stdlib
+  no scratchpad da sessão (`supabase_falso.py [porta] [status]`; troca o
+  status com `GET /__modo/429`). Se o scratchpad sumir, recriar: é um
+  `ThreadingHTTPServer` que responde tudo com o status escolhido. O
+  `load_dotenv()` não sobrescreve variáveis já definidas (`override=False`),
+  e este clone não tem `.env`.
+- **Achado fora do escopo (F15):** com a busca falhando, o Elenco mostra
+  "Nenhum jogador cadastrado ainda." (`jogadores.tsx:539`).
+- **Risco restante do R2:** o *single-flight* vale por aba. Duas abas com o
+  token vencido ainda renovam cada uma por si. Registrado na auditoria (local), com
+  mitigação possível via Web Locks (`navigator.locks`).
+
+
 ## 6. Pendências e pontos em aberto
+
+- **Sessão (5.13):** R1/A1/R2 implementados, testados por unidade e no
+  navegador (2026-11-26). Não commitados; a Parte 3 (branch
+  `perf/auditoria-e-sessao` + PR) espera a aprovação do usuário.
 
 - **Performance (5.11):** mudanças feitas na branch `main` local, **não
   commitadas** (esperando o usuário pedir). Falta medir em produção (Render

@@ -179,9 +179,18 @@ export function AppTopbar() {
   });
   const nomeExibido = meuJogador?.name ?? usuario?.nome ?? usuario?.email ?? "";
 
-  const sair = () => {
+  const sair = async () => {
     logout();
-    navigate({ to: "/login" });
+    // Limpar o cache impede que quem entrar em seguida na mesma aba veja,
+    // até a 1ª revalidação, os dados da pessoa anterior (nome no topo,
+    // escalação com a tática do admin...).
+    // A ordem importa: navegar ANTES de limpar. Se limpar com a tela ainda
+    // montada, as buscas dela refazem o pedido já sem sessão, recebem 401 e
+    // o api.ts força o logout com recarga da página (visto no teste de
+    // 2026-11-26). O logout forçado de api.ts não precisa limpar: a recarga
+    // (window.location.href) já zera o cache em memória.
+    await navigate({ to: "/login" });
+    qc.clear();
   };
 
   return (
