@@ -19,29 +19,54 @@ export function acordarServidor(): void {
   }
 }
 
-async function fazerRequisicao(path: string, options: RequestInit): Promise<Response> {
+const MSG_INDISPONIVEL = "Servidor indisponível, tente de novo";
+
+/**
+ * Servidor ou Supabase fora do ar (503) ou limitando requisições (429): a
+ * sessão continua e o erro sobe com o status. O aviso na tela fica com quem
+ * chamou: o QueryCache do router.tsx (buscas) ou o onError de cada mutação.
+ */
+function servidorIndisponivel(status = 503): never {
+  const erro = new Error(MSG_INDISPONIVEL) as Error & { status?: number };
+  erro.status = status;
+  throw erro;
+}
+
+async function fazerRequisicao(
+  path: string,
+  options: RequestInit,
+): Promise<{ response: Response; token: string | null }> {
   const token = getAccessToken();
   const headers = new Headers(options.headers);
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  return fetch(`${API_BASE}${path}`, { ...options, headers });
+  return { response: await fetch(`${API_BASE}${path}`, { ...options, headers }), token };
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  let response = await fazerRequisicao(path, options);
+  const primeira = await fazerRequisicao(path, options);
+  let response = primeira.response;
 
-  // Sessão expirada: tenta renovar uma vez e repete a requisição original
+  // Sessão expirada: renova (uma renovação por vez, compartilhada) e repete a
+  // requisição original uma vez. Só um 401 de verdade desloga.
   if (response.status === 401) {
-    const renovou = await tentarRenovarSessao();
-    if (renovou) {
-      response = await fazerRequisicao(path, options);
+    const atual = getAccessToken();
+    // Outra requisição já renovou enquanto esta estava no ar: só repete.
+    const jaRenovada = atual !== null && atual !== primeira.token;
+    const resultado = jaRenovada ? "renovada" : await tentarRenovarSessao();
+    if (resultado === "renovada") {
+      response = (await fazerRequisicao(path, options)).response;
+    } else if (resultado === "indisponivel") {
+      servidorIndisponivel();
     } else {
       logout();
       window.location.href = "/login";
       throw new Error("Sessão expirada");
     }
   }
+
+  if (response.status === 503 || response.status === 429) servidorIndisponivel(response.status);
 
   if (!response.ok) {
     let detail = `Erro ${response.status}`;

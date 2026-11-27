@@ -55,6 +55,9 @@ export function isAutenticado(): boolean {
   return readSession() !== null;
 }
 
+/** Erro de uma chamada `/auth/*`, com o status HTTP (ausente em falha de rede). */
+type ErroAuth = Error & { status?: number };
+
 async function chamarAuth<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
@@ -76,7 +79,9 @@ async function chamarAuth<T>(path: string, body: unknown): Promise<T> {
     } catch {
       // corpo não era JSON, mantém a mensagem genérica
     }
-    throw new Error(detail);
+    const erro: ErroAuth = new Error(detail);
+    erro.status = response.status;
+    throw erro;
   }
   return response.json() as Promise<T>;
 }
@@ -119,20 +124,47 @@ export async function cadastrar(
   return resposta;
 }
 
-/** Troca o refresh_token por um novo access_token. Retorna false se não deu certo. */
-export async function tentarRenovarSessao(): Promise<boolean> {
+/**
+ * Resultado de uma tentativa de renovar a sessão:
+ * - `renovada`: há um access_token novo salvo;
+ * - `invalida`: o servidor recusou a sessão (401). A sessão local é apagada;
+ * - `indisponivel`: o servidor ou o Supabase não respondeu (503, 429, falha de
+ *   rede). A sessão local continua, para tentar de novo depois.
+ */
+export type ResultadoRenovacao = "renovada" | "invalida" | "indisponivel";
+
+// Uma renovação por vez: quando várias requisições recebem 401 juntas (o
+// dashboard dispara 5), todas esperam a mesma chamada em vez de mandar o
+// mesmo refresh_token N vezes. Com rotação de refresh token no Supabase, usos
+// concorrentes podem revogar a sessão.
+let renovacaoEmAndamento: Promise<ResultadoRenovacao> | null = null;
+
+async function renovarSessao(): Promise<ResultadoRenovacao> {
   const atual = readSession();
-  if (!atual) return false;
+  if (!atual) return "invalida";
   try {
     const nova = await chamarAuth<Sessao>("/auth/refresh", {
       refresh_token: atual.refresh_token,
     });
     writeSession(nova);
-    return true;
-  } catch {
+    return "renovada";
+  } catch (e) {
+    const status = (e as ErroAuth).status;
+    // Sem status = fetch nem chegou ao servidor (rede caiu, servidor dormindo).
+    if (status === undefined || status === 429 || status >= 500) return "indisponivel";
     clearSession();
-    return false;
+    return "invalida";
   }
+}
+
+/** Troca o refresh_token por um novo access_token, uma chamada por vez. */
+export function tentarRenovarSessao(): Promise<ResultadoRenovacao> {
+  if (!renovacaoEmAndamento) {
+    renovacaoEmAndamento = renovarSessao().finally(() => {
+      renovacaoEmAndamento = null;
+    });
+  }
+  return renovacaoEmAndamento;
 }
 
 export function getAccessToken(): string | null {
